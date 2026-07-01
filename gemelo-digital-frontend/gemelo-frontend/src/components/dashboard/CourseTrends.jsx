@@ -22,7 +22,7 @@ import { COLORS } from "../../utils/colors";
 function CourseTrends({ snapshots = [] }) {
   const data = React.useMemo(() => snapshots.map((s) => ({
     date: s.date ? s.date.slice(5) : "",  // MM-DD
-    "Nota promedio": s.avgPct != null ? Number((s.avgPct / 10).toFixed(2)) : null,
+    "Nota promedio": s.avgPct != null ? Number(s.avgPct.toFixed(1)) : null,
     "% en riesgo": s.atRiskPct != null ? Number(s.atRiskPct.toFixed(1)) : null,
     "Cobertura": s.coveragePct != null ? Number(s.coveragePct.toFixed(1)) : null,
   })), [snapshots]);
@@ -58,7 +58,12 @@ function CourseTrends({ snapshots = [] }) {
           <LineChart data={data} margin={{ left: -10, right: 10, top: 8, bottom: 0 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
             <XAxis dataKey="date" tick={{ fontSize: 10, fill: "var(--muted)" }} />
-            <YAxis tick={{ fontSize: 10, fill: "var(--muted)" }} />
+            <YAxis
+              domain={[0, 100]}
+              ticks={[0, 25, 50, 75, 100]}
+              tickFormatter={(v) => `${v}`}
+              tick={{ fontSize: 10, fill: "var(--muted)" }}
+            />
             <Tooltip
               contentStyle={{
                 background: "var(--card)",
