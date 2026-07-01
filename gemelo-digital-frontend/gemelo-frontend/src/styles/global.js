@@ -413,6 +413,7 @@ const GLOBAL_STYLES = `
     transition: top 0.15s ease;
   }
   .skip-link:focus { top: 12px; }
+  main[tabindex="-1"]:focus { outline: none; }
 
   .breadcrumb-link:hover { color: var(--brand); background: var(--brand-light); }
 
@@ -563,9 +564,25 @@ const GLOBAL_STYLES = `
     .cesa-loader-title { font-size: 20px; }
   }
   @media (prefers-reduced-motion: reduce) {
+    /* Loader ya cubierto anteriormente */
     .cesa-loader-logo, .cesa-loader-ring, .cesa-loader-ring.outer,
     .cesa-loader-title, .cesa-loader-dots span, .cesa-loader-bar::after,
     .cesa-loader-root::before, .cesa-loader-root::after { animation: none !important; }
+
+    /* Regla global: acorta o elimina todas las animaciones y transiciones
+       para usuarios que solicitan menos movimiento. Se mantiene un mínimo
+       (0.01ms) para no romper componentes que dependen del evento
+       animationend/transitionend. */
+    *, *::before, *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+
+    /* Silencia efectos específicos que suelen ser molestos con este ajuste */
+    .stagger-children > * { opacity: 1 !important; animation: none !important; }
+    .pulse-dot, .ai-fab-btn, .skip-link { animation: none !important; transition: none !important; }
   }
 
   /* Stagger animation classes — add to a container with .stagger-children, direct children fade in sequentially */

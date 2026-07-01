@@ -312,7 +312,7 @@ export default function RoleHome() {
       </header>
 
       {/* ==================== CONTENIDO ==================== */}
-      <main style={{ maxWidth: 1100, margin: "0 auto", padding: "40px 24px 60px" }}>
+      <main id="main-content" tabIndex={-1} style={{ maxWidth: 1100, margin: "0 auto", padding: "40px 24px 60px" }}>
 
         {/* ── Welcome ── */}
         <div style={{ textAlign: "center", marginBottom: 32, animation: "floatIn 0.5s cubic-bezier(0.16, 1, 0.3, 1) both" }}>

@@ -564,7 +564,7 @@ export default function StudentPortal({ orgUnitIdOverride, userIdOverride, allow
       )}
 
       {/* ── Content ── */}
-      <main style={{ padding: isMobile ? "16px 14px" : "24px 28px", maxWidth: 900, margin: "0 auto" }}>
+      <main id="main-content" tabIndex={-1} style={{ padding: isMobile ? "16px 14px" : "24px 28px", maxWidth: 900, margin: "0 auto" }}>
         {/* Page Header */}
         <div style={{ marginBottom: 20 }}>
           <div style={{ fontSize: 10, fontWeight: 800, color: "var(--brand)", textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: 4 }}>

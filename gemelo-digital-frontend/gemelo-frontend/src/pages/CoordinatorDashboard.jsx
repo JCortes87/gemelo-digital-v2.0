@@ -217,7 +217,7 @@ export default function CoordinatorDashboard({ onClose }) {
         </div>
       </header>
 
-      <main style={{ padding: "24px 28px", maxWidth: 1200, margin: "0 auto" }}>
+      <main id="main-content" tabIndex={-1} style={{ padding: "24px 28px", maxWidth: 1200, margin: "0 auto" }}>
         <Breadcrumb items={[
           { label: "Inicio", icon: "🏠", onClick: () => navigate("/") },
           { label: "Panel Coordinador" },

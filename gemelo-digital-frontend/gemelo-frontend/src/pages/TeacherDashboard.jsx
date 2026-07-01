@@ -3471,19 +3471,30 @@ function AppSidebar({ activeTab, setActiveTab, currentCourseName, mobileOpen, on
         </div>
 
         {/* Nav */}
-        <nav className="sidebar-nav">
-          <div className="sidebar-section-label">Vistas</div>
-          {NAV.map((item) => (
-            <button
-              key={item.id}
-              className={`sidebar-nav-item${activeTab === item.id ? " active" : ""}`}
-              onClick={() => { setActiveTab(item.id); onClose?.(); }}
-            >
-              <span className="snav-icon">{item.icon}</span>
-              <span>{item.label}</span>
-              <span className="sidebar-nav-dot" />
-            </button>
-          ))}
+        <nav className="sidebar-nav" aria-label="Vistas del docente">
+          <div className="sidebar-section-label" id="sidebar-views-label">Vistas</div>
+          <ul
+            aria-labelledby="sidebar-views-label"
+            style={{ listStyle: "none", margin: 0, padding: 0, display: "flex", flexDirection: "column", gap: 2 }}
+          >
+            {NAV.map((item) => {
+              const isActive = activeTab === item.id;
+              return (
+                <li key={item.id}>
+                  <button
+                    type="button"
+                    className={`sidebar-nav-item${isActive ? " active" : ""}`}
+                    aria-current={isActive ? "page" : undefined}
+                    onClick={() => { setActiveTab(item.id); onClose?.(); }}
+                  >
+                    <span className="snav-icon" aria-hidden="true">{item.icon}</span>
+                    <span>{item.label}</span>
+                    <span className="sidebar-nav-dot" aria-hidden="true" />
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
         </nav>
 
         {/* Footer — current course */}
@@ -5695,7 +5706,7 @@ const contentKpis = useMemo(() => {
       />
 
       {/* ── Main content ── */}
-      <main className="app-main">
+      <main id="main-content" tabIndex={-1} className="app-main">
         <div className="app-content">
 
         {/* ── Routes tab ── */}

@@ -29,6 +29,9 @@ function AppRoutes() {
 
   return (
     <Suspense fallback={<PageLoader />}>
+      <a href="#main-content" className="skip-link">
+        Saltar al contenido principal
+      </a>
       <Routes>
         {/* Teacher/Admin dashboard */}
         <Route
