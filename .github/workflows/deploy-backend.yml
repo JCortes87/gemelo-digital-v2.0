@@ -1,0 +1,99 @@
+# ----------------------------------------------------------------------------
+# Workflow de deploy automatico del backend a AWS ECS.
+#
+# Se dispara cuando:
+#   - Hay un push a la rama main que cambia algo en gemelo-digital-backend/
+#     o en el propio archivo del workflow.
+#   - Se ejecuta manualmente desde la pestana Actions de GitHub.
+#
+# Lo que hace:
+#   1. Checkout del codigo.
+#   2. Asume el rol IAM en AWS via OIDC (sin Access Keys ni secretos).
+#   3. Hace login en el registry ECR.
+#   4. Construye la imagen Docker del backend desde gemelo-digital-backend/.
+#   5. La sube a ECR taggeada con el SHA del commit y como 'latest'.
+#   6. Le dice al servicio ECS que reinicie sus tasks con la nueva imagen.
+#   7. Espera a que el servicio quede estable antes de marcar el job como ok.
+# ----------------------------------------------------------------------------
+name: Deploy backend a ECS
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'gemelo-digital-backend/**'
+      - '.github/workflows/deploy-backend.yml'
+  workflow_dispatch:
+
+# Garantiza que no haya dos deploys del backend corriendo al tiempo.
+concurrency:
+  group: deploy-backend
+  cancel-in-progress: false
+
+# Permisos requeridos para que GitHub Actions pueda solicitar el token OIDC.
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  AWS_REGION: us-east-1
+  AWS_ACCOUNT_ID: '718624265053'
+  ECR_REPOSITORY: gemelo-backend
+  ECS_CLUSTER: default
+  ECS_SERVICE: gemelo-digital-api
+  IAM_ROLE_ARN: arn:aws:iam::718624265053:role/GemeloDigitalDeployerRole
+
+jobs:
+  deploy:
+    name: Construir imagen y actualizar servicio ECS
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout del repo
+        uses: actions/checkout@v4
+
+      - name: Configurar credenciales AWS (via OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ env.IAM_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+          role-session-name: github-actions-deploy-backend
+
+      - name: Login a Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Construir, taggear y subir imagen Docker
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
+        working-directory: gemelo-digital-backend
+        run: |
+          docker build \
+            -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG \
+            -t $ECR_REGISTRY/$ECR_REPOSITORY:latest \
+            .
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
+
+      - name: Forzar redeploy del servicio ECS
+        run: |
+          aws ecs update-service \
+            --cluster ${{ env.ECS_CLUSTER }} \
+            --service ${{ env.ECS_SERVICE }} \
+            --force-new-deployment \
+            --region ${{ env.AWS_REGION }}
+
+      - name: Esperar a que el servicio quede estable
+        run: |
+          aws ecs wait services-stable \
+            --cluster ${{ env.ECS_CLUSTER }} \
+            --services ${{ env.ECS_SERVICE }} \
+            --region ${{ env.AWS_REGION }}
+
+      - name: Resumen del deploy
+        run: |
+          echo "Backend desplegado correctamente."
+          echo "Imagen: ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}"
+          echo "Servicio ECS: ${{ env.ECS_CLUSTER }}/${{ env.ECS_SERVICE }}"

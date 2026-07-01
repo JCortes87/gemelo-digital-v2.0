@@ -3,7 +3,7 @@ from typing import Any, Dict, List, Optional
 
 from sqlalchemy import select
 
-from app.db.models import CourseMetricHistory, Student, StudentCourseMetricSnapshot
+from app.db.models import CourseMetricHistory, Enrollment, Student, StudentCourseMetricSnapshot
 from app.db.session import SessionLocal
 
 
@@ -115,9 +115,21 @@ async def build_course_overview_from_db(orgUnitId: int) -> dict:
     """
     db = SessionLocal()
     try:
+        #|---------- Lectura de snapshots filtrando estudiantes inactivos ----------|
+        # El JOIN con Enrollment garantiza que solo aparezcan estudiantes que
+        # siguen inscritos en el curso. Sin este filtro, estudiantes removidos
+        # de Brightspace quedaban apareciendo en "Estudiantes prioritarios" y
+        # en las metricas agregadas porque sus snapshots viejos seguian en DB.
         rows = db.execute(
-            select(StudentCourseMetricSnapshot).where(
-                StudentCourseMetricSnapshot.org_unit_id == orgUnitId
+            select(StudentCourseMetricSnapshot)
+            .join(
+                Enrollment,
+                (Enrollment.org_unit_id == StudentCourseMetricSnapshot.org_unit_id)
+                & (Enrollment.brightspace_user_id == StudentCourseMetricSnapshot.brightspace_user_id),
+            )
+            .where(
+                StudentCourseMetricSnapshot.org_unit_id == orgUnitId,
+                Enrollment.is_active.is_(True),
             )
         ).scalars().all()
 

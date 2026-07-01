@@ -44,8 +44,8 @@ export default function LastUpdated({ timestamp, onRefresh, loading = false }) {
       {onRefresh && !loading && (
         <button
           onClick={onRefresh}
-          title="Refrescar datos"
-          aria-label="Refrescar datos"
+          title="Actualizar ahora (trae datos en vivo de Brightspace)"
+          aria-label="Actualizar ahora"
           style={{
             background: "none",
             border: "none",

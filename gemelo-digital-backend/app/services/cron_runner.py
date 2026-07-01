@@ -144,15 +144,29 @@ async def run_sync_for_all_courses(
 
     for ou in org_unit_ids:
         try:
-            details = await sync_svc.sync_student_metric_snapshots(ou)
+            #|---------- Sincronizar enrollments antes que snapshots ----------|
+            # sync_classlist actualiza la tabla enrollments con la classlist
+            # actual de Brightspace y desactiva los estudiantes removidos.
+            # Es necesario para que las consultas filtradas por is_active
+            # excluyan a los estudiantes ya no inscritos del curso.
+            classlist_details = await sync_svc.sync_classlist(ou)
+            snapshots_details = await sync_svc.sync_student_metric_snapshots(ou)
+
             results.append({
                 "orgUnitId": ou,
                 "ok": True,
-                "details": details,
+                "details": {
+                    "classlist": classlist_details,
+                    "snapshots": snapshots_details,
+                },
                 "error": None,
             })
             success += 1
-            logger.info("sync-cron-all ou=%s OK", ou)
+            logger.info(
+                "sync-cron-all ou=%s OK (deactivated=%s)",
+                ou,
+                classlist_details.get("deactivated_enrollments", 0),
+            )
         except Exception as e:
             error_msg = str(e)[:300]
             results.append({

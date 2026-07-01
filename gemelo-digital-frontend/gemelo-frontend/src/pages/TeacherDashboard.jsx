@@ -4070,7 +4070,13 @@ export default function TeacherDashboard() {
   // Last data fetch timestamp + refresh trigger
   const [lastUpdate, setLastUpdate] = useState(null);
   const [refreshKey, setRefreshKey] = useState(0);
+  // Cuando el usuario pulsa "Actualizar ahora" marcamos este ref para que la
+  // siguiente carga pida datos en vivo a Brightspace (fresh_max_minutes=0) en
+  // vez de leer el cache de Postgres. La carga inicial lo deja en false para
+  // seguir siendo rapida (DB-first).
+  const forceFreshRef = React.useRef(false);
   const handleRefresh = React.useCallback(() => {
+    forceFreshRef.current = true;
     setRefreshKey((k) => k + 1);
   }, []);
 
@@ -4468,10 +4474,21 @@ export default function TeacherDashboard() {
     setLearningOutcomesPayload(null);
     setOutcomesMap({});
 
+    // Si el usuario pidio "Actualizar ahora", forzamos datos en vivo desde
+    // Brightspace (bypass del cache de 30 min) SOLO para esta corrida, y
+    // reseteamos el flag para que las cargas siguientes vuelvan a ser
+    // DB-first (rapidas). Forzar tambien dispara el re-sync en background que
+    // refresca enrollments (add/remove de estudiantes) y snapshots.
+    const forceFresh = forceFreshRef.current;
+    forceFreshRef.current = false;
+    const overviewUrl =
+      `/gemelo/course/${orgUnitId}/overview` +
+      (forceFresh ? "?fresh_max_minutes=0" : "");
+
     (async () => {
       try {
         const [ovRes, stRes, raRes, loRes] = await Promise.allSettled([
-          apiGet(`/gemelo/course/${orgUnitId}/overview`, { signal: controller.signal }),
+          apiGet(overviewUrl, { signal: controller.signal }),
           apiGet(`/gemelo/course/${orgUnitId}/students?include=summary`, { signal: controller.signal }),
           apiGet(`/gemelo/course/${orgUnitId}/ra/dashboard`, { signal: controller.signal }),
           apiGet(`/gemelo/course/${orgUnitId}/learning-outcomes`, { signal: controller.signal }),

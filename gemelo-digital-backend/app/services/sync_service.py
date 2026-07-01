@@ -16,6 +16,14 @@ from app.services.sync_tracking_service import SyncTrackingService
 from app.services.gemelo_service import GemeloService
 from app.services.risk_utils import risk_from_pct
 
+#|------------- Helpers de rol / classlist (mismos que usa la lista de estudiantes) -----------|
+from app.services.role_utils import (
+    _is_student_role,
+    _extract_role_name,
+    _extract_user_id,
+    _as_items_list,
+)
+
 
 class SyncService:
     def __init__(self, bs: BrightspaceClient):
@@ -41,11 +49,18 @@ class SyncService:
         updated_students = 0
         inserted_enrollments = 0
         updated_enrollments = 0
+        deactivated_enrollments = 0
+
+        #|---------- Set de usuarios vistos en la classlist de Brightspace ----------|
+        # Lo usamos al final para detectar enrollments en DB cuyo estudiante
+        # ya no aparece en Brightspace (fue removido del curso) y marcarlos
+        # como inactivos. Sin este paso, los estudiantes 'limpiados' del
+        # curso siguen apareciendo eternamente en metricas como
+        # "Estudiantes prioritarios".
+        seen_user_ids: set[int] = set()
 
         db = SessionLocal()
         try:
-            #|------- Lo modifiqué para hacer debug -----------|
-            #for row in classlist:
             for row in classlist:
                 user_id = row.get("Identifier") or row.get("UserId") or row.get("userId")
                 if user_id is None:
@@ -92,6 +107,23 @@ class SyncService:
                         )
                     elif isinstance(role, str):
                         role_name = role
+
+                #|---------- Solo cuentas con rol de estudiante ----------|
+                # La classlist de Brightspace trae instructores, monitores y
+                # cuentas de servicio (ej. "Servicio al estudiante"). No son
+                # alumnos del curso: si los guardamos como enrollment activo,
+                # terminan contados en el overview y colados en "Estudiantes
+                # prioritarios". Aplicamos el mismo criterio que usa la lista
+                # de estudiantes (list_course_students) para que el conteo y
+                # las metricas cuadren con la lista real del curso.
+                #
+                # Importante: como NO los agregamos a seen_user_ids, cualquier
+                # enrollment viejo de un no-estudiante que siguiera activo en
+                # DB queda marcado inactivo en el barrido de mas abajo.
+                if not _is_student_role(role_name or ""):
+                    continue
+
+                seen_user_ids.add(brightspace_user_id)
 
                 student = db.execute(
                     select(Student).where(Student.brightspace_user_id == brightspace_user_id)
@@ -143,9 +175,25 @@ class SyncService:
                     if changed:
                         updated_enrollments += 1
 
+            #|---------- Marcar como inactivos los estudiantes que ya no estan en Brightspace ----------|
+            # Buscamos todos los enrollments del curso que estan activos en DB,
+            # y desactivamos los que no aparecieron en la classlist recien
+            # recibida. Brightspace ya los removio del curso pero nuestra DB
+            # seguia mostrandolos como activos.
+            active_in_db = db.execute(
+                select(Enrollment).where(
+                    Enrollment.org_unit_id == orgUnitId,
+                    Enrollment.is_active.is_(True),
+                )
+            ).scalars().all()
+            for e in active_in_db:
+                if e.brightspace_user_id not in seen_user_ids:
+                    e.is_active = False
+                    deactivated_enrollments += 1
+
             db.commit()
-            
-            #|----------- Para el tracking --------------------|
+
+            #|----------- Tracking del run para diagnostico operacional --------------------|
             self.tracking.finish_run(
                 run_id=run_id,
                 sync_type="classlist",
@@ -154,7 +202,11 @@ class SyncService:
                 inserted_count=inserted_students + inserted_enrollments,
                 updated_count=updated_students + updated_enrollments,
                 error_count=0,
-                message="Classlist sync completed",
+                message=(
+                    f"Classlist sync completado. "
+                    f"Desactivados {deactivated_enrollments} enrollment(s) cuyo "
+                    f"estudiante ya no esta en la classlist."
+                ),
             )
 
             return {
@@ -164,6 +216,7 @@ class SyncService:
                 "updated_students": updated_students,
                 "inserted_enrollments": inserted_enrollments,
                 "updated_enrollments": updated_enrollments,
+                "deactivated_enrollments": deactivated_enrollments,
             }
 
         #|------- Reemplazo este bloque por el que lleva el tracking ---------|
@@ -539,17 +592,21 @@ class SyncService:
     async def sync_student_metric_snapshots(self, orgUnitId: int) -> Dict[str, Any]:
         run_id = self.tracking.start_run("student_metric_snapshots", orgUnitId)
 
-        classlist = await self.bs.list_classlist(orgUnitId)
+        classlist = _as_items_list(await self.bs.list_classlist(orgUnitId))
         student_ids = []
 
+        #|---------- Mismo filtro de rol que el resto del sistema ----------|
+        # Solo calculamos snapshots para alumnos reales. Asi no persistimos
+        # metricas de instructores ni de cuentas de servicio que despues
+        # ensuciarian el overview y las tendencias del curso. Es el mismo
+        # criterio que aplica sync_classlist y list_course_students.
         for row in classlist:
-            user_id = row.get("Identifier") or row.get("UserId") or row.get("userId")
+            if not _is_student_role(_extract_role_name(row)):
+                continue
+            user_id = _extract_user_id(row)
             if user_id is None:
                 continue
-            try:
-                student_ids.append(int(user_id))
-            except Exception:
-                continue
+            student_ids.append(user_id)
 
         metrics_by_user = await self.compute_students_gradebook_metrics_for_sync(
             orgUnitId=orgUnitId,

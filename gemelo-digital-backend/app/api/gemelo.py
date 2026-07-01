@@ -52,10 +52,20 @@ async def _refresh_overview_db_bg(orgUnitId: int, access_token: str) -> None:
     try:
         bs = BrightspaceClient(tokens={"access_token": access_token})
         sync_svc = SyncService(bs)
-        result = await sync_svc.sync_student_metric_snapshots(orgUnitId)
+
+        #|---------- Refrescar enrollments antes que snapshots ----------|
+        # sync_classlist actualiza la tabla enrollments y desactiva los
+        # estudiantes que ya no estan en la classlist de Brightspace. Sin
+        # esto, los snapshots de estudiantes removidos seguirian siendo
+        # visibles en la siguiente lectura desde Postgres.
+        classlist_result = await sync_svc.sync_classlist(orgUnitId)
+        snapshots_result = await sync_svc.sync_student_metric_snapshots(orgUnitId)
+
         logger.info(
-            "Refresh DB en background completado ou=%s: %s",
-            orgUnitId, str(result)[:200],
+            "Refresh DB en background completado ou=%s: classlist=%s snapshots=%s",
+            orgUnitId,
+            str(classlist_result)[:120],
+            str(snapshots_result)[:120],
         )
     except Exception as e:
         logger.warning(

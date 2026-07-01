@@ -8,7 +8,10 @@ import { elSpeak, elStop } from "../../utils/speech";
  * Can optionally be read aloud using the existing TTS utility.
  */
 function AINarrativeSummary({ studentRows = [], overview = null, courseInfo = null, raDashboard = null, contentKpis = null }) {
-  const [speaking, setSpeaking] = useState(false);
+  // Estado de la lectura por voz: "idle" (sin sonar) | "loading" (pidiendo el
+  // audio al backend) | "playing" (sonando). Permite deshabilitar el boton
+  // mientras carga y mostrar "Detener" mientras suena.
+  const [voiceStatus, setVoiceStatus] = useState("idle");
 
   const narrative = useMemo(() => {
     const rows = Array.isArray(studentRows) ? studentRows : [];
@@ -83,20 +86,25 @@ function AINarrativeSummary({ studentRows = [], overview = null, courseInfo = nu
   }, [studentRows, overview, courseInfo, raDashboard, contentKpis]);
 
   const handleSpeak = () => {
-    if (speaking) {
+    // Si ya esta sonando, este clic la detiene.
+    if (voiceStatus === "playing") {
       elStop();
-      setSpeaking(false);
+      setVoiceStatus("idle");
       return;
     }
-    if (narrative) {
-      // Strip markdown for TTS
-      const clean = narrative.replace(/\*\*/g, "").replace(/\n+/g, " ");
-      elSpeak(
-        clean,
-        () => setSpeaking(true),
-        () => setSpeaking(false),
-      );
-    }
+    // Si esta cargando, ignoramos (el boton ademas queda deshabilitado): asi un
+    // doble clic no dispara dos audios.
+    if (voiceStatus === "loading") return;
+    if (!narrative) return;
+
+    // Strip markdown for TTS
+    const clean = narrative.replace(/\*\*/g, "").replace(/\n+/g, " ");
+    setVoiceStatus("loading");
+    elSpeak(
+      clean,
+      () => setVoiceStatus("playing"),   // onStart: el audio empezo a sonar
+      () => setVoiceStatus("idle"),      // onEnd: termino o se detuvo
+    );
   };
 
   if (!narrative) {
@@ -124,10 +132,22 @@ function AINarrativeSummary({ studentRows = [], overview = null, courseInfo = nu
         <button
           className="btn"
           onClick={handleSpeak}
-          aria-label={speaking ? "Detener lectura" : "Escuchar resumen"}
-          style={{ fontSize: 11, padding: "6px 12px" }}
+          disabled={voiceStatus === "loading"}
+          aria-label={
+            voiceStatus === "playing" ? "Detener lectura"
+            : voiceStatus === "loading" ? "Cargando audio"
+            : "Escuchar resumen"
+          }
+          style={{
+            fontSize: 11,
+            padding: "6px 12px",
+            opacity: voiceStatus === "loading" ? 0.6 : 1,
+            cursor: voiceStatus === "loading" ? "wait" : "pointer",
+          }}
         >
-          {speaking ? "⏹ Detener" : "🔊 Escuchar"}
+          {voiceStatus === "playing" ? "⏹ Detener"
+            : voiceStatus === "loading" ? "⏳ Cargando…"
+            : "🔊 Escuchar"}
         </button>
         <button
           className="btn"
