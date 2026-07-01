@@ -2401,7 +2401,11 @@ function EvidencesTimeline({ evidences, thresholds }) {
 
       {open && (
         <div style={{ marginTop: 14 }}>
-          <div style={{ width: "100%", height: 160 }}>
+          <div
+            role="img"
+            aria-label="Gráfico de evolución del desempeño del estudiante"
+            style={{ width: "100%", height: 160 }}
+          >
             <ResponsiveContainer>
               <LineChart data={chartData} margin={{ left: -10, right: 10 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
@@ -6012,7 +6016,11 @@ const contentKpis = useMemo(() => {
           {/* ── Riesgo académico + Distribución apilados en 1 columna ── */}
           <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
             <Card title={<span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>Riesgo académico <InfoTooltip text="Distribución de los estudiantes según su nota actual: Alto (<5.0), Medio (5.0–7.0), Bajo (≥7.0). Calculado solo con notas reales del gradebook, excluye columnas 'Corte'." /></span>} accent="pending">
-              <div style={{ width: "100%", height: 200 }}>
+              <div
+                role="img"
+                aria-label="Gráfico de pastel: distribución de estudiantes por nivel de riesgo académico"
+                style={{ width: "100%", height: 200 }}
+              >
                 <ResponsiveContainer>
                   <PieChart>
                     <Pie

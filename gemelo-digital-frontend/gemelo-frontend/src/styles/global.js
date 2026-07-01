@@ -28,6 +28,8 @@ const GLOBAL_STYLES = `
     --border2: #CDD3DE;
     --text: #0F1827;
     --muted: #5A6580;
+    --muted-strong: #3D465C;
+    --focus-ring: rgba(11,95,255,0.35);
     --brand: #0B5FFF;
     --brand-2: #003EA6;
     --brand-light: #EBF1FF;
@@ -61,6 +63,8 @@ const GLOBAL_STYLES = `
     --border2: #3D4F66;
     --text: #F1F5FB;
     --muted: #94A3BB;
+    --muted-strong: #C6D2E2;
+    --focus-ring: rgba(96,165,250,0.55);
     --brand: #3B82F6;
     --brand-light: #172554;
     --brand-light2: #1E3A5F;
@@ -370,6 +374,47 @@ const GLOBAL_STYLES = `
 
   input[type="text"], input[type="number"] { font-family: var(--font); outline: none; transition: border-color 0.15s ease, box-shadow 0.15s ease; }
   input[type="text"]:focus, input[type="number"]:focus { border-color: var(--brand) !important; box-shadow: 0 0 0 3px rgba(11,95,255,0.12) !important; }
+
+  /* === Global keyboard focus ring (a11y quick-win) ===
+     Uses :focus-visible so mouse clicks don't show a ring, but Tab always does. */
+  :focus { outline: none; }
+  button:focus-visible,
+  a:focus-visible,
+  [role="button"]:focus-visible,
+  [role="tab"]:focus-visible,
+  [role="menuitem"]:focus-visible,
+  [tabindex]:not([tabindex="-1"]):focus-visible,
+  .btn:focus-visible,
+  .btn-primary:focus-visible,
+  .chip:focus-visible,
+  .tag:focus-visible,
+  .topbar-icon-btn:focus-visible,
+  .sidebar-nav-item:focus-visible,
+  .course-item:focus-visible,
+  .ai-fab-btn:focus-visible,
+  select:focus-visible,
+  textarea:focus-visible {
+    outline: 2px solid var(--brand);
+    outline-offset: 2px;
+    box-shadow: 0 0 0 4px var(--focus-ring);
+    border-radius: 8px;
+  }
+  /* Round elements deserve a matching ring */
+  .topbar-avatar:focus-visible,
+  .ai-fab-btn:focus-visible {
+    border-radius: 50%;
+  }
+  /* Skip-link helper (for future use). Hidden until focused. */
+  .skip-link {
+    position: absolute; left: 12px; top: -40px; z-index: 10001;
+    background: var(--brand); color: #fff;
+    padding: 8px 14px; border-radius: 8px;
+    font-size: 13px; font-weight: 700;
+    transition: top 0.15s ease;
+  }
+  .skip-link:focus { top: 12px; }
+
+  .breadcrumb-link:hover { color: var(--brand); background: var(--brand-light); }
 
   .scroll-y { overflow-y: auto; overflow-x: hidden; }
   .ra-scroll { max-height: 260px; padding-right: 4px; }

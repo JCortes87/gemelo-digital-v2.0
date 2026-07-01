@@ -26,7 +26,13 @@ export default function CesaLoader({
   useEffect(() => { injectStyles(); }, []);
 
   return (
-    <div role="status" aria-label={`${subtitle} ${title}`} className="cesa-loader-root">
+    <div
+      role="status"
+      aria-live="polite"
+      aria-busy="true"
+      aria-label={`${subtitle} ${title}`}
+      className="cesa-loader-root"
+    >
       <div className="cesa-loader-card">
         <div className="cesa-loader-logo-wrap">
           <span className="cesa-loader-ring outer" aria-hidden="true" />

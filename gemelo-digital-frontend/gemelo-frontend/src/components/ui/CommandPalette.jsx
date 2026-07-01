@@ -105,6 +105,7 @@ export default function CommandPalette({ open, onClose, commands = [] }) {
         display: "flex", alignItems: "flex-start", justifyContent: "center",
         paddingTop: "12vh", paddingLeft: 20, paddingRight: 20,
         animation: "fadeIn 0.15s ease both",
+        cursor: "pointer",
       }}
     >
       <div
@@ -120,6 +121,7 @@ export default function CommandPalette({ open, onClose, commands = [] }) {
           overflow: "hidden",
           display: "flex", flexDirection: "column",
           maxHeight: "70vh",
+          cursor: "default",
         }}
       >
         {/* Search input */}

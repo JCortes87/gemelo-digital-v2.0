@@ -49,7 +49,11 @@ function CourseTrends({ snapshots = [] }) {
         Evolución de los últimos <strong>{snapshots.length}</strong> días. Los snapshots se
         capturan automáticamente al abrir el dashboard cada día.
       </div>
-      <div style={{ width: "100%", height: 220 }}>
+      <div
+        role="img"
+        aria-label={`Gráfico de tendencias del curso a lo largo de los últimos ${snapshots.length} días`}
+        style={{ width: "100%", height: 220 }}
+      >
         <ResponsiveContainer>
           <LineChart data={data} margin={{ left: -10, right: 10, top: 8, bottom: 0 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />

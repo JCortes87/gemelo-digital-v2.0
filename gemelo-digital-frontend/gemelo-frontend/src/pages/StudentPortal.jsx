@@ -933,7 +933,11 @@ export default function StudentPortal({ orgUnitIdOverride, userIdOverride, allow
             <Card title={`Mis Evidencias Calificadas (${gradedItems.length})`} accent="brand">
               {/* Chart */}
               {chartData.length > 1 && (
-                <div style={{ width: "100%", height: 180, marginBottom: 16 }}>
+                <div
+                  role="img"
+                  aria-label="Gráfico de evolución de mis notas en evidencias calificadas"
+                  style={{ width: "100%", height: 180, marginBottom: 16 }}
+                >
                   <ResponsiveContainer>
                     <LineChart data={chartData} margin={{ left: -10, right: 10 }}>
                       <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
