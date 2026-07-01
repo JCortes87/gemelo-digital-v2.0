@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useMemo, lazy, Suspense } from "react";
 import { useNavigate } from "react-router-dom";
+import CesaLoader from "../components/ui/CesaLoader";
 
 const StudentOverviewPanel = lazy(() => import("./StudentOverviewPanel"));
 import {
@@ -367,12 +368,11 @@ export default function StudentPortal({ orgUnitIdOverride, userIdOverride, allow
   // ── Loading ──
   if (loading) {
     return (
-      <div style={{ minHeight: "100vh", background: "var(--bg)", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "var(--font)" }}>
-        <div style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 24, padding: "40px 48px", textAlign: "center", boxShadow: "var(--shadow-lg)" }}>
-          <div style={{ fontSize: 20, fontWeight: 800, color: "var(--text)" }}>Cargando tu información...</div>
-          <div style={{ fontSize: 13, color: "var(--muted)", marginTop: 4 }}>Consolidando tu gemelo digital</div>
-        </div>
-      </div>
+      <CesaLoader
+        title="Portal del Estudiante"
+        subtitle="Cargando tu información"
+        footer="Consolidando tu gemelo digital…"
+      />
     );
   }
 

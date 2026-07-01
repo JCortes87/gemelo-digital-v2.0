@@ -23,6 +23,7 @@ import Breadcrumb from "../components/ui/Breadcrumb";
 import LastUpdated from "../components/ui/LastUpdated";
 import CommandPalette from "../components/ui/CommandPalette";
 import ContextualTip from "../components/ui/ContextualTip";
+import SharedCesaLoader from "../components/ui/CesaLoader";
 import SmartAlerts from "../components/dashboard/SmartAlerts";
 import CourseTrends from "../components/dashboard/CourseTrends";
 import DueDateCalendar from "../components/dashboard/DueDateCalendar";
@@ -1887,30 +1888,14 @@ function LoginScreen({ orgUnitId }) {
   );
 }
 
-function CesaLoader({ title = "CESA · G.D V.260428", subtitle = "Cargando tablero..." }) {
-  React.useEffect(() => {
-    injectStyles();
-  }, []);
-
+// Loader unificado — delega en el componente compartido CesaLoader
+function CesaLoader({ title = "Gemelo Digital", subtitle = "Cargando tablero" }) {
   return (
-    <div className="cesa-loader-wrap">
-      <div className="cesa-loader-card">
-        <div>
-          <div className="cesa-loader-title">{title}</div>
-          <div className="cesa-loader-sub">{subtitle}</div>
-        </div>
-        <div className="cesa-loader-center">
-          <div className="cesa-water-text" aria-label="Cargando">
-            <span className="cesa-water-text__outline">CESA</span>
-            <span className="cesa-water-text__fill" aria-hidden="true">
-              CESA
-            </span>
-            <span className="cesa-water-text__wave" aria-hidden="true" />
-          </div>
-        </div>
-        <div className="cesa-loader-foot">Conectando con Brightspace y consolidando evidencias académicas…</div>
-      </div>
-    </div>
+    <SharedCesaLoader
+      title={title}
+      subtitle={subtitle}
+      footer="Conectando con Brightspace y consolidando evidencias académicas…"
+    />
   );
 }
 
@@ -7700,11 +7685,7 @@ const contentKpis = useMemo(() => {
               ✕ Salir de vista previa
             </button>
           </div>
-          <React.Suspense fallback={
-            <div style={{ padding: "80px 20px", textAlign: "center", color: "var(--muted)", fontSize: 13 }}>
-              Cargando portal del estudiante...
-            </div>
-          }>
+          <React.Suspense fallback={<SharedCesaLoader title="Portal del Estudiante" subtitle="Cargando vista previa" />}>
             <StudentPortal
               orgUnitIdOverride={orgUnitId}
               userIdOverride={impersonateStudent.userId}
@@ -7722,11 +7703,7 @@ const contentKpis = useMemo(() => {
           background: "var(--page-bg, #f5f7fb)",
           overflow: "auto",
         }}>
-          <React.Suspense fallback={
-            <div style={{ padding: "80px 20px", textAlign: "center", color: "var(--muted)", fontSize: 13 }}>
-              Cargando panel coordinador...
-            </div>
-          }>
+          <React.Suspense fallback={<SharedCesaLoader title="Panel Coordinador" subtitle="Cargando" />}>
             <CoordinatorDashboard onClose={() => setShowCoordinator(false)} />
           </React.Suspense>
         </div>

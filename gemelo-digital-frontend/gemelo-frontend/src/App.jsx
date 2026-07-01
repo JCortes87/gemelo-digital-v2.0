@@ -7,6 +7,7 @@ import { I18nProvider } from "./context/I18nContext";
 import ErrorBoundary from "./components/ui/ErrorBoundary";
 import ProtectedRoute from "./components/auth/ProtectedRoute";
 import LoginScreen from "./components/auth/LoginScreen";
+import CesaLoader from "./components/ui/CesaLoader";
 import { injectStyles } from "./styles/global";
 
 // Lazy-loaded pages for code splitting
@@ -15,25 +16,9 @@ const TeacherDashboard = lazy(() => import("./pages/TeacherDashboard"));
 const StudentPortal = lazy(() => import("./pages/StudentPortal"));
 const CoordinatorDashboard = lazy(() => import("./pages/CoordinatorDashboard"));
 
-// Suspense fallback — CESA-branded animated loader
+// Suspense fallback — usa el loader CESA compartido
 function PageLoader() {
-  return (
-    <div role="status" aria-label="Cargando página" className="cesa-loader-root">
-      <div className="cesa-loader-card">
-        <div className="cesa-loader-logo-wrap">
-          <span className="cesa-loader-ring outer" aria-hidden="true" />
-          <span className="cesa-loader-ring" aria-hidden="true" />
-          <div className="cesa-loader-logo">CESA</div>
-        </div>
-        <h1 className="cesa-loader-title">Gemelo Digital</h1>
-        <div className="cesa-loader-subtitle">Cargando</div>
-        <div className="cesa-loader-dots" aria-hidden="true">
-          <span /><span /><span />
-        </div>
-        <div className="cesa-loader-bar" aria-hidden="true" />
-      </div>
-    </div>
-  );
+  return <CesaLoader subtitle="Cargando página" />;
 }
 
 function AppRoutes() {

@@ -9,6 +9,7 @@ import { useAuth } from "../context/AuthContext";
 import { apiGet } from "../utils/api";
 import { injectStyles } from "../styles/global";
 import { isStudentRole } from "../utils/roles";
+import CesaLoader from "../components/ui/CesaLoader";
 
 const StudentOverviewPanel = lazy(() => import("./StudentOverviewPanel"));
 
@@ -863,13 +864,8 @@ export default function RoleHome() {
       {/* StudentOverviewPanel overlay */}
       {overviewUserId && (
         <Suspense fallback={
-          <div style={{
-            position: "fixed", inset: 0, zIndex: 300, background: "var(--bg)",
-            display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
-            fontSize: 13, color: "var(--muted)", gap: 12,
-          }}>
-            <Loader2 size={30} style={{ animation: "rotateGlow 1s linear infinite", color: "var(--brand)" }} />
-            <div>Cargando panel del estudiante...</div>
+          <div style={{ position: "fixed", inset: 0, zIndex: 300 }}>
+            <CesaLoader title="Panel del Estudiante" subtitle="Cargando" />
           </div>
         }>
           <StudentOverviewPanel
