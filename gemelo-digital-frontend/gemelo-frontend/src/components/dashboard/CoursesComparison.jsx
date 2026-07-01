@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { BookOpen } from "lucide-react";
 import { apiGet } from "../../utils/api";
 import { COLORS, colorForPct } from "../../utils/colors";
 import { fmtPct, fmtGrade10FromPct, computeRiskFromPct } from "../../utils/helpers";
@@ -75,9 +76,11 @@ export default function CoursesComparison({ currentOrgUnitId, onSelectCourse }) 
 
   if (courses.length <= 1) {
     return (
-      <div style={{ padding: "20px 16px", textAlign: "center", color: "var(--muted)" }}>
-        <div style={{ fontSize: 24, opacity: 0.4, marginBottom: 6 }}>📚</div>
-        <div style={{ fontSize: 12 }}>No hay otros cursos para comparar.</div>
+      <div className="empty-v2" style={{ padding: "22px 16px" }}>
+        <div className="empty-v2-icon">
+          <BookOpen size={26} strokeWidth={1.8} />
+        </div>
+        <div style={{ fontSize: 12, color: "var(--muted)" }}>No hay otros cursos para comparar.</div>
       </div>
     );
   }

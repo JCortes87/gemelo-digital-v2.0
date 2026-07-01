@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useCallback, useEffect } from "react";
+import { Info, CheckCircle2, AlertTriangle, XCircle, X } from "lucide-react";
 
 const ToastContext = createContext(null);
 
@@ -41,10 +42,10 @@ export function useToast() {
 /* ── Toast Container + individual Toast ── */
 
 const TOAST_STYLES = {
-  info:    { bg: "var(--brand-light, #EBF1FF)", border: "var(--brand, #0B5FFF)", color: "var(--brand, #0B5FFF)", icon: "ℹ️" },
-  success: { bg: "var(--ok-bg, #ECFDF3)",       border: "var(--ok, #12B76A)",    color: "#1B5E20",              icon: "✅" },
-  warning: { bg: "var(--watch-bg, #FFF8ED)",     border: "var(--watch, #E8900A)", color: "#9A3412",              icon: "⚠️" },
-  error:   { bg: "var(--critical-bg, #FEF3F2)",  border: "var(--critical, #D92D20)", color: "#B42318",           icon: "❌" },
+  info:    { bg: "var(--brand-light, #EBF1FF)", border: "var(--brand, #0B5FFF)", color: "var(--brand, #0B5FFF)", Icon: Info },
+  success: { bg: "var(--ok-bg, #ECFDF3)",       border: "var(--ok, #12B76A)",    color: "#1B5E20",              Icon: CheckCircle2 },
+  warning: { bg: "var(--watch-bg, #FFF8ED)",     border: "var(--watch, #E8900A)", color: "#9A3412",              Icon: AlertTriangle },
+  error:   { bg: "var(--critical-bg, #FEF3F2)",  border: "var(--critical, #D92D20)", color: "#B42318",           Icon: XCircle },
 };
 
 function Toast({ toast, onRemove }) {
@@ -73,17 +74,18 @@ function Toast({ toast, onRemove }) {
         wordBreak: "break-word",
       }}
     >
-      <span style={{ fontSize: 16, flexShrink: 0 }}>{style.icon}</span>
+      <style.Icon size={18} strokeWidth={2.2} style={{ flexShrink: 0 }} />
       <span style={{ flex: 1 }}>{toast.message}</span>
       <button
         onClick={() => onRemove(toast.id)}
+        aria-label="Cerrar"
         style={{
           background: "none", border: "none", cursor: "pointer",
-          fontSize: 14, color: style.color, opacity: 0.6, padding: "2px 4px",
-          flexShrink: 0,
+          color: style.color, opacity: 0.6, padding: "2px 4px",
+          flexShrink: 0, display: "flex", alignItems: "center",
         }}
       >
-        ✕
+        <X size={14} strokeWidth={2.5} />
       </button>
     </div>
   );

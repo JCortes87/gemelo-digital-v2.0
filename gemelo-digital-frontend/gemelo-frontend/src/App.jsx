@@ -15,25 +15,22 @@ const TeacherDashboard = lazy(() => import("./pages/TeacherDashboard"));
 const StudentPortal = lazy(() => import("./pages/StudentPortal"));
 const CoordinatorDashboard = lazy(() => import("./pages/CoordinatorDashboard"));
 
-// Suspense fallback — lightweight loader
+// Suspense fallback — CESA-branded animated loader
 function PageLoader() {
   return (
-    <div
-      role="status"
-      aria-label="Cargando página"
-      style={{
-        minHeight: "100vh", background: "var(--bg)",
-        display: "flex", alignItems: "center", justifyContent: "center",
-        fontFamily: "'Manrope', system-ui, sans-serif",
-      }}
-    >
-      <div style={{
-        background: "var(--card)", border: "1px solid var(--border)",
-        borderRadius: 24, padding: "40px 48px", textAlign: "center",
-        boxShadow: "0 8px 32px rgba(15,24,39,0.12)",
-      }}>
-        <div style={{ fontSize: 20, fontWeight: 800, color: "var(--text)" }}>CESA · G.D</div>
-        <div style={{ fontSize: 13, color: "var(--muted)", marginTop: 4 }}>Cargando...</div>
+    <div role="status" aria-label="Cargando página" className="cesa-loader-root">
+      <div className="cesa-loader-card">
+        <div className="cesa-loader-logo-wrap">
+          <span className="cesa-loader-ring outer" aria-hidden="true" />
+          <span className="cesa-loader-ring" aria-hidden="true" />
+          <div className="cesa-loader-logo">CESA</div>
+        </div>
+        <h1 className="cesa-loader-title">Gemelo Digital</h1>
+        <div className="cesa-loader-subtitle">Cargando</div>
+        <div className="cesa-loader-dots" aria-hidden="true">
+          <span /><span /><span />
+        </div>
+        <div className="cesa-loader-bar" aria-hidden="true" />
       </div>
     </div>
   );

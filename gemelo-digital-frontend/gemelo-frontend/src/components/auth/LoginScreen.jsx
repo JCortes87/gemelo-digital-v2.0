@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
+import { Loader2, CheckCircle2 } from "lucide-react";
 import { injectStyles } from "../../styles/global";
 import { apiUrl } from "../../utils/api";
 
@@ -211,7 +212,9 @@ export default function LoginScreen({ orgUnitId }) {
         {/* ── Estado: esperando al popup ── */}
         {status === "waiting" && (
           <>
-            <div style={{ fontSize: 28, marginBottom: 12 }}>⏳</div>
+            <div style={{ marginBottom: 14, display: "flex", justifyContent: "center", color: "var(--brand)" }}>
+              <Loader2 size={30} strokeWidth={2.2} style={{ animation: "rotateGlow 1s linear infinite" }} />
+            </div>
             <h2 style={{ fontSize: 20, fontWeight: 900, color: "var(--text)", margin: "0 0 8px", letterSpacing: "-0.02em" }}>
               Autenticando…
             </h2>
@@ -235,7 +238,9 @@ export default function LoginScreen({ orgUnitId }) {
         {/* ── Estado: retry (popup cerro sin completar OAuth) ── */}
         {status === "retry" && (
           <>
-            <div style={{ fontSize: 28, marginBottom: 12 }}>✅</div>
+            <div style={{ marginBottom: 14, display: "flex", justifyContent: "center", color: "var(--ok, #12b76a)" }}>
+              <CheckCircle2 size={30} strokeWidth={2.2} />
+            </div>
             <h2 style={{ fontSize: 20, fontWeight: 900, color: "var(--text)", margin: "0 0 8px", letterSpacing: "-0.02em" }}>
               Ya iniciaste sesion en Microsoft
             </h2>

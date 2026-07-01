@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { Lightbulb, X } from "lucide-react";
 
 /**
  * ContextualTip: shows a dismissable tooltip/tip near a UI element
@@ -8,7 +9,7 @@ import React, { useState, useEffect } from "react";
  *   <ContextualTip id="first_alerts" title="Alertas inteligentes"
  *     description="Haz clic en un chip para abrir al estudiante." />
  */
-export default function ContextualTip({ id, title, description, icon = "💡", style = {} }) {
+export default function ContextualTip({ id, title, description, Icon = Lightbulb, style = {} }) {
   const storageKey = id ? `gemelo_tip_${id}` : null;
   const [visible, setVisible] = useState(() => {
     if (!storageKey || typeof localStorage === "undefined") return false;
@@ -44,7 +45,7 @@ export default function ContextualTip({ id, title, description, icon = "💡", s
         ...style,
       }}
     >
-      <span style={{ fontSize: 16, flexShrink: 0, marginTop: 1 }}>{icon}</span>
+      <Icon size={16} strokeWidth={2.2} style={{ flexShrink: 0, marginTop: 2 }} />
       <div style={{ flex: 1, minWidth: 0 }}>
         {title && <div style={{ fontWeight: 800, marginBottom: 2 }}>{title}</div>}
         {description && <div style={{ color: "var(--text)", lineHeight: 1.45 }}>{description}</div>}
@@ -56,14 +57,14 @@ export default function ContextualTip({ id, title, description, icon = "💡", s
           background: "none",
           border: "none",
           cursor: "pointer",
-          fontSize: 14,
           color: "var(--brand)",
           padding: "0 4px",
-          fontWeight: 800,
           flexShrink: 0,
+          display: "flex",
+          alignItems: "center",
         }}
       >
-        ✕
+        <X size={14} strokeWidth={2.5} />
       </button>
     </div>
   );

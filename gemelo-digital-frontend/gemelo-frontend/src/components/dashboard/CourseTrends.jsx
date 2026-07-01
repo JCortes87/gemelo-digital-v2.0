@@ -9,6 +9,7 @@ import {
   CartesianGrid,
   Legend,
 } from "recharts";
+import { TrendingUp } from "lucide-react";
 import { COLORS } from "../../utils/colors";
 
 /**
@@ -28,12 +29,14 @@ function CourseTrends({ snapshots = [] }) {
 
   if (snapshots.length < 2) {
     return (
-      <div style={{ padding: "24px 20px", textAlign: "center", color: "var(--muted)" }}>
-        <div style={{ fontSize: 28, opacity: 0.4, marginBottom: 8 }}>📈</div>
-        <div style={{ fontSize: 13, fontWeight: 700, color: "var(--muted)" }}>
+      <div className="empty-v2" style={{ padding: "28px 20px" }}>
+        <div className="empty-v2-icon">
+          <TrendingUp size={30} strokeWidth={1.8} />
+        </div>
+        <div style={{ fontSize: 14, fontWeight: 800, color: "var(--text)", marginBottom: 6 }}>
           Aún no hay suficientes datos para graficar tendencias
         </div>
-        <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 4 }}>
+        <div style={{ fontSize: 12, color: "var(--muted)" }}>
           Vuelve mañana — se captura un snapshot automático cada día.
         </div>
       </div>
@@ -41,7 +44,7 @@ function CourseTrends({ snapshots = [] }) {
   }
 
   return (
-    <div>
+    <div className="chart-appear">
       <div style={{ fontSize: 11, color: "var(--muted)", marginBottom: 10 }}>
         Evolución de los últimos <strong>{snapshots.length}</strong> días. Los snapshots se
         capturan automáticamente al abrir el dashboard cada día.
@@ -65,22 +68,28 @@ function CourseTrends({ snapshots = [] }) {
               type="monotone"
               dataKey="Nota promedio"
               stroke={COLORS.brand}
-              strokeWidth={2}
+              strokeWidth={2.5}
               dot={{ r: 3 }}
+              animationDuration={900}
+              animationEasing="ease-out"
             />
             <Line
               type="monotone"
               dataKey="% en riesgo"
               stroke={COLORS.critical}
-              strokeWidth={2}
+              strokeWidth={2.5}
               dot={{ r: 3 }}
+              animationDuration={900}
+              animationEasing="ease-out"
             />
             <Line
               type="monotone"
               dataKey="Cobertura"
               stroke={COLORS.ok}
-              strokeWidth={2}
+              strokeWidth={2.5}
               dot={{ r: 3 }}
+              animationDuration={900}
+              animationEasing="ease-out"
             />
           </LineChart>
         </ResponsiveContainer>

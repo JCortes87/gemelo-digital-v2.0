@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from "react";
+import { Search, ChevronRight } from "lucide-react";
 
 /**
  * Command palette modal (like Ctrl+K in VSCode/Linear).
@@ -127,7 +128,7 @@ export default function CommandPalette({ open, onClose, commands = [] }) {
           padding: "14px 18px",
           borderBottom: "1px solid var(--border)",
         }}>
-          <span style={{ fontSize: 18 }}>🔍</span>
+          <Search size={18} strokeWidth={2.2} style={{ color: "var(--muted)" }} />
           <input
             ref={inputRef}
             type="text"
@@ -186,7 +187,13 @@ export default function CommandPalette({ open, onClose, commands = [] }) {
                         color: isActive ? "var(--brand)" : "var(--text)",
                       }}
                     >
-                      <span style={{ fontSize: 16, flexShrink: 0 }}>{cmd.icon || "▸"}</span>
+                      <span style={{ fontSize: 16, flexShrink: 0, display: "flex", alignItems: "center" }}>
+                        {cmd.icon
+                          ? (typeof cmd.icon === "function"
+                              ? <cmd.icon size={16} strokeWidth={2.2} />
+                              : cmd.icon)
+                          : <ChevronRight size={16} strokeWidth={2.4} />}
+                      </span>
                       <span style={{ flex: 1, fontWeight: 600 }}>{cmd.label}</span>
                       {cmd.hint && (
                         <span style={{ fontSize: 11, color: "var(--muted)", fontWeight: 500 }}>

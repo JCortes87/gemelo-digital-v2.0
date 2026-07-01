@@ -1,4 +1,5 @@
 import React from "react";
+import { AlertTriangle } from "lucide-react";
 
 export default class ErrorBoundary extends React.Component {
   constructor(props) {
@@ -29,7 +30,9 @@ export default class ErrorBoundary extends React.Component {
           textAlign: "center",
           fontFamily: "'Manrope', system-ui, sans-serif",
         }}>
-          <div style={{ fontSize: 32, marginBottom: 8 }}>⚠️</div>
+          <div style={{ marginBottom: 10, display: "flex", justifyContent: "center", color: "var(--critical, #d92d20)" }}>
+            <AlertTriangle size={30} strokeWidth={2} />
+          </div>
           <div style={{ fontSize: 14, fontWeight: 800, color: "var(--text, #0F1827)", marginBottom: 6 }}>
             {sectionName ? `Error en ${sectionName}` : "Algo salió mal"}
           </div>

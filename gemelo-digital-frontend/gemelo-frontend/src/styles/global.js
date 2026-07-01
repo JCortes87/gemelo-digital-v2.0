@@ -394,6 +394,242 @@ const GLOBAL_STYLES = `
   @keyframes voicePulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(217,45,32,0.3); } 50% { box-shadow: 0 0 0 6px rgba(217,45,32,0); } }
   @keyframes skeletonShimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
 
+  /* ==== NEW ANIMATIONS FOR VISUAL REDESIGN ==== */
+  @keyframes floatIn { from { opacity: 0; transform: translateY(20px) scale(0.96); } to { opacity: 1; transform: translateY(0) scale(1); } }
+  @keyframes scaleIn { from { opacity: 0; transform: scale(0.9); } to { opacity: 1; transform: scale(1); } }
+  @keyframes slideUpFade { from { opacity: 0; transform: translateY(30px); } to { opacity: 1; transform: translateY(0); } }
+  @keyframes shimmerCard { 0% { background-position: -1000px 0; } 100% { background-position: 1000px 0; } }
+  @keyframes gradientShift { 0%, 100% { background-position: 0% 50%; } 50% { background-position: 100% 50%; } }
+  @keyframes iconBounce { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-3px); } }
+  @keyframes chartDraw { from { stroke-dashoffset: 1000; } to { stroke-dashoffset: 0; } }
+  @keyframes rotateGlow { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+
+  /* ══ PageLoader animations (CESA-branded transition loader) ══ */
+  @keyframes cesaLogoBreath {
+    0%, 100% { transform: scale(1); box-shadow: 0 12px 40px -12px rgba(11, 95, 255, 0.55), 0 0 0 0 rgba(11, 95, 255, 0.35); }
+    50%      { transform: scale(1.06); box-shadow: 0 16px 48px -12px rgba(11, 95, 255, 0.65), 0 0 0 14px rgba(11, 95, 255, 0); }
+  }
+  @keyframes cesaOrbit { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+  @keyframes cesaOrbitReverse { from { transform: rotate(360deg); } to { transform: rotate(0deg); } }
+  @keyframes cesaShimmerText { 0% { background-position: -200% 0; } 100% { background-position: 200% 0; } }
+  @keyframes cesaDotRise {
+    0%, 80%, 100% { transform: translateY(0); opacity: 0.35; }
+    40%           { transform: translateY(-8px); opacity: 1; }
+  }
+  @keyframes cesaBarProgress {
+    0%   { transform: translateX(-100%); }
+    50%  { transform: translateX(0%); }
+    100% { transform: translateX(100%); }
+  }
+  @keyframes cesaCardIn {
+    from { opacity: 0; transform: translateY(12px) scale(0.96); }
+    to   { opacity: 1; transform: translateY(0) scale(1); }
+  }
+  .cesa-loader-root {
+    min-height: 100vh; background: var(--bg);
+    display: flex; align-items: center; justify-content: center;
+    font-family: 'Manrope', system-ui, sans-serif;
+    position: relative; overflow: hidden;
+  }
+  .cesa-loader-root::before,
+  .cesa-loader-root::after {
+    content: ""; position: absolute; border-radius: 50%; pointer-events: none;
+    filter: blur(80px); opacity: 0.35;
+  }
+  .cesa-loader-root::before {
+    width: 420px; height: 420px; top: -140px; left: -140px;
+    background: radial-gradient(circle, rgba(11, 95, 255, 0.55), transparent 70%);
+    animation: cesaLogoBreath 4.5s ease-in-out infinite;
+  }
+  .cesa-loader-root::after {
+    width: 380px; height: 380px; bottom: -120px; right: -120px;
+    background: radial-gradient(circle, rgba(96, 165, 250, 0.45), transparent 70%);
+    animation: cesaLogoBreath 5.2s ease-in-out infinite 0.6s;
+  }
+  .cesa-loader-card {
+    position: relative; z-index: 1;
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: 24px; padding: 44px 56px 32px; text-align: center;
+    box-shadow: 0 24px 60px -20px rgba(15, 24, 39, 0.18), 0 8px 24px -8px rgba(15, 24, 39, 0.08);
+    animation: cesaCardIn 0.5s cubic-bezier(0.16, 1, 0.3, 1) both;
+    min-width: 300px;
+  }
+  .cesa-loader-logo-wrap {
+    position: relative; width: 96px; height: 96px; margin: 0 auto 22px;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .cesa-loader-logo {
+    width: 68px; height: 68px; border-radius: 18px;
+    background: linear-gradient(135deg, var(--brand) 0%, #1e40af 100%);
+    display: flex; align-items: center; justify-content: center;
+    color: #fff; font-size: 15px; font-weight: 900; letter-spacing: 0.06em;
+    animation: cesaLogoBreath 2.2s ease-in-out infinite;
+    position: relative; z-index: 2;
+  }
+  .cesa-loader-ring {
+    position: absolute; inset: 0;
+    border-radius: 50%; border: 2px solid transparent;
+    border-top-color: var(--brand); border-right-color: var(--brand);
+    opacity: 0.7;
+    animation: cesaOrbit 1.6s linear infinite;
+  }
+  .cesa-loader-ring.outer {
+    inset: -8px;
+    border-top-color: transparent; border-right-color: transparent;
+    border-bottom-color: #60a5fa; border-left-color: #60a5fa;
+    opacity: 0.5;
+    animation: cesaOrbitReverse 2.4s linear infinite;
+  }
+  .cesa-loader-title {
+    font-size: 22px; font-weight: 900; letter-spacing: -0.02em;
+    background: linear-gradient(90deg, var(--text) 0%, var(--brand) 40%, var(--text) 80%);
+    background-size: 200% 100%;
+    -webkit-background-clip: text; background-clip: text;
+    -webkit-text-fill-color: transparent; color: transparent;
+    animation: cesaShimmerText 2.6s linear infinite;
+    margin: 0 0 6px;
+  }
+  .cesa-loader-subtitle {
+    font-size: 11px; font-weight: 700; color: var(--muted);
+    text-transform: uppercase; letter-spacing: 0.16em;
+    margin: 0 0 18px;
+  }
+  .cesa-loader-dots { display: inline-flex; gap: 6px; margin-bottom: 16px; }
+  .cesa-loader-dots span {
+    width: 7px; height: 7px; border-radius: 50%;
+    background: var(--brand);
+    animation: cesaDotRise 1.2s ease-in-out infinite;
+  }
+  .cesa-loader-dots span:nth-child(2) { animation-delay: 0.15s; background: #3b82f6; }
+  .cesa-loader-dots span:nth-child(3) { animation-delay: 0.30s; background: #60a5fa; }
+  .cesa-loader-bar {
+    position: relative; height: 3px; width: 100%;
+    background: var(--bg); border-radius: 99px; overflow: hidden;
+  }
+  .cesa-loader-bar::after {
+    content: ""; position: absolute; inset: 0;
+    background: linear-gradient(90deg, transparent 0%, var(--brand) 35%, #60a5fa 65%, transparent 100%);
+    animation: cesaBarProgress 1.6s ease-in-out infinite;
+  }
+  @media (max-width: 480px) {
+    .cesa-loader-card { padding: 36px 32px 28px; min-width: 260px; }
+    .cesa-loader-logo-wrap { width: 84px; height: 84px; }
+    .cesa-loader-logo { width: 58px; height: 58px; font-size: 13px; }
+    .cesa-loader-title { font-size: 20px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .cesa-loader-logo, .cesa-loader-ring, .cesa-loader-ring.outer,
+    .cesa-loader-title, .cesa-loader-dots span, .cesa-loader-bar::after,
+    .cesa-loader-root::before, .cesa-loader-root::after { animation: none !important; }
+  }
+
+  /* Stagger animation classes — add to a container with .stagger-children, direct children fade in sequentially */
+  .stagger-children > * { opacity: 0; animation: floatIn 0.5s cubic-bezier(0.16, 1, 0.3, 1) both; }
+  .stagger-children > *:nth-child(1) { animation-delay: 0.02s; }
+  .stagger-children > *:nth-child(2) { animation-delay: 0.06s; }
+  .stagger-children > *:nth-child(3) { animation-delay: 0.10s; }
+  .stagger-children > *:nth-child(4) { animation-delay: 0.14s; }
+  .stagger-children > *:nth-child(5) { animation-delay: 0.18s; }
+  .stagger-children > *:nth-child(6) { animation-delay: 0.22s; }
+  .stagger-children > *:nth-child(7) { animation-delay: 0.26s; }
+  .stagger-children > *:nth-child(8) { animation-delay: 0.30s; }
+  .stagger-children > *:nth-child(9) { animation-delay: 0.34s; }
+  .stagger-children > *:nth-child(n+10) { animation-delay: 0.38s; }
+
+  /* Course card grid — responsive */
+  .course-grid { display: grid; gap: 14px; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); }
+  @media (max-width: 640px) { .course-grid { grid-template-columns: 1fr; gap: 10px; } }
+
+  /* Visual course card */
+  .course-card-v2 {
+    position: relative; display: flex; flex-direction: column; padding: 16px;
+    border-radius: 14px; border: 1.5px solid var(--border); background: var(--card);
+    cursor: pointer; text-align: left; font-family: var(--font); width: 100%;
+    transition: transform 0.22s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.22s ease, border-color 0.22s ease;
+    overflow: hidden; min-height: 128px;
+  }
+  .course-card-v2::before {
+    content: ""; position: absolute; top: 0; left: 0; right: 0; height: 3px;
+    background: linear-gradient(90deg, var(--brand) 0%, var(--brand-2, var(--brand)) 100%);
+    transform: scaleX(0); transform-origin: left; transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  .course-card-v2:hover { transform: translateY(-3px); box-shadow: 0 12px 28px -12px rgba(11, 95, 255, 0.28), var(--shadow-md); border-color: var(--brand); }
+  .course-card-v2:hover::before { transform: scaleX(1); }
+  .course-card-v2.role-student::before { background: linear-gradient(90deg, var(--ok) 0%, #22c55e 100%); }
+  .course-card-v2.role-student:hover { border-color: var(--ok); box-shadow: 0 12px 28px -12px rgba(18, 183, 106, 0.28), var(--shadow-md); }
+  .course-card-v2.inactive { opacity: 0.65; }
+
+  .course-card-icon {
+    width: 44px; height: 44px; border-radius: 12px; display: flex; align-items: center; justify-content: center;
+    background: linear-gradient(135deg, var(--brand-light) 0%, rgba(11, 95, 255, 0.08) 100%);
+    color: var(--brand); margin-bottom: 12px; transition: transform 0.28s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  .course-card-v2:hover .course-card-icon { transform: scale(1.08) rotate(-4deg); }
+  .course-card-v2.role-student .course-card-icon {
+    background: linear-gradient(135deg, var(--ok-bg) 0%, rgba(18, 183, 106, 0.08) 100%);
+    color: var(--ok);
+  }
+
+  .course-card-title {
+    font-size: 14px; font-weight: 800; color: var(--text); line-height: 1.35;
+    margin-bottom: 6px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+    overflow: hidden; text-overflow: ellipsis;
+  }
+  .course-card-meta { display: flex; align-items: center; gap: 6px; margin-top: auto; flex-wrap: wrap; }
+  .course-card-id { font-size: 11px; color: var(--muted); font-family: var(--mono, monospace); font-weight: 600; }
+  .course-card-arrow {
+    position: absolute; bottom: 14px; right: 14px; color: var(--brand); opacity: 0;
+    transform: translateX(-6px); transition: opacity 0.2s ease, transform 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+    display: flex;
+  }
+  .course-card-v2:hover .course-card-arrow { opacity: 1; transform: translateX(0); }
+  .course-card-v2.role-student .course-card-arrow { color: var(--ok); }
+
+  /* Section header v2 (icon + title + count) */
+  .section-header-v2 { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
+  .section-header-icon-wrap {
+    width: 40px; height: 40px; border-radius: 12px; display: flex; align-items: center; justify-content: center;
+    background: linear-gradient(135deg, var(--brand-light) 0%, rgba(11, 95, 255, 0.06) 100%);
+    color: var(--brand); flex-shrink: 0;
+  }
+  .section-header-icon-wrap.student { background: linear-gradient(135deg, var(--ok-bg) 0%, rgba(18, 183, 106, 0.06) 100%); color: var(--ok); }
+  .section-header-icon-wrap.warn { background: linear-gradient(135deg, rgba(255, 170, 0, 0.14) 0%, rgba(255, 170, 0, 0.04) 100%); color: #f59e0b; }
+  .section-header-title { font-size: 15px; font-weight: 800; color: var(--text); letter-spacing: -0.01em; }
+  .section-header-count { font-size: 11px; color: var(--muted); font-weight: 700; margin-top: 2px; }
+
+  /* Panel card (RoleHome sections) */
+  .home-panel {
+    background: var(--card); border: 1px solid var(--border); border-radius: 20px;
+    padding: 22px; box-shadow: var(--shadow);
+    animation: floatIn 0.4s cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+  .home-panel.superadmin-brand { border-color: rgba(11, 95, 255, 0.35); }
+  .home-panel.superadmin-warn { border-color: rgba(255, 170, 0, 0.35); }
+
+  /* Icon chip inline */
+  .icon-chip { display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; }
+
+  /* Chart wrapper animation */
+  .chart-appear { animation: slideUpFade 0.45s cubic-bezier(0.16, 1, 0.3, 1) both; }
+
+  /* Loading dots */
+  .loading-dots { display: inline-flex; gap: 4px; align-items: center; }
+  .loading-dots span { width: 8px; height: 8px; border-radius: 50%; background: var(--brand); animation: pulse 1.2s ease-in-out infinite; }
+  .loading-dots span:nth-child(2) { animation-delay: 0.15s; }
+  .loading-dots span:nth-child(3) { animation-delay: 0.3s; }
+
+  /* Empty state v2 */
+  .empty-v2 {
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    padding: 40px 20px; text-align: center; color: var(--muted);
+    border: 1.5px dashed var(--border); border-radius: 16px; background: var(--bg);
+    animation: fadeIn 0.35s ease both;
+  }
+  .empty-v2-icon {
+    width: 56px; height: 56px; border-radius: 16px; display: flex; align-items: center; justify-content: center;
+    background: var(--brand-light); color: var(--brand); margin-bottom: 12px; opacity: 0.75;
+  }
+
   .voice-hint { display: inline-flex; align-items: center; gap: 6px; padding: 5px 10px; border-radius: 10px; border: 1px dashed var(--border); background: var(--bg); color: var(--muted); font-size: 11px; font-weight: 600; flex-wrap: wrap; }
 
   .main-tabs { display: flex; gap: 4px; margin-bottom: 16px; border-bottom: 1px solid var(--border); padding-bottom: 0; }

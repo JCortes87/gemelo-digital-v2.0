@@ -1,4 +1,9 @@
 import React, { useMemo, useState } from "react";
+import {
+  Lightbulb, AlertTriangle, AlertOctagon, HelpCircle, TrendingDown, Clock,
+  CalendarClock, Trophy, BarChart3, Target, Siren, Compass, Puzzle, Telescope,
+  ChevronDown, ChevronUp,
+} from "lucide-react";
 import { computeRiskFromPct } from "../../utils/helpers";
 
 /**
@@ -25,14 +30,14 @@ function normalizeBackendSeverity(s) {
 function normalizeBackendAlert(a) {
   if (!a || typeof a !== "object") return null;
   const severity = normalizeBackendSeverity(a.severity);
-  // Icons by content type
+  // Icons by content type (Lucide component references)
   const icons = {
-    cobertura: "📊",
-    desempeno: "🎯",
-    riesgo: "🚨",
-    macro: "🧭",
-    ra: "🧩",
-    default: "🔭",
+    cobertura: BarChart3,
+    desempeno: Target,
+    riesgo: Siren,
+    macro: Compass,
+    ra: Puzzle,
+    default: Telescope,
   };
   const t = String(a.title || a.id || "").toLowerCase();
   let icon = icons.default;
@@ -88,7 +93,7 @@ function SmartAlerts({
       out.push({
         id: "failing",
         severity: "critical",
-        icon: "🔴",
+        icon: AlertOctagon,
         title: `${failing.length} estudiante${failing.length !== 1 ? "s" : ""} con nota reprobatoria`,
         message: `Nota actual menor a 5.0. Requieren intervención urgente.`,
         students: failing.slice(0, 5).map((s) => ({ id: s.userId, name: s.displayName })),
@@ -104,7 +109,7 @@ function SmartAlerts({
       out.push({
         id: "overdue",
         severity: "critical",
-        icon: "⚠️",
+        icon: AlertTriangle,
         title: `${withOverdue.length} estudiante${withOverdue.length !== 1 ? "s" : ""} con ítems vencidos sin entregar`,
         message: "Más del 10% del peso del curso vencido sin registro.",
         students: withOverdue.slice(0, 5).map((s) => ({ id: s.userId, name: s.displayName })),
@@ -120,7 +125,7 @@ function SmartAlerts({
       out.push({
         id: "no_grade",
         severity: "warning",
-        icon: "❓",
+        icon: HelpCircle,
         title: `${noGrade.length} estudiante${noGrade.length !== 1 ? "s" : ""} sin nota registrada`,
         message: "Pueden ser abandonos. Verifica su actividad reciente.",
         students: noGrade.slice(0, 5).map((s) => ({ id: s.userId, name: s.displayName })),
@@ -134,7 +139,7 @@ function SmartAlerts({
       out.push({
         id: "low_cov",
         severity: "warning",
-        icon: "📉",
+        icon: TrendingDown,
         title: "Cobertura evaluativa baja",
         message: `Solo ${avgCoverage.toFixed(1)}% del curso está calificado. Revisa si hay ítems sin publicar.`,
         students: null,
@@ -149,7 +154,7 @@ function SmartAlerts({
       out.push({
         id: "pending_grade",
         severity: "warning",
-        icon: "⏳",
+        icon: Clock,
         title: `${pendingGradeBacklog.length} estudiante${pendingGradeBacklog.length !== 1 ? "s" : ""} esperando calificación`,
         message: "Hay entregas recibidas pendientes por calificar. Prioriza el cierre evaluativo.",
         students: pendingGradeBacklog.slice(0, 5).map((s) => ({ id: s.userId, name: s.displayName })),
@@ -162,7 +167,7 @@ function SmartAlerts({
       out.push({
         id: "content_rhythm",
         severity: "warning",
-        icon: "📅",
+        icon: CalendarClock,
         title: "Ritmo de publicación de contenidos bajo",
         message: `Has publicado ${contentKpis.createdCount}/${contentKpis.minExpected} contenidos esperados (${Math.round(contentKpis.progressRatio * 100)}%). Considera publicar más material.`,
         students: null,
@@ -177,7 +182,7 @@ function SmartAlerts({
       out.push({
         id: "high_performers",
         severity: "info",
-        icon: "🏆",
+        icon: Trophy,
         title: `${high.length} estudiante${high.length !== 1 ? "s" : ""} con excelente desempeño`,
         message: "Nota ≥ 8.5. Considera retos adicionales para mantener su motivación.",
         students: high.slice(0, 5).map((s) => ({ id: s.userId, name: s.displayName })),
@@ -233,7 +238,14 @@ function SmartAlerts({
         onMouseEnter={(e) => { e.currentTarget.style.background = "var(--brand-light)"; }}
         onMouseLeave={(e) => { e.currentTarget.style.background = "var(--bg)"; }}
       >
-        <span style={{ fontSize: 18 }}>💡</span>
+        <div style={{
+          width: 34, height: 34, borderRadius: 10,
+          background: "linear-gradient(135deg, var(--brand-light) 0%, rgba(11, 95, 255, 0.06) 100%)",
+          color: "var(--brand)", display: "flex", alignItems: "center", justifyContent: "center",
+          flexShrink: 0,
+        }}>
+          <Lightbulb size={18} strokeWidth={2.2} />
+        </div>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
             <span style={{ fontSize: 13, fontWeight: 800, color: "var(--text)" }}>
@@ -266,17 +278,19 @@ function SmartAlerts({
         <button
           className="btn"
           onClick={(e) => { e.stopPropagation(); setOpen((v) => !v); }}
-          style={{ padding: "6px 12px", fontSize: 12, flexShrink: 0 }}
+          style={{ padding: "6px 10px", fontSize: 12, flexShrink: 0, display: "inline-flex", alignItems: "center", gap: 4 }}
         >
-          {open ? "Ocultar ▴" : "Ver detalle ▾"}
+          {open ? "Ocultar" : "Ver detalle"}
+          {open ? <ChevronUp size={14} strokeWidth={2.4} /> : <ChevronDown size={14} strokeWidth={2.4} />}
         </button>
       </div>
 
       {/* Expanded details */}
       {open && (
-        <div style={{ display: "flex", flexDirection: "column" }}>
+        <div className="stagger-children" style={{ display: "flex", flexDirection: "column" }}>
           {alerts.map((alert) => {
             const s = severityStyles[alert.severity] || severityStyles.info;
+            const AlertIcon = typeof alert.icon === "function" ? alert.icon : null;
             return (
               <div
                 key={alert.id}
@@ -288,7 +302,15 @@ function SmartAlerts({
                   background: s.bg,
                 }}
               >
-                <span style={{ fontSize: 18, flexShrink: 0 }}>{alert.icon}</span>
+                <div style={{
+                  width: 32, height: 32, borderRadius: 10,
+                  background: "rgba(255,255,255,0.7)", color: s.color,
+                  display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
+                }}>
+                  {AlertIcon
+                    ? <AlertIcon size={18} strokeWidth={2.2} />
+                    : <span style={{ fontSize: 16 }}>{alert.icon}</span>}
+                </div>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontSize: 13, fontWeight: 800, color: s.color, marginBottom: 2 }}>
                     {alert.title}
