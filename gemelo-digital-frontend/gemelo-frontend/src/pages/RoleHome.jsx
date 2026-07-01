@@ -856,7 +856,7 @@ export default function RoleHome() {
         {/* Footer */}
         <div style={{ textAlign: "center", padding: "32px 0 8px", fontSize: 11, color: "var(--muted)" }}>
           <div style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-            <Sparkles size={12} strokeWidth={2} /> CESA · Gemelo Digital V.260701
+            <Sparkles size={12} strokeWidth={2} /> CESA · Gemelo Digital 2026.7.1
           </div>
         </div>
       </main>

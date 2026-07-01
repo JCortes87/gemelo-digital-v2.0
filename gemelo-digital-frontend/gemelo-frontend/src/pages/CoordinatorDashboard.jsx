@@ -519,7 +519,7 @@ export default function CoordinatorDashboard({ onClose }) {
         )}
 
         <div style={{ textAlign: "center", padding: "24px 0", fontSize: 11, color: "var(--muted)" }}>
-          CESA · G.D V.260428 · Panel Coordinador
+          CESA · G.D 2026.7.1 · Panel Coordinador
         </div>
       </main>
     </div>

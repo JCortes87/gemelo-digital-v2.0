@@ -253,7 +253,7 @@ export function exportCourseReport(studentRows, courseInfo, overview) {
   </table>
 
   <div class="footer">
-    CESA · G.D V.260428 · Reporte generado automáticamente
+    CESA · G.D 2026.7.1 · Reporte generado automáticamente
   </div>
 
   <script>

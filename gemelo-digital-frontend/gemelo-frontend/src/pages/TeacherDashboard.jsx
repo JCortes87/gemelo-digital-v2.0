@@ -1515,60 +1515,32 @@ const ONBOARDING_STEPS = [
 // Novedades recientes de la plataforma
 const UPDATES_STEPS = [
   {
-    id: "rebrand_gd",
-    title: "Nueva identidad: G.D",
-    icon: "🆔",
-    tag: "Nuevo",
-    desc: "La plataforma adopta una identidad más compacta: 'Gemelo Digital' ahora se muestra como 'G.D' en toda la interfaz, narraciones de voz y reportes PDF. Versión V.260428 (28-04-2026).",
-  },
-  {
-    id: "pdf_informe",
-    title: "Descargar Informe PDF Institucional",
-    icon: "📄",
-    tag: "Nuevo",
-    desc: "El botón 'Descargar informe' en la retroalimentación de evidencias genera un PDF institucional CESA con la entrega, la nota semaforizada (cuadro de color al lado del nombre de la entrega), la rúbrica utilizada, el documento subido y el comentario general del docente.",
-  },
-  {
-    id: "fix_priority_names",
-    title: "Estudiantes prioritarios: nombres correctos",
-    icon: "🔧",
+    id: "quick_wins_ux",
+    title: "Quick wins UX/UI",
+    icon: "✨",
     tag: "Mejorado",
-    desc: "Se corrigió la regresión donde los estudiantes prioritarios mostraban su número de ID en lugar del nombre. Ahora los snapshots sincronizan también la lista de clase para resolver siempre el nombre legible.",
+    desc: "Anillos de foco visibles en toda la app, contraste reforzado en textos secundarios, roles ARIA en gráficas y loader unificado. Versión 2026.7.1.",
   },
   {
-    id: "coordinator",
-    title: "Panel Coordinador",
-    icon: "🏛️",
-    tag: "Nuevo",
-    desc: "Coordinadores y administradores tienen un panel dedicado para visualizar el desempeño de todos los cursos de un período académico: notas, cobertura y riesgo por asignatura.",
-  },
-  {
-    id: "student_overview",
-    title: "Rendimiento General del Estudiante",
-    icon: "📊",
-    tag: "SuperAdmin",
-    desc: "Los SuperAdministradores pueden ver el desempeño completo de cualquier estudiante a través de todas sus asignaturas: notas, cobertura, riesgo y entregas por curso.",
-  },
-  {
-    id: "my_summary",
-    title: "Mi Resumen (Portal Estudiante)",
-    icon: "📋",
-    tag: "Nuevo",
-    desc: "Los estudiantes ahora tienen un botón '📊 Mi resumen' en su portal que consolida su desempeño en todos los cursos activos del semestre en una sola vista.",
-  },
-  {
-    id: "calendar_status",
-    title: "Calendario con Estado de Entregas",
-    icon: "📅",
+    id: "medium_ux",
+    title: "Persistencia y accesibilidad",
+    icon: "🧭",
     tag: "Mejorado",
-    desc: "El calendario ahora muestra el estado individual de cada actividad para el estudiante seleccionado: ✓ verde para entregadas y calificadas, ✗ rojo para vencidas sin entrega.",
+    desc: "Las pestañas del docente quedan en la URL (deep-link y recuperación tras recarga), notificaciones con live-regions, y sidebar con navegación semántica accesible.",
   },
   {
-    id: "superadmin",
-    title: "Herramientas SuperAdmin",
-    icon: "🔑",
-    tag: "SuperAdmin",
-    desc: "Los SuperAdministradores pueden suplantar usuarios (docentes o estudiantes), buscar cursos por período académico con selector de semestres, y consultar reportes cruzados.",
+    id: "structural_ux",
+    title: "Skip-link y recuperación de errores",
+    icon: "🛟",
+    tag: "Nuevo",
+    desc: "Enlace 'Saltar al contenido' para lectores de pantalla, respeto global a prefers-reduced-motion y ErrorBoundary con opciones de reintentar, volver al inicio o copiar detalles para soporte.",
+  },
+  {
+    id: "design_system",
+    title: "Design system unificado",
+    icon: "🎨",
+    tag: "Nuevo",
+    desc: "Componentes reutilizables Dialog, StatusBadge y Button; tokens de tipografía en :root; paleta coherente de gráficas para modo claro y oscuro; sistema de severidades compartido en toasts y badges.",
   },
 ];
 
@@ -1824,7 +1796,7 @@ function LoginScreen({ orgUnitId }) {
               G.D
             </div>
             <div style={{ fontSize: 11, fontWeight: 600, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.08em" }}>
-              Vista Docente · V.260428
+              Vista Docente · 2026.7.1
             </div>
           </div>
         </div>
@@ -1888,7 +1860,7 @@ function LoginScreen({ orgUnitId }) {
 }
 
 // Loader unificado — delega en el componente compartido CesaLoader
-function CesaLoader({ title = "Gemelo Digital", subtitle = "Cargando tablero" }) {
+function CesaLoader({ title = "G.D", subtitle = "Cargando tablero" }) {
   return (
     <SharedCesaLoader
       title={title}
@@ -2691,7 +2663,7 @@ function VoiceAssistant({ studentRows, overview, raDashboard, courseInfo, thresh
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <div style={{ width: 10, height: 10, borderRadius: "50%", background: "var(--brand)", boxShadow: "0 0 8px var(--brand)", animation: aiStatus !== "idle" ? "pulse 1.4s ease infinite" : "none" }} />
           <div style={{ fontSize: 14, fontWeight: 800, color: "var(--text)" }}>Asistente IA Académica</div>
-          <span className="tag" style={{ background: "var(--brand-light)", color: "var(--brand)", fontSize: 10 }}>V.260428 · 16/04/2026</span>
+          <span className="tag" style={{ background: "var(--brand-light)", color: "var(--brand)", fontSize: 10 }}>2026.7.1 · 16/04/2026</span>
         </div>
         <div style={{ fontSize: 12, color: "var(--muted)" }}>
           {studentRows.length} estudiantes · {courseInfo?.Name || "Curso activo"}
@@ -3508,7 +3480,7 @@ function AppSidebar({ activeTab, setActiveTab, currentCourseName, mobileOpen, on
           )}
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "6px 2px" }}>
             <span style={{ fontSize: 9, fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.08em" }}>G.D</span>
-            <span style={{ fontSize: 9, fontWeight: 700, color: "var(--muted)", background: "var(--bg)", padding: "2px 7px", borderRadius: 99, border: "1px solid var(--border)" }}>V.260428</span>
+            <span style={{ fontSize: 9, fontWeight: 700, color: "var(--muted)", background: "var(--bg)", padding: "2px 7px", borderRadius: 99, border: "1px solid var(--border)" }}>2026.7.1</span>
           </div>
         </div>
       </aside>
