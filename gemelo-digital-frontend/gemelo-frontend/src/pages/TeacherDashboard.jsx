@@ -4487,22 +4487,33 @@ export default function TeacherDashboard() {
           const payload = loRes.value;
           setLearningOutcomesPayload(payload);
 
-          const sets = Array.isArray(payload?.outcomeSets) ? payload.outcomeSets : [];
+          // Recorre recursivamente cualquier arbol de outcomes de Brightspace
+          // (algunos cursos, como 41634, definen los RAs como subOutcomes
+          // anidados; el walker plano anterior los pasaba por alto).
           const map = {};
-          for (const set of sets) {
-            for (const o of set?.Outcomes || []) {
-              const desc = String(o?.Description || "").trim();
-              const m = desc.match(/^([A-Za-z0-9_.-]+)\s*-\s*(.+)$/);
+          const walk = (node) => {
+            if (!node) return;
+            if (Array.isArray(node)) { node.forEach(walk); return; }
+            if (typeof node !== "object") return;
+
+            const desc = String(node.Description ?? node.description ?? "").trim();
+            if (desc) {
+              const m = desc.match(/^([A-Za-z0-9_.-]+)\s*[-–—:]\s*(.+)$/);
               if (m) {
                 const code = String(m[1]).toUpperCase();
-                map[code] = {
-                  code,
-                  description: desc,
-                  title: String(m[2] || "").trim(),
-                };
+                if (!map[code]) {
+                  map[code] = { code, description: desc, title: String(m[2] || "").trim() };
+                }
               }
             }
-          }
+            const children =
+              node.Outcomes || node.outcomes ||
+              node.SubOutcomes || node.subOutcomes ||
+              node.ChildOutcomes || node.childOutcomes ||
+              node.Children || node.children;
+            if (children) walk(children);
+          };
+          walk(payload?.outcomeSets ?? payload);
           setOutcomesMap(map);
         }
 
@@ -6287,9 +6298,13 @@ const contentKpis = useMemo(() => {
               {!learningOutcomesData.length && (
                 <div className="empty-state">
                   <span className="empty-state-icon">🎯</span>
-                  <span style={{ fontSize: 12 }}>Sin datos de RA</span>
+                  <span style={{ fontSize: 12 }}>Sin datos de RA para este curso</span>
+                  <span style={{ fontSize: 11, color: "var(--muted-strong)", textAlign: "center", lineHeight: 1.5, maxWidth: 340, marginTop: 4 }}>
+                    Los Resultados de Aprendizaje necesitan estar registrados en Brightspace <strong>y</strong> mapeados a las rúbricas del curso en la configuración del gemelo.
+                    Si el curso ya los tiene definidos en Brightspace, solicita al equipo que registre la configuración para este <code>orgUnitId</code>.
+                  </span>
                   {Number(avgCov ?? 0) > 0 && (
-                    <span style={{ fontSize: 11, color: "var(--watch)", fontWeight: 700, textAlign: "center", padding: "4px 8px", borderRadius: 8, background: "var(--watch-bg)", marginTop: 4 }}>
+                    <span style={{ fontSize: 11, color: "var(--watch)", fontWeight: 700, textAlign: "center", padding: "4px 8px", borderRadius: 8, background: "var(--watch-bg)", marginTop: 6 }}>
                       ⚠️ Hay evidencias calificadas pero sin rúbricas vinculadas a RA
                     </span>
                   )}
