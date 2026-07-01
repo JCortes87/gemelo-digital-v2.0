@@ -40,6 +40,73 @@ export function colorForPct(pct, thresholds) {
   return COLORS.ok;
 }
 
+/**
+ * Paleta unificada para gráficas Recharts.
+ *
+ * Devuelve un set coherente de colores según el modo (light/dark) que respeta
+ * la marca CESA y mantiene contraste WCAG AA sobre el fondo de card. Uso:
+ *
+ *   const palette = chartColorScheme(darkMode);
+ *   <Line stroke={palette.series[0]} />
+ *   <ReferenceLine stroke={palette.axis} />
+ *
+ * `series` es un array de 8 colores rotatorios; `qualitative` cubre categorías
+ * fijas frecuentes (positivo, negativo, neutro, benchmark). Los colores de
+ * ejes / grid usan tokens visuales del sistema.
+ */
+export function chartColorScheme(darkMode = false) {
+  if (darkMode) {
+    return {
+      series: [
+        "#60A5FA", // brand
+        "#34D399", // ok / verde
+        "#FBBF24", // watch / ambar
+        "#F87171", // critical / rojo
+        "#A78BFA", // púrpura
+        "#22D3EE", // cian
+        "#F472B6", // rosa
+        "#FB923C", // naranja
+      ],
+      qualitative: {
+        positive: "#34D399",
+        negative: "#F87171",
+        neutral: "#94A3BB",
+        benchmark: "#A78BFA",
+        highlight: "#FBBF24",
+      },
+      axis: "#94A3BB",
+      grid: "rgba(148,163,187,0.18)",
+      tooltipBg: "#1A2332",
+      tooltipBorder: "#2D3B4F",
+      tooltipText: "#F1F5FB",
+    };
+  }
+  return {
+    series: [
+      "#0B5FFF", // brand
+      "#12B76A", // ok
+      "#E8900A", // watch
+      "#D92D20", // critical
+      "#7C3AED", // púrpura
+      "#0891B2", // cian
+      "#DB2777", // rosa
+      "#EA580C", // naranja
+    ],
+    qualitative: {
+      positive: "#12B76A",
+      negative: "#D92D20",
+      neutral: "#8B96A8",
+      benchmark: "#7C3AED",
+      highlight: "#E8900A",
+    },
+    axis: "#5A6580",
+    grid: "rgba(90,101,128,0.15)",
+    tooltipBg: "#FFFFFF",
+    tooltipBorder: "#E4E8EF",
+    tooltipText: "#0F1827",
+  };
+}
+
 export function colorForLearningOutcome(m, thresholds) {
   const st = normStatus(m?.status);
   if (st === "critico") return COLORS.critical;

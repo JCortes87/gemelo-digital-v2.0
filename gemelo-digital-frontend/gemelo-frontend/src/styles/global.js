@@ -53,6 +53,23 @@ const GLOBAL_STYLES = `
     --pending: #8B96A8;
     --pending-bg: #F1F3F7;
     --pending-border: #D1D8E4;
+    /* Typography scale — opt-in tokens (progressive migration) */
+    --text-xs: 10px;
+    --text-sm: 11px;
+    --text-base: 12px;
+    --text-md: 13px;
+    --text-lg: 15px;
+    --text-xl: 18px;
+    --text-2xl: 22px;
+    --text-3xl: 28px;
+    --leading-tight: 1.25;
+    --leading-normal: 1.5;
+    --leading-relaxed: 1.65;
+    --font-weight-regular: 500;
+    --font-weight-medium: 600;
+    --font-weight-semibold: 700;
+    --font-weight-bold: 800;
+    --font-weight-black: 900;
   }
 
   .dark {
@@ -146,19 +163,6 @@ const GLOBAL_STYLES = `
   .dark .scenario-card.scenario-improve { background: var(--ok-bg); border-color: var(--ok-border); }
   .dark .empty-state { background: var(--card); border-color: var(--border); }
   .dark .qc-flag { background: var(--bg); border-color: var(--border); }
-
-  /* ── Compact / Dense Mode ── */
-  .compact body { font-size: 13px; }
-  .compact .app-content { padding: 16px 20px; }
-  .compact .kpi-card { padding: 14px; border-radius: 14px; }
-  .compact .sidebar-nav-item { padding: 7px 10px; font-size: 12px; }
-  .compact .sidebar-logo { padding: 16px 16px 14px; }
-  .compact .app-topbar { height: 48px; }
-  .compact .app-main { padding-top: 48px; }
-  .compact table th, .compact table td { padding: 6px 8px !important; font-size: 11px !important; }
-  .compact .badge { padding: 2px 8px; font-size: 9px; }
-  .compact .tag { padding: 2px 7px; font-size: 9px; }
-  .compact .btn { padding: 6px 11px; font-size: 12px; }
 
   /* ── Print Mode: Optimize for printing a student profile ── */
   @media print {

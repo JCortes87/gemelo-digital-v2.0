@@ -33,7 +33,6 @@ import EvidenceReports from "../components/dashboard/EvidenceReports";
 const CoordinatorDashboard = React.lazy(() => import("./CoordinatorDashboard"));
 const StudentPortal = React.lazy(() => import("./StudentPortal"));
 import useStudentNotes from "../hooks/useStudentNotes";
-import useCompactMode from "../hooks/useCompactMode";
 import useKeyboardShortcuts from "../hooks/useKeyboardShortcuts";
 import useCourseSnapshots from "../hooks/useCourseSnapshots";
 import useStudentChat from "../hooks/useStudentChat";
@@ -3522,7 +3521,6 @@ function AppSidebar({ activeTab, setActiveTab, currentCourseName, mobileOpen, on
 // ──────────────────────────────────────────────
 function AppTopbar({
   isMobile, sidebarOpen, onOpenSidebar, darkMode, setDarkMode,
-  compact, toggleCompact,
   locale, toggleLocale,
   orgUnitInput, setOrgUnitInput, setOrgUnitId,
   handleOpenCoursePanel,
@@ -3725,15 +3723,6 @@ function AppTopbar({
           style={{ fontSize: 10, fontWeight: 800 }}
         >
           {locale === "es" ? "ES" : "EN"}
-        </button>
-        <button
-          className="topbar-icon-btn"
-          onClick={toggleCompact}
-          title={compact ? "Modo normal" : "Modo compacto (más densidad)"}
-          aria-label={compact ? "Desactivar modo compacto" : "Activar modo compacto"}
-          style={compact ? { borderColor: "var(--brand)", color: "var(--brand)" } : undefined}
-        >
-          {compact ? "◱" : "◰"}
         </button>
         <button
           className="topbar-icon-btn"
@@ -4116,8 +4105,6 @@ export default function TeacherDashboard() {
     setShowCoursePanel(false);
   }, []);
 
-  // Compact mode
-  const { compact, toggleCompact } = useCompactMode();
 
   // Command palette (Ctrl+K)
   const [paletteOpen, setPaletteOpen] = useState(false);
@@ -5381,7 +5368,6 @@ const contentKpis = useMemo(() => {
     cmds.push({ id: "act_courses", group: "Acciones", icon: "📚", label: "Cambiar de curso", action: () => handleOpenCoursePanel() });
     cmds.push({ id: "act_refresh", group: "Acciones", icon: "⟳", label: "Refrescar datos", hint: "R", action: handleRefresh });
     cmds.push({ id: "act_print", group: "Acciones", icon: "🖨", label: "Imprimir vista actual", action: () => window.print() });
-    cmds.push({ id: "act_compact", group: "Acciones", icon: compact ? "◱" : "◰", label: compact ? "Desactivar modo compacto" : "Activar modo compacto", action: toggleCompact });
     cmds.push({ id: "act_dark", group: "Acciones", icon: darkMode ? "☀️" : "🌙", label: darkMode ? "Modo claro" : "Modo oscuro", action: () => setDarkMode(v => !v) });
     cmds.push({ id: "act_group", group: "Acciones", icon: "📑", label: groupByRisk ? "Desagrupar tabla" : "Agrupar tabla por riesgo", action: () => setGroupByRisk(v => !v) });
     // Filters
@@ -5404,7 +5390,7 @@ const contentKpis = useMemo(() => {
     });
     return cmds;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [studentRows, compact, darkMode, groupByRisk]);
+  }, [studentRows, darkMode, groupByRisk]);
 
   // Global keyboard shortcuts
   useKeyboardShortcuts([
@@ -5418,7 +5404,7 @@ const contentKpis = useMemo(() => {
     { keys: "c", handler: handleOpenCoursePanel, description: "Cambiar curso" },
     { keys: "?", handler: () => setPaletteOpen(true), description: "Ayuda" },
     { keys: "shift+/", handler: () => setPaletteOpen(true), description: "Ayuda" },
-  ], [compact, darkMode, groupByRisk]);
+  ], [darkMode, groupByRisk]);
 
   const makeSort = (key) => ({
     active: sortKey === key,
@@ -5687,8 +5673,6 @@ const contentKpis = useMemo(() => {
         onOpenSidebar={() => setSidebarOpen((v) => !v)}
         darkMode={darkMode}
         setDarkMode={setDarkMode}
-        compact={compact}
-        toggleCompact={toggleCompact}
         orgUnitInput={orgUnitInput}
         setOrgUnitInput={setOrgUnitInput}
         setOrgUnitId={setOrgUnitId}
