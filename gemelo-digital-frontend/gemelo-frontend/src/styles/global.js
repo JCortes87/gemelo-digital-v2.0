@@ -420,7 +420,7 @@ const GLOBAL_STYLES = `
   .ra-scroll { max-height: 260px; padding-right: 4px; }
   .ra-priority-scroll { max-height: 380px; padding-right: 4px; overflow-y: auto; }
 
-  .empty-state { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; padding: 40px 20px; color: var(--muted); border: 1px dashed var(--border); border-radius: var(--radius); background: var(--card); }
+  .empty-state { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; padding: 40px 20px; color: var(--muted-strong); border: 1px dashed var(--border); border-radius: var(--radius); background: var(--bg2); text-align: center; }
   .empty-state-icon { font-size: 36px; opacity: 0.35; }
   .empty-state > span:nth-child(2) { font-size: 14px; font-weight: 700; color: var(--muted); }
 

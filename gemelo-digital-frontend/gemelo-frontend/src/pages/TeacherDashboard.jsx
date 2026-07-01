@@ -1,6 +1,6 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import ReactDOM from "react-dom";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import {
   ResponsiveContainer,
   BarChart,
@@ -3454,9 +3454,13 @@ function AppSidebar({ activeTab, setActiveTab, currentCourseName, mobileOpen, on
   return (
     <>
       {mobileOpen && (
-        <div className="sidebar-backdrop" onClick={onClose} />
+        <div className="sidebar-backdrop" onClick={onClose} aria-hidden="true" />
       )}
-      <aside className={`app-sidebar${mobileOpen ? " mobile-open" : ""}`}>
+      <aside
+        id="app-sidebar"
+        aria-label="Navegación principal"
+        className={`app-sidebar${mobileOpen ? " mobile-open" : ""}`}
+      >
         {/* Logo */}
         <div className="sidebar-logo">
           <div className="sidebar-logo-icon" style={{ fontSize: 12, letterSpacing: "0.01em" }}>CESA</div>
@@ -3506,7 +3510,7 @@ function AppSidebar({ activeTab, setActiveTab, currentCourseName, mobileOpen, on
 // AppTopbar — Fixed top bar
 // ──────────────────────────────────────────────
 function AppTopbar({
-  isMobile, onOpenSidebar, darkMode, setDarkMode,
+  isMobile, sidebarOpen, onOpenSidebar, darkMode, setDarkMode,
   compact, toggleCompact,
   locale, toggleLocale,
   orgUnitInput, setOrgUnitInput, setOrgUnitId,
@@ -3523,9 +3527,13 @@ function AppTopbar({
       <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
         {isMobile && (
           <button
+            type="button"
             className="topbar-icon-btn"
             onClick={onOpenSidebar}
-            title="Menú"
+            title={sidebarOpen ? "Cerrar menú" : "Abrir menú"}
+            aria-label={sidebarOpen ? "Cerrar menú de navegación" : "Abrir menú de navegación"}
+            aria-expanded={sidebarOpen ? "true" : "false"}
+            aria-controls="app-sidebar"
             style={{ fontSize: 18 }}
           >
             ☰
@@ -4167,8 +4175,19 @@ export default function TeacherDashboard() {
 
   const [drawerTab, setDrawerTab] = useState("resumen");
 
-  // ── Main navigation tabs ──────────────────────────────
-  const [activeTab, setActiveTab] = useState("dashboard"); // "dashboard" | "assistant"
+  // ── Main navigation tabs (persisted in URL) ──────────
+  const VALID_TABS = ["dashboard", "routes", "predictions", "evidences", "assistant", "help"];
+  const [searchParams, setSearchParams] = useSearchParams();
+  const tabFromUrl = searchParams.get("tab");
+  const activeTab = VALID_TABS.includes(tabFromUrl) ? tabFromUrl : "dashboard";
+  const setActiveTab = useCallback((next) => {
+    setSearchParams((prev) => {
+      const p = new URLSearchParams(prev);
+      if (!next || next === "dashboard") p.delete("tab");
+      else p.set("tab", next);
+      return p;
+    }, { replace: false });
+  }, [setSearchParams]);
   const [sidebarOpen, setSidebarOpen] = useState(false); // mobile sidebar
 
   // ── Course panel ───────────────────────────────────────
@@ -5653,7 +5672,8 @@ const contentKpis = useMemo(() => {
       {/* ── Topbar ── */}
       <AppTopbar
         isMobile={isMobile}
-        onOpenSidebar={() => setSidebarOpen(true)}
+        sidebarOpen={sidebarOpen}
+        onOpenSidebar={() => setSidebarOpen((v) => !v)}
         darkMode={darkMode}
         setDarkMode={setDarkMode}
         compact={compact}

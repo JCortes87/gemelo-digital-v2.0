@@ -58,8 +58,11 @@ function Toast({ toast, onRemove }) {
     }
   }, [toast.id, toast.duration, onRemove]);
 
+  const isUrgent = toast.type === "error" || toast.type === "warning";
+
   return (
     <div
+      role={isUrgent ? "alert" : "status"}
       style={{
         display: "flex", alignItems: "center", gap: 10,
         padding: "10px 16px", borderRadius: 12,
@@ -92,14 +95,18 @@ function Toast({ toast, onRemove }) {
 }
 
 function ToastContainer({ toasts, onRemove }) {
-  if (!toasts.length) return null;
-
+  // Always mounted so screen readers can pick up the live region even when
+  // the first notification arrives. Non-visible while empty.
   return (
     <div
+      role="region"
+      aria-label="Notificaciones"
+      aria-live="polite"
+      aria-atomic="false"
       style={{
         position: "fixed", top: 16, right: 16, zIndex: 99999,
         display: "flex", flexDirection: "column", gap: 8,
-        pointerEvents: "auto",
+        pointerEvents: toasts.length ? "auto" : "none",
       }}
     >
       {toasts.map((t) => (
