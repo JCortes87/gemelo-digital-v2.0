@@ -4492,21 +4492,47 @@ export default function TeacherDashboard() {
           const payload = loRes.value;
           setLearningOutcomesPayload(payload);
 
-          const sets = Array.isArray(payload?.outcomeSets) ? payload.outcomeSets : [];
+          // Preferimos el índice ya parseado por el backend (auto-mapper).
+          // Si no vino (backend viejo), lo derivamos localmente del árbol
+          // de outcomeSets con un walker recursivo tolerante a nesting.
           const map = {};
-          for (const set of sets) {
-            for (const o of set?.Outcomes || []) {
-              const desc = String(o?.Description || "").trim();
-              const m = desc.match(/^([A-Za-z0-9_.-]+)\s*-\s*(.+)$/);
-              if (m) {
-                const code = String(m[1]).toUpperCase();
-                map[code] = {
-                  code,
-                  description: desc,
-                  title: String(m[2] || "").trim(),
-                };
-              }
+          const backendMap = payload?.outcomeCodeMap;
+          if (backendMap && typeof backendMap === "object") {
+            for (const [code, info] of Object.entries(backendMap)) {
+              const upper = String(code).toUpperCase();
+              map[upper] = {
+                code: upper,
+                description: info?.description || "",
+                title: info?.title || "",
+              };
             }
+          } else {
+            const walk = (node) => {
+              if (!node) return;
+              if (Array.isArray(node)) { node.forEach(walk); return; }
+              if (typeof node !== "object") return;
+              const desc = String(node.Description ?? node.description ?? "").trim();
+              if (desc) {
+                const m = desc.match(/^([A-Za-z0-9_.-]+)\s*[-–—:]\s*(.+)$/);
+                if (m) {
+                  const code = String(m[1]).toUpperCase();
+                  if (!map[code]) {
+                    map[code] = {
+                      code,
+                      description: desc,
+                      title: String(m[2] || "").trim(),
+                    };
+                  }
+                }
+              }
+              const children =
+                node.Outcomes || node.outcomes ||
+                node.SubOutcomes || node.subOutcomes ||
+                node.ChildOutcomes || node.childOutcomes ||
+                node.Children || node.children;
+              if (children) walk(children);
+            };
+            walk(payload?.outcomeSets ?? payload);
           }
           setOutcomesMap(map);
         }
@@ -4869,6 +4895,26 @@ export default function TeacherDashboard() {
         totalStudents: Number(r.totalStudents ?? 0),
       };
     });
+  }
+
+  // Fallback: no vino raDashboard.ras pero sí hay outcomes. Preferimos
+  // usar los códigos reales (Z1O1DOR3, A1O3EAR2…) que trae el backend
+  // en outcomeCodeMap → outcomesMap; sólo caemos a RA1..RAN si no hay
+  // códigos detectables.
+  const outcomeEntries = Object.values(outcomesMap || {}).filter((o) => o?.code);
+  if (outcomeEntries.length) {
+    const w = 100 / outcomeEntries.length;
+    return outcomeEntries.map((o) => ({
+      code: String(o.code).toUpperCase(),
+      name: o.title || o.description || o.code,
+      description: o.description || o.title || o.code,
+      avgPct: 0,
+      weightPct: w,
+      status: null,
+      coveragePct: 0,
+      studentsWithData: 0,
+      totalStudents: 0,
+    }));
   }
 
   if (descList.length) {
@@ -7195,6 +7241,37 @@ const contentKpis = useMemo(() => {
                   const drawerCorte = drawerEvidences.filter(e => e?.isCorte === true);
                   const drawerNonCorte = drawerEvidences.filter(e => e?.isCorte !== true);
                   const drawerOverdue = drawerNonCorte.filter(e => e?.status === "overdue_unscored" || (e?.isOverdue && e?.scorePct == null));
+                  // Mapa evidenceKey → [códigos RA] derivado de las unidades
+                  // del estudiante. u.evidence[].folderId/gradeObjectId nos
+                  // conecta cada evidencia con las RAs a las que aporta.
+                  const evidenceRasMap = (() => {
+                    const m = new Map();
+                    for (const u of (drawerUnits || [])) {
+                      const code = u?.code;
+                      if (!code) continue;
+                      for (const ev of (u.evidence || [])) {
+                        const keys = [ev?.folderId, ev?.gradeObjectId, ev?.rubricId]
+                          .filter((k) => k != null)
+                          .map(String);
+                        for (const k of keys) {
+                          if (!m.has(k)) m.set(k, new Set());
+                          m.get(k).add(code);
+                        }
+                      }
+                    }
+                    return m;
+                  })();
+                  const raCodesFor = (e) => {
+                    const cands = [e?.gradeObjectId, e?.folderId, e?.rubricId]
+                      .filter((k) => k != null)
+                      .map(String);
+                    const set = new Set();
+                    for (const k of cands) {
+                      const v = evidenceRasMap.get(k);
+                      if (v) v.forEach((c) => set.add(c));
+                    }
+                    return Array.from(set);
+                  };
                   const fmtDue = (iso) => {
                     if (!iso) return "—";
                     try { const d = new Date(iso); return Number.isNaN(d.getTime()) ? "—" : d.toLocaleDateString("es-CO", { year: "numeric", month: "short", day: "2-digit" }); } catch { return "—"; }
@@ -7361,13 +7438,16 @@ const contentKpis = useMemo(() => {
                             <thead>
                               <tr style={{ borderBottom: "2px solid var(--border)" }}>
                                 <th style={{ padding: "8px 10px", fontSize: 11, fontWeight: 700, textTransform: "uppercase", color: "var(--muted)", textAlign: "left" }}>Evidencia</th>
+                                <th style={{ padding: "8px 10px", fontSize: 11, fontWeight: 700, textTransform: "uppercase", color: "var(--muted)", textAlign: "left" }}>RAs</th>
                                 <th style={{ padding: "8px 10px", fontSize: 11, fontWeight: 700, textTransform: "uppercase", color: "var(--muted)", textAlign: "right" }}>Peso</th>
                                 <th style={{ padding: "8px 10px", fontSize: 11, fontWeight: 700, textTransform: "uppercase", color: "var(--muted)", textAlign: "right" }}>Nota</th>
                                 <th style={{ padding: "8px 10px", fontSize: 11, fontWeight: 700, textTransform: "uppercase", color: "var(--muted)", textAlign: "center" }}>Estado</th>
                               </tr>
                             </thead>
                             <tbody>
-                              {drawerNonCorte.map((e, i) => (
+                              {drawerNonCorte.map((e, i) => {
+                                const evRas = raCodesFor(e);
+                                return (
                                 <tr key={i} style={{ borderBottom: "1px solid var(--border)" }}>
                                   <td style={{ padding: "8px 10px", fontSize: 12, fontWeight: 600, color: "var(--text)" }}>
                                     {e.name || `Ítem ${e.gradeObjectId}`}
@@ -7375,6 +7455,27 @@ const contentKpis = useMemo(() => {
                                       <div style={{ fontSize: 10, color: "var(--muted)", marginTop: 2 }}>
                                         🗓 {fmtDue(e.dueDate)}
                                       </div>
+                                    )}
+                                  </td>
+                                  <td style={{ padding: "8px 10px" }}>
+                                    {evRas.length > 0 ? (
+                                      <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+                                        {evRas.map((code) => {
+                                          const info = outcomesMap?.[code];
+                                          return (
+                                            <span
+                                              key={code}
+                                              className="tag"
+                                              title={info?.title || info?.description || code}
+                                              style={{ fontSize: 10, padding: "2px 6px" }}
+                                            >
+                                              {code}
+                                            </span>
+                                          );
+                                        })}
+                                      </div>
+                                    ) : (
+                                      <span style={{ fontSize: 10, color: "var(--muted)" }}>—</span>
                                     )}
                                   </td>
                                   <td style={{ padding: "8px 10px", textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--muted)" }}>
@@ -7387,7 +7488,8 @@ const contentKpis = useMemo(() => {
                                     <StatusBadge status={e.status || "pending"} />
                                   </td>
                                 </tr>
-                              ))}
+                                );
+                              })}
                             </tbody>
                           </table>
                         </div>

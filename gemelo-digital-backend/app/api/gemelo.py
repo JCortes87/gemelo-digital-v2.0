@@ -603,8 +603,28 @@ async def gemelo_learning_outcomes(
     svc: GemeloService = Depends(get_service),
 ):
     try:
+        from app.services.auto_lo_config import build_auto_lo_config
+
         data = await svc.bs.list_outcome_sets(orgUnitId)
-        return {"orgUnitId": orgUnitId, "outcomeSets": data}
+        auto = {}
+        try:
+            auto = await build_auto_lo_config(svc.bs, orgUnitId)
+        except Exception:
+            auto = {}
+        return {
+            "orgUnitId": orgUnitId,
+            "outcomeSets": data,
+            "outcomeCodeMap": auto.get("outcomeCodeMap") or {},
+            "rubricToOutcomeCodes": {
+                rid: (info or {}).get("outcomeCodes", [])
+                for rid, info in (
+                    (auto.get("rubricsModel") or {}).get("rubrics") or {}
+                ).items()
+            },
+            "activityToOutcomes": auto.get("activityToOutcomes") or {},
+            "hasRubricAlignments": bool(auto.get("hasRubricAlignments")),
+            "hasQuestionOnly": bool(auto.get("hasQuestionOnly")),
+        }
     except Exception as e:
         _http500(e, "gemelo_learning_outcomes", orgUnitId=orgUnitId)
 

@@ -374,6 +374,19 @@ class BrightspaceClient:
         )
         return await self._request_json("GET", url)
 
+    async def list_lo_alignments(self, orgUnitId: int) -> JsonType:
+        """
+        Devuelve los alignments (outcome → activity) del curso.
+        Cada item trae al menos:
+          - OutcomeId (uuid)
+          - Activity: { Type, LmsObjectId, RubricId (nullable), QuestionId (nullable) }
+        """
+        url = (
+            f"{self.base_url}/d2l/api/le/{self.lo_version}/{orgUnitId}"
+            f"/lo/alignments/"
+        )
+        return await self._request_json("GET", url)
+
 
 # ── Dependency FastAPI ────────────────────────────────────────────────────────
 def get_brightspace_client(request: Request) -> BrightspaceClient:
