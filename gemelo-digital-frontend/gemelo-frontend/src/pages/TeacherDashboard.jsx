@@ -37,7 +37,7 @@ import useKeyboardShortcuts from "../hooks/useKeyboardShortcuts";
 import useCourseSnapshots from "../hooks/useCourseSnapshots";
 import useStudentChat from "../hooks/useStudentChat";
 import { exportStudentsCsv, exportCourseReport, STUDENT_CSV_COLUMNS } from "../utils/export";
-import { apiUrl, apiGet, mapLimit, API_BASE_URL } from "../utils/api";
+import { apiUrl, apiGet, apiPost, mapLimit, API_BASE_URL } from "../utils/api";
 import { sanitizeHtml } from "../utils/sanitize";
 import { elSpeak, elStop, elListen } from "../utils/speech";
 import { COLORS, STATUS_CONFIG, colorForRisk, colorForPct, colorForLearningOutcome } from "../utils/colors";
@@ -1512,43 +1512,44 @@ const ONBOARDING_STEPS = [
   },
 ];
 
-// Novedades recientes de la plataforma
-const UPDATES_STEPS = [
-  {
-    id: "quick_wins_ux",
-    title: "Quick wins UX/UI",
-    icon: "✨",
-    tag: "Mejorado",
-    desc: "Anillos de foco visibles en toda la app, contraste reforzado en textos secundarios, roles ARIA en gráficas y loader unificado. Versión 2026.7.1.",
-  },
-  {
-    id: "medium_ux",
-    title: "Persistencia y accesibilidad",
-    icon: "🧭",
-    tag: "Mejorado",
-    desc: "Las pestañas del docente quedan en la URL (deep-link y recuperación tras recarga), notificaciones con live-regions, y sidebar con navegación semántica accesible.",
-  },
-  {
-    id: "structural_ux",
-    title: "Skip-link y recuperación de errores",
-    icon: "🛟",
-    tag: "Nuevo",
-    desc: "Enlace 'Saltar al contenido' para lectores de pantalla, respeto global a prefers-reduced-motion y ErrorBoundary con opciones de reintentar, volver al inicio o copiar detalles para soporte.",
-  },
-  {
-    id: "design_system",
-    title: "Design system unificado",
-    icon: "🎨",
-    tag: "Nuevo",
-    desc: "Componentes reutilizables Dialog, StatusBadge y Button; tokens de tipografía en :root; paleta coherente de gráficas para modo claro y oscuro; sistema de severidades compartido en toasts y badges.",
-  },
-];
+// Colores por tipo de anuncio del administrador
+const ANN_TAG_COLORS = {
+  "Nuevo": "#16a34a",
+  "Anuncio": "var(--brand)",
+  "Actualización": "#0891b2",
+  "Mejorado": "var(--brand)",
+  "Importante": "#dc2626",
+  "SuperAdmin": "#7c3aed",
+};
 
-function UpdatesModal({ onClose }) {
-  const [step, setStep] = React.useState(0);
-  const current = UPDATES_STEPS[step];
-  const isLast = step === UPDATES_STEPS.length - 1;
-  const TAG_COLORS = { "Nuevo": "#16a34a", "Mejorado": "var(--brand)", "SuperAdmin": "#7c3aed" };
+function _fmtAnnDate(ts) {
+  try {
+    return new Date(ts).toLocaleString("es-CO", {
+      day: "2-digit", month: "short", year: "numeric",
+      hour: "2-digit", minute: "2-digit",
+    });
+  } catch {
+    return "";
+  }
+}
+
+// Feed in-app de anuncios/actualizaciones publicados por el administrador.
+function AnnouncementsModal({ onClose }) {
+  const [items, setItems] = React.useState(null); // null = cargando
+  const [error, setError] = React.useState(null);
+
+  React.useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const data = await apiGet("/gemelo/announcements?limit=50");
+        if (alive) setItems(Array.isArray(data?.items) ? data.items : []);
+      } catch (e) {
+        if (alive) { setItems([]); setError("No se pudieron cargar las novedades."); }
+      }
+    })();
+    return () => { alive = false; };
+  }, []);
 
   return (
     <div style={{
@@ -1560,74 +1561,78 @@ function UpdatesModal({ onClose }) {
     }}>
       <div style={{
         background: "var(--card)", borderRadius: 20,
-        padding: "36px 40px", maxWidth: 500, width: "100%",
+        padding: "28px 30px", maxWidth: 540, width: "100%",
+        maxHeight: "82vh", display: "flex", flexDirection: "column",
         boxShadow: "0 24px 80px rgba(0,0,0,0.3)",
         position: "relative",
       }}>
         <button
           onClick={onClose}
+          aria-label="Cerrar"
           style={{ position: "absolute", top: 14, right: 14, background: "none", border: "none", fontSize: 18, cursor: "pointer", color: "var(--muted)", padding: 4, lineHeight: 1 }}
         >✕</button>
 
-        <div style={{ textAlign: "center", marginBottom: 20 }}>
+        <div style={{ textAlign: "center", marginBottom: 18 }}>
           <span style={{ fontSize: 11, fontWeight: 800, color: "var(--brand)", textTransform: "uppercase", letterSpacing: "0.1em" }}>
             🆕 Novedades · G.D
           </span>
         </div>
 
-        <div style={{ display: "flex", gap: 6, marginBottom: 24, justifyContent: "center" }}>
-          {UPDATES_STEPS.map((_, i) => (
-            <div key={i} onClick={() => setStep(i)} style={{
-              width: i === step ? 22 : 8, height: 8, borderRadius: 99,
-              background: i === step ? "var(--brand)" : i < step ? "#16a34a" : "var(--border)",
-              transition: "all 0.3s ease", cursor: "pointer",
-            }} />
-          ))}
-        </div>
-
-        <div style={{ textAlign: "center", fontSize: 44, marginBottom: 12, lineHeight: 1 }}>
-          {current.icon}
-        </div>
-
-        <div style={{ textAlign: "center", marginBottom: 10 }}>
-          <span style={{
-            display: "inline-block",
-            fontSize: 10, fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.08em",
-            padding: "3px 10px", borderRadius: 99,
-            background: (TAG_COLORS[current.tag] || "var(--brand)") + "1a",
-            color: TAG_COLORS[current.tag] || "var(--brand)",
-            border: "1px solid " + (TAG_COLORS[current.tag] || "var(--brand)") + "40",
-          }}>
-            {current.tag}
-          </span>
-        </div>
-
-        <h2 style={{ fontSize: 21, fontWeight: 900, color: "var(--text)", textAlign: "center", margin: "0 0 12px", letterSpacing: "-0.02em" }}>
-          {current.title}
-        </h2>
-
-        <p style={{ fontSize: 14, color: "var(--muted)", lineHeight: 1.65, textAlign: "center", margin: "0 0 24px" }}>
-          {current.desc}
-        </p>
-
-        <div style={{ fontSize: 11, color: "var(--muted)", textAlign: "center", marginBottom: 16, fontWeight: 600 }}>
-          {step + 1} de {UPDATES_STEPS.length}
-        </div>
-
-        <div style={{ display: "flex", gap: 10 }}>
-          {step > 0 && (
-            <button
-              onClick={() => setStep(s => s - 1)}
-              style={{ flex: 1, padding: "11px 0", borderRadius: 10, border: "1px solid var(--border)", background: "transparent", fontSize: 13, fontWeight: 700, color: "var(--muted)", cursor: "pointer" }}
-            >← Anterior</button>
+        <div style={{ overflowY: "auto", flex: 1, display: "flex", flexDirection: "column", gap: 12 }}>
+          {items === null && (
+            <div style={{ textAlign: "center", color: "var(--muted)", fontSize: 13, padding: "40px 0" }}>
+              Cargando novedades…
+            </div>
           )}
-          <button
-            onClick={() => isLast ? onClose() : setStep(s => s + 1)}
-            style={{ flex: 2, padding: "11px 0", borderRadius: 10, border: "none", background: "var(--brand)", color: "#fff", fontSize: 13, fontWeight: 800, cursor: "pointer", boxShadow: "0 4px 14px rgba(11,95,255,0.3)" }}
-          >
-            {isLast ? "¡Entendido! ✓" : "Siguiente →"}
-          </button>
+
+          {items !== null && items.length === 0 && (
+            <div style={{ textAlign: "center", color: "var(--muted)", fontSize: 13, padding: "40px 20px" }}>
+              <div style={{ fontSize: 40, marginBottom: 10 }}>📭</div>
+              {error || "No hay novedades por ahora. Aquí verás las actualizaciones y anuncios del administrador."}
+            </div>
+          )}
+
+          {items !== null && items.map((a) => {
+            const color = ANN_TAG_COLORS[a.tag] || "var(--brand)";
+            return (
+              <div key={a.id} style={{
+                border: "1px solid var(--border)", borderRadius: 12,
+                padding: "14px 16px", background: "var(--bg)",
+              }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6, flexWrap: "wrap" }}>
+                  <span style={{
+                    fontSize: 10, fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.06em",
+                    padding: "3px 9px", borderRadius: 99,
+                    background: color + "1a", color, border: "1px solid " + color + "40",
+                  }}>
+                    {a.tag || "Anuncio"}
+                  </span>
+                  <span style={{ fontSize: 11, color: "var(--muted)", marginLeft: "auto" }}>
+                    {_fmtAnnDate(a.ts)}
+                  </span>
+                </div>
+                <h3 style={{ fontSize: 15, fontWeight: 900, color: "var(--text)", margin: "0 0 6px", letterSpacing: "-0.01em" }}>
+                  {a.subject}
+                </h3>
+                <p style={{ fontSize: 13.5, color: "var(--muted)", lineHeight: 1.6, margin: 0, whiteSpace: "pre-wrap" }}>
+                  {a.message}
+                </p>
+                {a.author && (
+                  <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 8, fontWeight: 600 }}>
+                    — {a.author}
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </div>
+
+        <button
+          onClick={onClose}
+          style={{ marginTop: 18, padding: "11px 0", borderRadius: 10, border: "none", background: "var(--brand)", color: "#fff", fontSize: 13, fontWeight: 800, cursor: "pointer", boxShadow: "0 4px 14px rgba(11,95,255,0.3)" }}
+        >
+          Entendido ✓
+        </button>
       </div>
     </div>
   );
@@ -1796,7 +1801,7 @@ function LoginScreen({ orgUnitId }) {
               G.D
             </div>
             <div style={{ fontSize: 11, fontWeight: 600, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.08em" }}>
-              Vista Docente · 2026.7.1
+              Vista Docente · 2026.7.3
             </div>
           </div>
         </div>
@@ -2663,7 +2668,7 @@ function VoiceAssistant({ studentRows, overview, raDashboard, courseInfo, thresh
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <div style={{ width: 10, height: 10, borderRadius: "50%", background: "var(--brand)", boxShadow: "0 0 8px var(--brand)", animation: aiStatus !== "idle" ? "pulse 1.4s ease infinite" : "none" }} />
           <div style={{ fontSize: 14, fontWeight: 800, color: "var(--text)" }}>Asistente IA Académica</div>
-          <span className="tag" style={{ background: "var(--brand-light)", color: "var(--brand)", fontSize: 10 }}>2026.7.1 · 16/04/2026</span>
+          <span className="tag" style={{ background: "var(--brand-light)", color: "var(--brand)", fontSize: 10 }}>2026.7.3 · 16/04/2026</span>
         </div>
         <div style={{ fontSize: 12, color: "var(--muted)" }}>
           {studentRows.length} estudiantes · {courseInfo?.Name || "Curso activo"}
@@ -3480,7 +3485,7 @@ function AppSidebar({ activeTab, setActiveTab, currentCourseName, mobileOpen, on
           )}
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "6px 2px" }}>
             <span style={{ fontSize: 9, fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.08em" }}>G.D</span>
-            <span style={{ fontSize: 9, fontWeight: 700, color: "var(--muted)", background: "var(--bg)", padding: "2px 7px", borderRadius: 99, border: "1px solid var(--border)" }}>2026.7.1</span>
+            <span style={{ fontSize: 9, fontWeight: 700, color: "var(--muted)", background: "var(--bg)", padding: "2px 7px", borderRadius: 99, border: "1px solid var(--border)" }}>2026.7.3</span>
           </div>
         </div>
       </aside>
@@ -3750,11 +3755,225 @@ function AppTopbar({
 }
 
 // ──────────────────────────────────────────────
+// BugReportModal — reporte de errores al administrador
+// ──────────────────────────────────────────────
+// El correo del administrador que recibe los reportes de error.
+const BUG_REPORT_EMAIL = "desarrolloprofesoral@cesa.edu.co";
+
+function BugReportModal({ onClose }) {
+  const [title, setTitle] = React.useState("");
+  const [desc, setDesc] = React.useState("");
+  const [severity, setSeverity] = React.useState("media");
+  const [sent, setSent] = React.useState(false);
+  const [sending, setSending] = React.useState(false);
+  const [delivered, setDelivered] = React.useState(false); // true si el backend lo envió por correo
+  const [copied, setCopied] = React.useState(false);
+
+  const SEVERITIES = [
+    { value: "baja", label: "Baja — algo menor" },
+    { value: "media", label: "Media — molesta pero puedo seguir" },
+    { value: "alta", label: "Alta — no puedo continuar" },
+  ];
+
+  const contextObj = () => ({
+    url: window.location.href,
+    fecha: new Date().toLocaleString("es-CO"),
+    navegador: navigator.userAgent,
+    pantalla: `${window.innerWidth}x${window.innerHeight}`,
+  });
+
+  const buildContext = () =>
+    Object.entries(contextObj()).map(([k, v]) => `${k}: ${v}`).join("\n");
+
+  const buildBody = () =>
+    `Descripción del error:\n${desc.trim()}\n\nSeveridad: ${severity.toUpperCase()}\n\n──────────\nContexto técnico (no borrar):\n${buildContext()}`;
+
+  const canSend = desc.trim().length > 0 && !sending;
+
+  // Intenta enviar por el backend (SMTP). Si el backend no tiene SMTP
+  // configurado o falla, cae a abrir el cliente de correo con mailto.
+  const handleSend = async () => {
+    if (!canSend) return;
+    setSending(true);
+    const subject = `[G.D Bug] ${title.trim() || "Reporte de error"}`;
+    try {
+      const res = await apiPost("/gemelo/bug-report", {
+        title: title.trim(),
+        description: desc.trim(),
+        severity,
+        context: contextObj(),
+      });
+      if (res?.delivered) {
+        setDelivered(true);
+        setSent(true);
+        return;
+      }
+      // backend recibió el reporte pero SMTP no está configurado → mailto
+      const mailto = `mailto:${BUG_REPORT_EMAIL}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(buildBody())}`;
+      window.location.href = mailto;
+      setSent(true);
+    } catch {
+      // backend no disponible → mailto
+      const mailto = `mailto:${BUG_REPORT_EMAIL}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(buildBody())}`;
+      window.location.href = mailto;
+      setSent(true);
+    } finally {
+      setSending(false);
+    }
+  };
+
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(
+        `Para: ${BUG_REPORT_EMAIL}\nAsunto: [G.D Bug] ${title.trim() || "Reporte de error"}\n\n${buildBody()}`
+      );
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2500);
+    } catch {
+      setCopied(false);
+    }
+  };
+
+  const inputStyle = {
+    padding: "10px 12px", borderRadius: 10, border: "1px solid var(--border)",
+    background: "var(--bg)", color: "var(--text)", fontSize: 13,
+    fontFamily: "var(--font)", outline: "none", width: "100%", boxSizing: "border-box",
+  };
+  const labelStyle = { fontSize: 11, fontWeight: 800, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 5, display: "block" };
+
+  return (
+    <div style={{
+      position: "fixed", inset: 0, zIndex: 9999,
+      background: "rgba(0,0,0,0.72)",
+      display: "flex", alignItems: "center", justifyContent: "center",
+      fontFamily: "var(--font)", padding: 20, backdropFilter: "blur(4px)",
+    }}>
+      <div style={{
+        background: "var(--card)", borderRadius: 20,
+        padding: "32px 34px", maxWidth: 500, width: "100%",
+        boxShadow: "0 24px 80px rgba(0,0,0,0.3)", position: "relative",
+        maxHeight: "90vh", overflowY: "auto",
+      }}>
+        <button
+          onClick={onClose}
+          style={{ position: "absolute", top: 14, right: 14, background: "none", border: "none", fontSize: 18, cursor: "pointer", color: "var(--muted)", padding: 4, lineHeight: 1 }}
+        >✕</button>
+
+        {!sent ? (
+          <>
+            <div style={{ marginBottom: 6 }}>
+              <span style={{ fontSize: 11, fontWeight: 800, color: "var(--brand)", textTransform: "uppercase", letterSpacing: "0.1em" }}>
+                🐞 Reportar un error · G.D
+              </span>
+            </div>
+            <p style={{ fontSize: 13, color: "var(--muted)", lineHeight: 1.55, margin: "0 0 20px" }}>
+              Cuéntanos qué salió mal. El reporte llega al administrador ({BUG_REPORT_EMAIL}) con el contexto técnico para poder resolverlo pronto.
+            </p>
+
+            <div style={{ marginBottom: 14 }}>
+              <label style={labelStyle}>Título breve (opcional)</label>
+              <input
+                type="text" value={title} maxLength={100}
+                onChange={(e) => setTitle(e.target.value)}
+                placeholder="Ej: No cargan las notas del curso"
+                style={inputStyle}
+              />
+            </div>
+
+            <div style={{ marginBottom: 14 }}>
+              <label style={labelStyle}>¿Qué pasó? *</label>
+              <textarea
+                value={desc}
+                onChange={(e) => setDesc(e.target.value)}
+                placeholder="Describe el error: qué hacías, qué esperabas y qué ocurrió."
+                rows={5}
+                style={{ ...inputStyle, resize: "vertical", lineHeight: 1.5 }}
+              />
+            </div>
+
+            <div style={{ marginBottom: 22 }}>
+              <label style={labelStyle}>Severidad</label>
+              <select value={severity} onChange={(e) => setSeverity(e.target.value)} style={{ ...inputStyle, cursor: "pointer" }}>
+                {SEVERITIES.map((s) => (
+                  <option key={s.value} value={s.value}>{s.label}</option>
+                ))}
+              </select>
+            </div>
+
+            <div style={{ display: "flex", gap: 10 }}>
+              <button
+                onClick={handleCopy}
+                style={{ flex: 1, padding: "11px 0", borderRadius: 10, border: "1px solid var(--border)", background: "transparent", fontSize: 12, fontWeight: 700, color: "var(--muted)", cursor: "pointer" }}
+              >
+                {copied ? "✓ Copiado" : "📋 Copiar reporte"}
+              </button>
+              <button
+                onClick={handleSend}
+                disabled={!canSend}
+                style={{
+                  flex: 2, padding: "11px 0", borderRadius: 10, border: "none",
+                  background: canSend ? "var(--brand)" : "var(--border)",
+                  color: canSend ? "#fff" : "var(--muted)",
+                  fontSize: 13, fontWeight: 800, cursor: canSend ? "pointer" : "not-allowed",
+                  boxShadow: canSend ? "0 4px 14px rgba(11,95,255,0.3)" : "none",
+                }}
+              >
+                {sending ? "Enviando…" : "📨 Enviar reporte"}
+              </button>
+            </div>
+          </>
+        ) : (
+          <div style={{ textAlign: "center", padding: "12px 0" }}>
+            <div style={{ fontSize: 44, marginBottom: 14 }}>✅</div>
+            <h2 style={{ fontSize: 20, fontWeight: 900, color: "var(--text)", margin: "0 0 10px" }}>
+              ¡Gracias por reportarlo!
+            </h2>
+            <p style={{ fontSize: 13, color: "var(--muted)", lineHeight: 1.6, margin: "0 0 22px" }}>
+              {delivered
+                ? <>Tu reporte fue enviado al administrador (<strong>{BUG_REPORT_EMAIL}</strong>). ¡Gracias por ayudarnos a mejorar!</>
+                : <>Se abrió tu correo con el reporte listo para <strong>{BUG_REPORT_EMAIL}</strong>. Si no se abrió, usa "Copiar reporte" y envíalo manualmente a esa dirección.</>}
+            </p>
+            <div style={{ display: "flex", gap: 10 }}>
+              <button
+                onClick={handleCopy}
+                style={{ flex: 1, padding: "11px 0", borderRadius: 10, border: "1px solid var(--border)", background: "transparent", fontSize: 12, fontWeight: 700, color: "var(--muted)", cursor: "pointer" }}
+              >
+                {copied ? "✓ Copiado" : "📋 Copiar reporte"}
+              </button>
+              <button
+                onClick={onClose}
+                style={{ flex: 1, padding: "11px 0", borderRadius: 10, border: "none", background: "var(--brand)", color: "#fff", fontSize: 13, fontWeight: 800, cursor: "pointer" }}
+              >
+                Cerrar
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ──────────────────────────────────────────────
 // FloatingAI — Help menu (tutorial + updates + AI assistant)
 // ──────────────────────────────────────────────
 function FloatingAI({ onOpenTutorial, onOpenAssistant }) {
   const [open, setOpen] = React.useState(false);
   const [showUpdates, setShowUpdates] = React.useState(false);
+  const [showBugReport, setShowBugReport] = React.useState(false);
+  const [annCount, setAnnCount] = React.useState(0);
+
+  // Contador de novedades para el badge del menú de ayuda.
+  React.useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const data = await apiGet("/gemelo/announcements?limit=50");
+        if (alive) setAnnCount(Array.isArray(data?.items) ? data.items.length : 0);
+      } catch { /* silencioso: si falla, no mostramos badge */ }
+    })();
+    return () => { alive = false; };
+  }, []);
 
   const menuItems = [
     {
@@ -3765,9 +3984,9 @@ function FloatingAI({ onOpenTutorial, onOpenAssistant }) {
     },
     {
       icon: "🆕",
-      title: "Actualizaciones",
-      desc: `${UPDATES_STEPS.length} novedades recientes`,
-      badge: UPDATES_STEPS.length,
+      title: "Novedades",
+      desc: annCount > 0 ? `${annCount} anuncio${annCount === 1 ? "" : "s"} del administrador` : "Anuncios y actualizaciones",
+      badge: annCount > 0 ? annCount : null,
       onClick: () => { setOpen(false); setShowUpdates(true); },
     },
     {
@@ -3776,11 +3995,18 @@ function FloatingAI({ onOpenTutorial, onOpenAssistant }) {
       desc: "Consultas en lenguaje natural",
       onClick: () => { setOpen(false); onOpenAssistant?.(); },
     },
+    {
+      icon: "🐞",
+      title: "Reportar un error",
+      desc: "Envía un bug al administrador",
+      onClick: () => { setOpen(false); setShowBugReport(true); },
+    },
   ];
 
   return (
     <>
-      {showUpdates && <UpdatesModal onClose={() => setShowUpdates(false)} />}
+      {showUpdates && <AnnouncementsModal onClose={() => setShowUpdates(false)} />}
+      {showBugReport && <BugReportModal onClose={() => setShowBugReport(false)} />}
       <div className="ai-fab">
         {open && (
           <div className="ai-fab-panel" style={{ width: 250, maxHeight: "none" }}>
@@ -3850,6 +4076,11 @@ function FloatingAI({ onOpenTutorial, onOpenAssistant }) {
 export default function TeacherDashboard() {
   useEffect(() => {
     injectStyles();
+  }, []);
+
+  // Marca a este usuario como "staff" (docente/admin) → sí recibe correos.
+  useEffect(() => {
+    apiPost("/gemelo/audience", { audience: "staff" }).catch(() => {});
   }, []);
 
   // Read initialOrgUnitId from AuthContext — AuthContext claims sessionStorage
@@ -4035,6 +4266,8 @@ export default function TeacherDashboard() {
   const [studentsList, setStudentsList] = useState(null);
   const [studentRows, setStudentRows] = useState([]);
   const [raDashboard, setRaDashboard] = useState(null);
+  // Pestaña activa en "Prioridad académica": RA por rúbrica/asignación vs por quiz.
+  const [raTab, setRaTab] = useState("rubrica");
 
   // Last data fetch timestamp + refresh trigger
   const [lastUpdate, setLastUpdate] = useState(null);
@@ -4609,12 +4842,22 @@ export default function TeacherDashboard() {
           for (const s of (ov?.studentsAtRisk || [])) {
             if (s.userId != null) atRiskMap[Number(s.userId)] = s;
           }
+          // mostCriticalMacro por estudiante (TODOS, no solo en riesgo) — así la
+          // tarjeta muestra el RA crítico real del estudiante y coincide con su detalle.
+          const macroMap = ov?.studentsMostCriticalMacro || {};
 
-          if (Object.keys(atRiskMap).length > 0) {
+          if (Object.keys(atRiskMap).length > 0 || Object.keys(macroMap).length > 0) {
             setStudentRows((prev) =>
               prev.map((row) => {
                 const ar = atRiskMap[row.userId];
-                if (!ar) return row;
+                const ownMacro = macroMap[row.userId] ?? macroMap[String(row.userId)] ?? null;
+                if (!ar) {
+                  // No en riesgo: solo enriquecer el RA crítico individual si existe.
+                  if (!ownMacro) return row;
+                  const merged = { ...row, mostCriticalMacro: ownMacro };
+                  merged.route = suggestRouteForStudent(merged, thr);
+                  return merged;
+                }
                 const perf = ar.currentPerformancePct ?? null;
                 const merged = {
                   ...row,
@@ -4624,8 +4867,8 @@ export default function TeacherDashboard() {
                   notSubmittedWeightPct: Number(ar.overdueUnscoredWeightPct ?? ar.notSubmittedWeightPct ?? 0),
                   overdueWeightPct:      Number(ar.overdueUnscoredWeightPct ?? ar.notSubmittedWeightPct ?? 0),
                   pendingSubmittedWeightPct: Number(ar.pendingUngradedWeightPct ?? ar.pendingSubmittedWeightPct ?? 0),
-                  // mostCriticalMacro now included from backend studentsAtRisk
-                  mostCriticalMacro: ar.mostCriticalMacro ?? row.mostCriticalMacro ?? null,
+                  // mostCriticalMacro: preferir el del estudiante en riesgo, luego el mapa global
+                  mostCriticalMacro: ar.mostCriticalMacro ?? ownMacro ?? row.mostCriticalMacro ?? null,
                 };
                 merged.route = suggestRouteForStudent(merged, thr);
                 return merged;
@@ -4642,9 +4885,11 @@ export default function TeacherDashboard() {
         for (const s of (ov?.studentsAtRisk || [])) {
           if (s.userId != null) atRiskMap2[Number(s.userId)] = s;
         }
+        const macroMap2 = ov?.studentsMostCriticalMacro || {};
         setStudentRows((prev) =>
           prev.map((row) => {
             const ar = atRiskMap2[row.userId];
+            const ownMacro2 = macroMap2[row.userId] ?? macroMap2[String(row.userId)] ?? null;
             const perf = ar?.currentPerformancePct ?? null;
             const merged = {
               ...row,
@@ -4655,7 +4900,7 @@ export default function TeacherDashboard() {
               notSubmittedWeightPct: Number(ar?.overdueUnscoredWeightPct ?? ar?.notSubmittedWeightPct ?? 0),
               overdueWeightPct:      Number(ar?.overdueUnscoredWeightPct ?? ar?.notSubmittedWeightPct ?? 0),
               pendingSubmittedWeightPct: Number(ar?.pendingUngradedWeightPct ?? ar?.pendingSubmittedWeightPct ?? 0),
-              mostCriticalMacro: ar?.mostCriticalMacro ?? row.mostCriticalMacro ?? null,
+              mostCriticalMacro: ar?.mostCriticalMacro ?? ownMacro2 ?? row.mostCriticalMacro ?? null,
             };
             merged.route = suggestRouteForStudent(merged, thr);
             return merged;
@@ -4873,6 +5118,8 @@ export default function TeacherDashboard() {
         coveragePct: Number(r.coveragePct ?? 0),
         studentsWithData: Number(r.studentsWithData ?? 0),
         totalStudents: Number(r.totalStudents ?? 0),
+        alignedToAssignment: r.alignedToAssignment !== false,
+        note: r.note || null,
       };
     });
   }
@@ -4894,6 +5141,32 @@ export default function TeacherDashboard() {
 
   return [];
 }, [raDashboard, learningOutcomesPayload, outcomesMap]);
+
+// RA evaluados por QUIZ (pestaña lateral). El backend ya devuelve el promedio
+// por outcome alineado a quizzes; aquí sólo lo adaptamos a la forma de fila.
+const quizOutcomesData = useMemo(() => {
+  const qo = Array.isArray(raDashboard?.quizOutcomes) ? raDashboard.quizOutcomes : [];
+  const outcomeMap = {};
+  Object.values(outcomesMap || {}).forEach((o) => {
+    if (o?.code) outcomeMap[String(o.code).toUpperCase()] = o;
+  });
+  return qo.map((r, idx) => {
+    const code = String(r.code || `RA${idx + 1}`).toUpperCase();
+    const match = outcomeMap[code];
+    return {
+      code,
+      name: match?.title || r.title || r.label || code,
+      description: match?.description || r.title || r.label || code,
+      avgPct: Number(r.avgPct ?? 0),
+      weightPct: null,
+      status: null,
+      coveragePct: Number(r.coveragePct ?? 0),
+      studentsWithData: Number(r.studentsWithData ?? 0),
+      totalStudents: Number(r.totalStudents ?? 0),
+      source: "quiz",
+    };
+  });
+}, [raDashboard, outcomesMap]);
 
 const weakestAssignment = useMemo(() => {
   const allEvidence = [];
@@ -4955,8 +5228,14 @@ const weakestAssignment = useMemo(() => {
 
   if (!valid.length) return null;
 
-  valid.sort((a, b) => a.avgPct - b.avgPct);
-  return valid[0];
+  // Preferir RAs que SÍ se han usado (con datos/cobertura). Un RA en 0% sin
+  // estudiantes evaluados es "no usado", no un desempeño real de 0; mostrar el
+  // más bajo entre los usados. Solo si ninguno tiene datos, caer a todos.
+  const used = valid.filter((m) => m.studentsWithData > 0 || m.coveragePct > 0);
+  const pool = used.length ? used : valid;
+
+  pool.sort((a, b) => a.avgPct - b.avgPct);
+  return pool[0];
 }, [learningOutcomesData]);
 
   const assignmentRiskData = useMemo(() => {
@@ -6227,7 +6506,50 @@ const contentKpis = useMemo(() => {
                 gap: 8,
               }}
             >
-              {learningOutcomesData
+              {quizOutcomesData.length > 0 && (
+                <div
+                  role="tablist"
+                  style={{
+                    display: "inline-flex",
+                    alignSelf: "flex-start",
+                    gap: 2,
+                    padding: 3,
+                    borderRadius: 10,
+                    background: "var(--bg)",
+                    border: "1px solid var(--border)",
+                    marginBottom: 2,
+                  }}
+                >
+                  {[
+                    { key: "rubrica", label: "Por asignación" },
+                    { key: "quiz", label: "Por quiz" },
+                  ].map((tab) => {
+                    const active = raTab === tab.key;
+                    return (
+                      <button
+                        key={tab.key}
+                        role="tab"
+                        aria-selected={active}
+                        onClick={() => setRaTab(tab.key)}
+                        style={{
+                          border: "none",
+                          cursor: "pointer",
+                          fontSize: 11,
+                          fontWeight: 700,
+                          padding: "5px 12px",
+                          borderRadius: 8,
+                          background: active ? "var(--brand)" : "transparent",
+                          color: active ? "#fff" : "var(--muted-strong)",
+                          transition: "background 0.15s",
+                        }}
+                      >
+                        {tab.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+              {(raTab === "quiz" ? quizOutcomesData : learningOutcomesData)
                 .slice()
                 .sort((a, b) => a.avgPct - b.avgPct)
                 .map((m) => {
@@ -6271,12 +6593,14 @@ const contentKpis = useMemo(() => {
                           <div style={{ marginLeft: "auto" }}>
                             {m.studentsWithData > 0
                               ? <StatusBadge status={computedStatus} />
-                              : <span style={{ fontSize: 9, fontWeight: 800, color: "var(--muted)", background: "var(--bg)", padding: "2px 7px", borderRadius: 99, border: "1px solid var(--border)", textTransform: "uppercase", letterSpacing: "0.06em" }}>Sin uso</span>
+                              : <span style={{ fontSize: 9, fontWeight: 800, color: "var(--muted)", background: "var(--bg)", padding: "2px 7px", borderRadius: 99, border: "1px solid var(--border)", textTransform: "uppercase", letterSpacing: "0.06em" }}>{m.alignedToAssignment ? "Sin uso" : "Sin asignación"}</span>
                             }
                           </div>
                         </div>
                         <div style={{ fontSize: 10, color: "var(--muted)", marginBottom: 4 }}>
-                          Peso {m.weightPct ? `${Number(m.weightPct).toFixed(0)}%` : "—"}
+                          {m.source === "quiz"
+                            ? "Evaluado por quiz"
+                            : `Peso ${m.weightPct ? `${Number(m.weightPct).toFixed(0)}%` : "—"}`}
                         </div>
                         {m.studentsWithData > 0 && m.coveragePct != null ? (
                           <div>
@@ -6287,7 +6611,9 @@ const contentKpis = useMemo(() => {
                           </div>
                         ) : m.studentsWithData === 0 ? (
                           <div style={{ fontSize: 10, color: "var(--muted)", fontStyle: "italic", lineHeight: 1.4 }}>
-                            Sin evaluaciones vinculadas a rúbricas aún.
+                            {m.alignedToAssignment
+                              ? "Sin evaluaciones vinculadas a rúbricas aún."
+                              : (m.note || "No alineado a asignaciones (evaluado por quiz).")}
                           </div>
                         ) : null}
                       </div>
@@ -6295,7 +6621,7 @@ const contentKpis = useMemo(() => {
                   );
                 })}
 
-              {!learningOutcomesData.length && (
+              {!(raTab === "quiz" ? quizOutcomesData : learningOutcomesData).length && (
                 <div className="empty-state">
                   <span className="empty-state-icon">🎯</span>
                   <span style={{ fontSize: 12 }}>Sin datos de RA para este curso</span>

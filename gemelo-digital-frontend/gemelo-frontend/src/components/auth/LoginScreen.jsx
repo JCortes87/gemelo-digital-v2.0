@@ -202,7 +202,7 @@ export default function LoginScreen({ orgUnitId }) {
           <div style={{ textAlign: "left" }}>
             <div style={{ fontSize: 16, fontWeight: 900, color: "var(--text)", letterSpacing: "-0.02em" }}>G.D</div>
             <div style={{ fontSize: 11, fontWeight: 600, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.08em" }}>
-              2026.7.1
+              2026.7.3
             </div>
           </div>
         </div>
@@ -246,7 +246,7 @@ export default function LoginScreen({ orgUnitId }) {
             </h2>
             <p style={{ fontSize: 14, color: "var(--muted)", lineHeight: 1.6, margin: "0 0 20px" }}>
               La autenticacion con Microsoft fue exitosa. Haz clic para completar
-              el acceso a Gemelo Digital.
+              el acceso a G.D.
             </p>
             <button
               onClick={handleRetry}
@@ -259,7 +259,7 @@ export default function LoginScreen({ orgUnitId }) {
               onMouseLeave={e => e.currentTarget.style.opacity = "1"}
             >
               {msIcon}
-              Completar acceso a Gemelo Digital
+              Completar acceso a G.D
             </button>
             <button
               onClick={handleLogin}

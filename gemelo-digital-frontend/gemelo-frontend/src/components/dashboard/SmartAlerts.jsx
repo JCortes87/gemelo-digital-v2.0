@@ -290,7 +290,14 @@ function SmartAlerts({
         <div className="stagger-children" style={{ display: "flex", flexDirection: "column" }}>
           {alerts.map((alert) => {
             const s = severityStyles[alert.severity] || severityStyles.info;
-            const AlertIcon = typeof alert.icon === "function" ? alert.icon : null;
+            // Los iconos de lucide-react son objetos forwardRef ({$$typeof,
+            // render}), no funciones planas. Aceptamos función u objeto como
+            // componente renderizable; solo string/emoji cae al <span>.
+            const AlertIcon =
+              alert.icon &&
+              (typeof alert.icon === "function" || typeof alert.icon === "object")
+                ? alert.icon
+                : null;
             return (
               <div
                 key={alert.id}

@@ -1,4 +1,4 @@
-import{s as e,t}from"./colors-DXjlsMWV.js";function n(n){let r=e(n);return r===`alto`?t.critical:r===`medio`?t.watch:r===`bajo`?t.ok:t.pending}function r(e){if(e==null)return``;let t=String(e);return/[",\n\r]/.test(t)?`"${t.replace(/"/g,`""`)}"`:t}function i(e,t){let n=URL.createObjectURL(e),r=document.createElement(`a`);r.href=n,r.download=t,document.body.appendChild(r),r.click(),document.body.removeChild(r),setTimeout(()=>URL.revokeObjectURL(n),100)}function a(e,t,n){let a=`﻿`+[(t||[]).map(r).join(`,`),...(n||[]).map(e=>(e||[]).map(r).join(`,`))].join(`\r
+import{s as e,t}from"./colors-hkeZPKU9.js";function n(n){let r=e(n);return r===`alto`?t.critical:r===`medio`?t.watch:r===`bajo`?t.ok:t.pending}function r(e){if(e==null)return``;let t=String(e);return/[",\n\r]/.test(t)?`"${t.replace(/"/g,`""`)}"`:t}function i(e,t){let n=URL.createObjectURL(e),r=document.createElement(`a`);r.href=n,r.download=t,document.body.appendChild(r),r.click(),document.body.removeChild(r),setTimeout(()=>URL.revokeObjectURL(n),100)}function a(e,t,n){let a=`﻿`+[(t||[]).map(r).join(`,`),...(n||[]).map(e=>(e||[]).map(r).join(`,`))].join(`\r
 `);i(new Blob([a],{type:`text/csv;charset=utf-8`}),e)}const o=[{key:`userId`,label:`ID`,value:e=>e.userId},{key:`displayName`,label:`Nombre`,value:e=>e.displayName},{key:`email`,label:`Email`,value:e=>e.email||``},{key:`grade10`,label:`Nota (0-10)`,value:e=>e.currentPerformancePct==null?``:(e.currentPerformancePct/10).toFixed(1)},{key:`coveragePct`,label:`Cobertura %`,value:e=>e.coveragePct==null?``:e.coveragePct.toFixed(1)},{key:`risk`,label:`Riesgo`,value:e=>e.risk||``},{key:`route`,label:`Ruta`,value:e=>e.route?.title||``},{key:`criticalMacro`,label:`RA crítico`,value:e=>e.mostCriticalMacro?.code||``},{key:`pendingPct`,label:`Pendientes %`,value:e=>e.pendingSubmittedWeightPct==null?``:e.pendingSubmittedWeightPct.toFixed(1)},{key:`overduePct`,label:`Vencidos %`,value:e=>e.notSubmittedWeightPct==null?e.overdueWeightPct==null?``:e.overdueWeightPct.toFixed(1):e.notSubmittedWeightPct.toFixed(1)}];function s(e,t,n={}){let a=Array.isArray(e)?e:[],{columns:s,filterDescription:c}=n||{},l=Array.isArray(s)&&s.length?s.map(e=>o.find(t=>t.key===e)).filter(Boolean):o,u=[l.map(e=>e.label).map(r).join(`,`)];for(let e of a)u.push(l.map(t=>t.value(e)).map(r).join(`,`));let d=`﻿`+u.join(`\r
 `),f=new Blob([d],{type:`text/csv;charset=utf-8`}),p=new Date().toISOString().slice(0,10);i(f,`gemelo_${String(t?.Name||`curso`).replace(/[^\w]+/g,`_`).slice(0,40)}${c?`_${String(c).replace(/[^\w]+/g,`_`).slice(0,30)}`:``}_${p}.csv`)}function c(t,r,i){let a=Array.isArray(t)?t:[],o=new Date().toLocaleString(`es-CO`),s=r?.Name||`Curso`,c=a.length,l=i?.courseGradebook?.avgCurrentPerformancePct,u=i?.courseGradebook?.avgCoveragePct,f={alto:0,medio:0,bajo:0,pending:0};for(let t of a)f[e(t.currentPerformancePct)]++;let p=a.map(e=>{let t=e.currentPerformancePct==null?`—`:(e.currentPerformancePct/10).toFixed(1),r=e.coveragePct==null?`—`:e.coveragePct.toFixed(1)+`%`,i=e.risk||`—`,a=n(e.currentPerformancePct);return`<tr>
       <td style="font-family:monospace;color:#5A6580">${e.userId}</td>
@@ -87,7 +87,7 @@ import{s as e,t}from"./colors-DXjlsMWV.js";function n(n){let r=e(n);return r===`
   </table>
 
   <div class="footer">
-    CESA · G.D V.260428 · Reporte generado automáticamente
+    CESA · G.D 2026.7.3 · Reporte generado automáticamente
   </div>
 
   <script>
@@ -102,7 +102,7 @@ import{s as e,t}from"./colors-DXjlsMWV.js";function n(n){let r=e(n);return r===`
             ${e.level?`<span style="font-size:9px;font-weight:800;padding:2px 8px;border-radius:99px;background:${t}22;color:${t};border:1px solid ${t}55;text-transform:uppercase">${d(e.level)}</span>`:`—`}
           </td>
           <td style="padding:8px 10px;border-bottom:1px solid #E4E8EF;text-align:right;font-family:ui-monospace,monospace;font-size:13px;font-weight:900;color:${t};width:8%">${e.points==null?`—`:e.points}</td>
-          <td style="padding:8px 10px;border-bottom:1px solid #E4E8EF;font-size:10px;color:#5A6580;line-height:1.4">${e.comment?e.comment:`<span style="color:#B0B7C3;font-style:italic">Sin comentario</span>`}</td>
+          <td style="padding:8px 10px;border-bottom:1px solid #E4E8EF;font-size:10px;color:#5A6580;line-height:1.4">${e.levelDescription||e.comment?`${e.levelDescription?`<div style="color:#0F1827">${e.levelDescription}</div>`:``}${e.comment?`<div style="margin-top:${e.levelDescription?`4px`:`0`};color:#5A6580">${e.comment}</div>`:``}`:`<span style="color:#B0B7C3;font-style:italic">Sin comentario</span>`}</td>
         </tr>
       `}).join(``);return`
       <div class="rubric-block" style="margin-top:18px;border:1px solid #D6DCE5;border-radius:8px;overflow:hidden;page-break-inside:avoid">

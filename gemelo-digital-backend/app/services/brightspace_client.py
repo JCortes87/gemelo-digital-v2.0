@@ -158,6 +158,10 @@ class BrightspaceClient:
         self.lp_version   = os.getenv("BRIGHTSPACE_LP_VERSION",    "1.50")
         self.grade_version = os.getenv("BRIGHTSPACE_GRADE_VERSION", "1.50")
         self.lo_version    = os.getenv("BRIGHTSPACE_LO_VERSION",    "1.92")
+        # El endpoint /lo/alignments/ requiere version 1.93+ (LMS v20.26.4+).
+        # Se mantiene separado de lo_version (1.92) para no romper outcomeSets.
+        self.align_version = os.getenv("BRIGHTSPACE_ALIGN_VERSION", "1.93")
+        self.quiz_version  = os.getenv("BRIGHTSPACE_QUIZ_VERSION",  "1.93")
 
         self._tokens  = tokens or {}
         self._request = request
@@ -373,6 +377,56 @@ class BrightspaceClient:
             f"/lo/outcomeSets/"
         )
         return await self._request_json("GET", url)
+
+    async def list_alignments(self, orgUnitId: int) -> List[Dict[str, Any]]:
+        """
+        Trae TODAS las alineaciones (BulkAlignment) del curso en una sola
+        llamada al endpoint bulk `/lo/alignments/`.
+
+        Cada BulkAlignment relaciona un ActivityType + ObjectId (para rubricas
+        el ObjectId es `{rubricId}_R_{criterionId}`) con el OutcomeId del
+        resultado de aprendizaje alineado. Es el UNICO puente disponible
+        entre criterio de rubrica y outcome (CriteriaOutcome no trae OutcomeId).
+
+        Requiere version 1.93+ y scope outcomes:alignments:read. Devuelve []
+        si el tenant no lo expone (404) o falta el scope (403).
+        """
+        url = (
+            f"{self.base_url}/d2l/api/le/{self.align_version}/{orgUnitId}"
+            f"/lo/alignments/"
+        )
+        try:
+            data = await self._request_json("GET", url)
+        except HTTPException as exc:
+            logger.warning("list_alignments %s fallo: %s", orgUnitId, exc.detail)
+            return []
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("list_alignments %s error: %s", orgUnitId, exc)
+            return []
+        return self._as_list_of_dicts(data)
+
+    async def list_quizzes(self, orgUnitId: int) -> List[Dict[str, Any]]:
+        """
+        Lista los quizzes del curso. Cada quiz trae QuizId y GradeItemId
+        (el objeto de calificacion asociado), con el que se obtiene el % por
+        estudiante via /grades/values/. Se usa para mapear quiz->outcome
+        (via /lo/alignments/) y calcular promedios de RA evaluados por quiz.
+
+        Devuelve [] si el tenant no lo expone o ante error.
+        """
+        url = (
+            f"{self.base_url}/d2l/api/le/{self.quiz_version}/{orgUnitId}"
+            f"/quizzes/"
+        )
+        try:
+            data = await self._request_json("GET", url)
+        except HTTPException as exc:
+            logger.warning("list_quizzes %s fallo: %s", orgUnitId, exc.detail)
+            return []
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("list_quizzes %s error: %s", orgUnitId, exc)
+            return []
+        return self._as_list_of_dicts(data)
 
 
 # ── Dependency FastAPI ────────────────────────────────────────────────────────

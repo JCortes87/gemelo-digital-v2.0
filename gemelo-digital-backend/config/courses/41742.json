@@ -8,14 +8,5 @@
       "watch": 70
     }
   },
-  "rubrics": {
-    "11861": {
-      "name": "IA y Derechos de autor",
-      "criteriaMap": {
-        "57580": { "code": "RA.1", "weight": 0.3, "name": "Clasificación normativa del tipo de producción con IA" },
-        "57581": { "code": "RA.2", "weight": 0.4, "name": "Acciones de mejora creativa protegible" },
-        "57582": { "code": "RA.3", "weight": 0.3, "name": "Riesgos y protección legal" }
-      }
-    }
-  }
+  "rubrics": {}
 }

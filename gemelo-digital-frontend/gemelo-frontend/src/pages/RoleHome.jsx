@@ -3,10 +3,10 @@ import { useNavigate } from "react-router-dom";
 import {
   Search, GraduationCap, Presentation, Eye, LayoutGrid, LogOut, User,
   Sparkles, ArrowRight, Users, BookOpen, TrendingUp, ShieldCheck, X, Loader2,
-  Ban, ExternalLink, Crown, Clock, ChevronDown, ChevronUp, Filter,
+  Ban, ExternalLink, Crown, Clock, ChevronDown, ChevronUp, Filter, Megaphone, Send,
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
-import { apiGet } from "../utils/api";
+import { apiGet, apiPost } from "../utils/api";
 import { injectStyles } from "../styles/global";
 import { isStudentRole } from "../utils/roles";
 import CesaLoader from "../components/ui/CesaLoader";
@@ -275,7 +275,7 @@ export default function RoleHome() {
           }}>CESA</div>
           <div>
             <div style={{ fontSize: 14, fontWeight: 800, color: "var(--text)", letterSpacing: "-0.01em" }}>
-              Gemelo Digital
+              G.D
             </div>
             <div style={{ fontSize: 9, fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.1em" }}>
               Selecciona tu vista
@@ -323,7 +323,7 @@ export default function RoleHome() {
             fontSize: 10, fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.12em",
             marginBottom: 14,
           }}>
-            <Sparkles size={12} strokeWidth={2.5} /> Gemelo Digital
+            <Sparkles size={12} strokeWidth={2.5} /> G.D
           </div>
           <h1 style={{
             fontSize: 34, fontWeight: 900, color: "var(--text)",
@@ -694,7 +694,10 @@ export default function RoleHome() {
               </section>
             )}
 
-            {/* 3. Búsqueda global de cursos */}
+            {/* 3. Enviar anuncio / notificación a los usuarios */}
+            {isSuperAdmin && <AdminAnnounce />}
+
+            {/* 4. Búsqueda global de cursos */}
             {isSuperAdmin && search.trim().length >= 3 && (
               <section className="home-panel" style={{ animationDelay: "0.24s" }}>
                 <div className="section-header-v2">
@@ -764,7 +767,7 @@ export default function RoleHome() {
                   Sin cursos encontrados
                 </div>
                 <div style={{ fontSize: 13, color: "var(--muted)", lineHeight: 1.5, maxWidth: 380 }}>
-                  Accede desde Brightspace usando el enlace de Gemelo Digital en tu curso.
+                  Accede desde Brightspace usando el enlace de G.D en tu curso.
                 </div>
               </div>
             )}
@@ -856,7 +859,7 @@ export default function RoleHome() {
         {/* Footer */}
         <div style={{ textAlign: "center", padding: "32px 0 8px", fontSize: 11, color: "var(--muted)" }}>
           <div style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-            <Sparkles size={12} strokeWidth={2} /> CESA · Gemelo Digital 2026.7.1
+            <Sparkles size={12} strokeWidth={2} /> CESA · G.D 2026.7.3
           </div>
         </div>
       </main>
@@ -876,5 +879,156 @@ export default function RoleHome() {
         </Suspense>
       )}
     </div>
+  );
+}
+
+// ══════════════════════════════════════════════════════════
+// AdminAnnounce — compositor de anuncios/notificaciones (Super Admin)
+// Envía un anuncio a todos los usuarios registrados (opción B) por correo
+// (BCC) y lo publica in-app. El envío por correo depende de SMTP configurado.
+// ══════════════════════════════════════════════════════════
+function AdminAnnounce() {
+  const [subject, setSubject] = useState("");
+  const [message, setMessage] = useState("");
+  const [tag, setTag] = useState("Anuncio");
+  const [sending, setSending] = useState(false);
+  const [result, setResult] = useState(null);
+  const [stats, setStats] = useState(null); // {total, withEmail}
+
+  const TAGS = ["Anuncio", "Actualización", "Importante"];
+
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const data = await apiGet("/gemelo/admin/known-users");
+        if (alive) setStats({ total: data?.total ?? 0, withEmail: data?.withEmail ?? 0 });
+      } catch {
+        if (alive) setStats(null);
+      }
+    })();
+    return () => { alive = false; };
+  }, []);
+
+  const canSend = subject.trim() && message.trim() && !sending;
+
+  const handleSend = async () => {
+    if (!canSend) return;
+    const n = stats?.withEmail ?? 0;
+    if (!window.confirm(
+      `Se enviará este anuncio por correo a ${n} usuario${n !== 1 ? "s" : ""} y se publicará dentro de la app.\n\n¿Confirmas el envío?`
+    )) return;
+    setSending(true);
+    setResult(null);
+    try {
+      const res = await apiPost("/gemelo/admin/announcement", {
+        subject: subject.trim(),
+        message: message.trim(),
+        tag,
+        audience: "all",
+        send_email: true,
+      });
+      setResult({ ok: true, data: res });
+      setSubject("");
+      setMessage("");
+    } catch (e) {
+      setResult({ ok: false, error: String(e?.message || e) });
+    } finally {
+      setSending(false);
+    }
+  };
+
+  const inputStyle = {
+    width: "100%", padding: "10px 14px", borderRadius: 10,
+    border: "1.5px solid var(--border)", background: "var(--bg)",
+    color: "var(--text)", fontSize: 13, fontFamily: "var(--font)",
+    outline: "none", fontWeight: 500, boxSizing: "border-box",
+  };
+
+  const emailInfo = result?.ok ? (result.data?.email || {}) : null;
+
+  return (
+    <section className="home-panel superadmin-brand" style={{ animationDelay: "0.22s" }}>
+      <div className="section-header-v2">
+        <div className="section-header-icon-wrap">
+          <Megaphone size={22} strokeWidth={2.2} />
+        </div>
+        <div>
+          <div className="section-header-title">Enviar anuncio a los usuarios</div>
+          <div className="section-header-count">Super Admin · Notificaciones</div>
+        </div>
+      </div>
+
+      <div style={{
+        fontSize: 12, color: "var(--muted)", marginBottom: 14,
+        padding: "10px 14px", background: "var(--brand-light)",
+        borderRadius: 10, borderLeft: "3px solid var(--brand)",
+        display: "flex", alignItems: "flex-start", gap: 8, lineHeight: 1.5,
+      }}>
+        <ShieldCheck size={16} strokeWidth={2.2} style={{ color: "var(--brand)", flexShrink: 0, marginTop: 1 }} />
+        <span>
+          El anuncio se envía por correo a <strong>{stats ? stats.withEmail : "…"}</strong> usuario(s) registrado(s) en G.D y se publica dentro de la app. Los correos van en copia oculta (BCC).
+        </span>
+      </div>
+
+      <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 10 }}>
+        <input
+          type="text"
+          placeholder="Asunto del anuncio"
+          value={subject}
+          maxLength={140}
+          onChange={e => setSubject(e.target.value)}
+          style={{ ...inputStyle, flex: "2 1 220px" }}
+        />
+        <select value={tag} onChange={e => setTag(e.target.value)} style={{ ...inputStyle, flex: "1 1 140px", cursor: "pointer" }}>
+          {TAGS.map(t => <option key={t} value={t}>{t}</option>)}
+        </select>
+      </div>
+
+      <textarea
+        placeholder="Escribe el mensaje… (ej: nueva actualización de la plataforma, mantenimiento programado, reforma importante…)"
+        value={message}
+        onChange={e => setMessage(e.target.value)}
+        rows={5}
+        style={{ ...inputStyle, resize: "vertical", lineHeight: 1.5, marginBottom: 12 }}
+      />
+
+      <button
+        onClick={handleSend}
+        disabled={!canSend}
+        style={{
+          width: "100%", padding: "12px 16px", borderRadius: 12,
+          border: "none", cursor: canSend ? "pointer" : "not-allowed",
+          background: canSend ? "linear-gradient(135deg, var(--brand) 0%, #1e40af 100%)" : "var(--bg)",
+          color: canSend ? "#fff" : "var(--muted)",
+          fontSize: 14, fontWeight: 800, fontFamily: "var(--font)",
+          display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 8,
+          boxShadow: canSend ? "0 6px 16px -6px rgba(11, 95, 255, 0.5)" : "none",
+        }}
+      >
+        <Send size={16} strokeWidth={2.4} /> {sending ? "Enviando…" : "Enviar anuncio"}
+      </button>
+
+      {result && (
+        <div style={{
+          marginTop: 12, padding: "10px 14px", borderRadius: 10, fontSize: 12, lineHeight: 1.5,
+          background: result.ok ? "rgba(22,163,74,0.08)" : "rgba(220,38,38,0.08)",
+          border: `1px solid ${result.ok ? "rgba(22,163,74,0.3)" : "rgba(220,38,38,0.3)"}`,
+          color: "var(--text)",
+        }}>
+          {result.ok ? (
+            emailInfo?.ok ? (
+              <>✅ Anuncio publicado y enviado por correo a <strong>{emailInfo.recipients}</strong> usuario(s).</>
+            ) : emailInfo?.error === "smtp_no_configurado" ? (
+              <>✅ Anuncio publicado in-app. ⚠️ El correo no se envió porque falta configurar el servidor SMTP (Office365).</>
+            ) : (
+              <>✅ Anuncio publicado. ⚠️ El correo no se pudo enviar: {emailInfo?.error || "error desconocido"}.</>
+            )
+          ) : (
+            <>❌ No se pudo enviar: {result.error}</>
+          )}
+        </div>
+      )}
+    </section>
   );
 }

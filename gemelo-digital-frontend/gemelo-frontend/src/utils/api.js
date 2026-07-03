@@ -59,6 +59,36 @@ export async function apiGet(path, opts = {}) {
   return res.json();
 }
 
+export async function apiPost(path, body, opts = {}) {
+  const _sid = localStorage.getItem("gemelo_sid");
+  const _authHeader = _sid ? { "Authorization": `Bearer ${_sid}` } : {};
+  const res = await fetch(apiUrl(path), {
+    method: "POST",
+    credentials: "include",
+    headers: {
+      Accept: "application/json",
+      "Content-Type": "application/json",
+      ..._authHeader,
+      ...(opts.headers || {}),
+    },
+    body: body != null ? JSON.stringify(body) : undefined,
+    signal: opts.signal,
+  });
+
+  const ct = res.headers.get("content-type") || "";
+  const isJson = ct.includes("application/json") || ct.includes("application/problem+json");
+
+  if (!res.ok) {
+    const errBody = isJson ? await res.json().catch(() => ({})) : await res.text().catch(() => "");
+    const msg = typeof errBody === "string"
+      ? errBody
+      : errBody?.detail || errBody?.message || errBody?.error || JSON.stringify(errBody);
+    throw new Error(`HTTP ${res.status} - ${String(msg).slice(0, 600)}`);
+  }
+
+  return isJson ? res.json() : res.text();
+}
+
 export async function mapLimit(arr, limit, mapper) {
   const list = Array.isArray(arr) ? arr : [];
   const results = new Array(list.length);

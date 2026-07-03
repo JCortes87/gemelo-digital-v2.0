@@ -491,6 +491,13 @@ async def brightspace_callback(request: Request):
     })
     logger.info("Sesión creada para user_id=%s name=%s", uid, user_name)
 
+    # Registrar al usuario para poder enviarle anuncios/notificaciones (opción B).
+    try:
+        from app.services.user_registry import record_user
+        record_user(uid, (user_name or "").strip(), user_email, system_role)
+    except Exception as _e:
+        logger.warning("record_user falló: %s", str(_e)[:120])
+
     # Construir redirect al frontend
     front = FRONTEND_BASE or ""
 
@@ -1532,7 +1539,8 @@ async def brightspace_dropbox_download(
 
 @app.get("/brightspace/course/{org_unit_id}/dropbox/folder/{folder_id}/student/{user_id}/feedback")
 async def brightspace_dropbox_feedback(
-    request: Request, org_unit_id: int, folder_id: int, user_id: int
+    request: Request, org_unit_id: int, folder_id: int, user_id: int,
+    bs: BrightspaceClient = Depends(get_brightspace_client),
 ):
     """Get the teacher's feedback for a student's dropbox submission,
     including the rubric assessment (per-criterion levels + comments) when
@@ -1721,14 +1729,36 @@ async def brightspace_dropbox_feedback(
             cid = c.get("Id")
             result = crit_map.get(str(cid)) if cid is not None else None
             level_name = ""
-            if result and result.get("levelId") is not None:
-                level_name = levels_by_id.get(str(result["levelId"]), "")
+            level_desc = ""
+            cell_points = None
+            sel_level_id = (result or {}).get("levelId")
+            if result and sel_level_id is not None:
+                level_name = levels_by_id.get(str(sel_level_id), "")
+                # The descriptive text ("por qué" del nivel) vive en la celda
+                # criterio×nivel de la DEFINICIÓN de la rúbrica, no en la
+                # evaluación. Unimos el LevelId seleccionado con esa celda.
+                for cell in (c.get("Cells") or []):
+                    if not isinstance(cell, dict):
+                        continue
+                    if str(cell.get("LevelId")) == str(sel_level_id):
+                        dobj = cell.get("Description") or {}
+                        if isinstance(dobj, dict):
+                            level_desc = dobj.get("Html") or dobj.get("Text") or ""
+                        cell_points = cell.get("Points")
+                        break
+            # Brightspace no devuelve Score cuando el criterio vale 0; si hay un
+            # nivel seleccionado, usamos los puntos de esa celda (que pueden ser
+            # 0) para no mostrar "—" en criterios evaluados en 0.
+            crit_score = (result or {}).get("score")
+            if crit_score is None and sel_level_id is not None and cell_points is not None:
+                crit_score = cell_points
             criteria_out.append({
-                "id":      cid,
-                "name":    c.get("Name") or "",
-                "level":   level_name,
-                "points":  (result or {}).get("score"),
-                "comment": (result or {}).get("comment") or "",
+                "id":               cid,
+                "name":             c.get("Name") or "",
+                "level":            level_name,
+                "levelDescription": level_desc,
+                "points":           crit_score,
+                "comment":          (result or {}).get("comment") or "",
             })
 
         # Overall info from OverallOutcome
@@ -2008,6 +2038,33 @@ async def brightspace_dropbox_feedback(
     subs_list = subs_data if isinstance(subs_data, list) else (
         (subs_data or {}).get("Items") or (subs_data or {}).get("items") or []
     )
+    # Group assignments: /feedback/{userId} devuelve 404 porque el feedback vive
+    # en la entidad GRUPO, no en el usuario. Resolvemos el grupo del estudiante
+    # (vía la categoría GroupTypeId de la carpeta) para poder emparejar su
+    # submission por EntityId de grupo.
+    group_entity_ids: set[str] = set()
+    group_type_id = folder_data.get("GroupTypeId")
+    if group_type_id is not None:
+        try:
+            _, groups_data = await _bs_get(
+                f"{BRIGHTSPACE_BASE_URL}/d2l/api/lp/{LP_VERSION}"
+                f"/{org_unit_id}/groupcategories/{group_type_id}/groups/",
+                headers,
+            )
+            if isinstance(groups_data, list):
+                for g in groups_data:
+                    if not isinstance(g, dict):
+                        continue
+                    enroll = [str(x) for x in (g.get("Enrollments") or [])]
+                    if str(user_id) in enroll:
+                        gid = g.get("GroupId")
+                        if gid is not None:
+                            group_entity_ids.add(str(gid))
+        except Exception as e:
+            logger.warning(
+                "group resolve failed folder=%s user=%s: %s", folder_id, user_id, e
+            )
+
     user_subs_match = []
     for s in subs_list:
         if not isinstance(s, dict):
@@ -2017,7 +2074,7 @@ async def brightspace_dropbox_feedback(
             or s.get("UserId")
             or (s.get("Entity") or {}).get("EntityId")
         )
-        if str(eid) == str(user_id):
+        if str(eid) == str(user_id) or str(eid) in group_entity_ids:
             user_subs_match.append(s)
 
     # Fallback: si /feedback/{userId} no devolvió Feedback.Text, sacarlo del bulk
@@ -2115,6 +2172,46 @@ async def brightspace_dropbox_feedback(
             except Exception as e:
                 logger.warning("grades fallback failed folder=%s user=%s: %s", folder_id, user_id, e)
 
+    # Learning outcomes (RAs) aligned to this assignment's rubric(s), if any.
+    # The rubric→outcome link comes from the bulk /lo/alignments/ endpoint
+    # (CriteriaOutcome does not carry OutcomeId on this tenant). We resolve
+    # each rubric's OutcomeId GUIDs to their real code/label via the outcome
+    # sets index. Both indexes are cached in GemeloService (TTL 10 min).
+    outcomes_out: list[dict] = []
+    try:
+        from app.services.gemelo_service import GemeloService
+        _svc = GemeloService(bs)
+        align_index, outcome_index = await asyncio.gather(
+            _svc._get_alignment_index(org_unit_id),
+            _svc._get_outcome_index(org_unit_id),
+        )
+        seen_oids: set[str] = set()
+        rubric_ids = {str(r.get("rubricId")) for r in rubrics_out if r.get("rubricId") is not None}
+        for ref in rubric_refs:
+            rid = ref.get("RubricId") if isinstance(ref, dict) else None
+            if rid is not None:
+                rubric_ids.add(str(rid))
+        for rid in rubric_ids:
+            oids = align_index.get(rid) or []
+            resolved = []
+            for oid in oids:
+                info = (outcome_index or {}).get(oid) or {}
+                item = {
+                    "outcomeId": oid,
+                    "code": info.get("code"),
+                    "label": info.get("title") or info.get("description"),
+                }
+                resolved.append(item)
+                if oid not in seen_oids:
+                    seen_oids.add(oid)
+                    outcomes_out.append(item)
+            # Attach per-rubric outcomes so the UI can show them inline.
+            for r in rubrics_out:
+                if str(r.get("rubricId")) == rid:
+                    r["outcomes"] = resolved
+    except Exception as e:
+        logger.warning("feedback outcomes resolve failed folder=%s: %s", folder_id, e)
+
     return JSONResponse(content={
         "folderId":               folder_id,
         "folderName":             folder_name,
@@ -2125,6 +2222,7 @@ async def brightspace_dropbox_feedback(
         "feedbackText":           feedback_text,
         "files":                  fb_data.get("Files") or [],
         "rubrics":                rubrics_out,
+        "outcomes":               outcomes_out,
         "assignmentInstructions": assignment_instructions,
         "submissionComment":      submission_comment,
         "submittedAt":            submitted_at,

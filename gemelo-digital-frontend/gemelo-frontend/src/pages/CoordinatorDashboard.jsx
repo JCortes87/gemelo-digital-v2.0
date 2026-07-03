@@ -18,15 +18,38 @@ export default function CoordinatorDashboard({ onClose }) {
   const navigate = useNavigate();
   const { authUser, logout } = useAuth();
 
-  // ── Phase 1: pre-load available semesters for the dropdown ──────────────
-  const [semesters, setSemesters] = useState([]);
+  // ── Phase 1: pre-cargar el catálogo de cursos del coordinador ──────────────
+  // Se usa para (a) derivar los períodos disponibles del propio listado —igual
+  // que el panel de profesor, en lugar del endpoint /semesters que llega vacío—
+  // y (b) filtrar por período/categoría/nombre en cliente, que es más confiable
+  // que el filtro server-side por `period=`.
+  const [catalog, setCatalog] = useState([]);
+  const [catalogLoading, setCatalogLoading] = useState(true);
   useEffect(() => {
+    let alive = true;
     (async () => {
+      setCatalogLoading(true);
+      // Mismo patrón que el panel de profesor (RoleHome): si el endpoint
+      // principal `courses/enrolled` falla, caer a `my-course-offerings`.
+      // Sin este fallback el catálogo quedaba vacío y el dropdown de períodos
+      // solo mostraba "Todos los períodos".
       try {
-        const data = await apiGet("/brightspace/semesters?min_year=2023");
-        setSemesters(Array.isArray(data?.items) ? data.items : []);
-      } catch { /* silent */ }
+        let items = [];
+        try {
+          const data = await apiGet("/brightspace/courses/enrolled?active_only=false&limit=500");
+          items = (Array.isArray(data?.items) ? data.items : []).filter((c) => !isStudentRole(c.roleName));
+        } catch {
+          const data = await apiGet("/brightspace/my-course-offerings?active_only=false&limit=50");
+          items = (Array.isArray(data?.items) ? data.items : []).map((c) => ({ ...c, roleName: "Instructor" }));
+        }
+        if (alive) setCatalog(items);
+      } catch {
+        if (alive) setCatalog([]);
+      } finally {
+        if (alive) setCatalogLoading(false);
+      }
     })();
+    return () => { alive = false; };
   }, []);
 
   // ── Filter form state (shown BEFORE loading) ─────────────────────────────
@@ -38,7 +61,6 @@ export default function CoordinatorDashboard({ onClose }) {
   const [hasSearched, setHasSearched] = useState(false);
   const [courses, setCourses] = useState([]);
   const [courseMetrics, setCourseMetrics] = useState({});
-  const [loading, setLoading] = useState(false);
   const [sortBy, setSortBy] = useState("atRiskPct");
 
   const KNOWN_CATEGORIES = [
@@ -52,24 +74,16 @@ export default function CoordinatorDashboard({ onClose }) {
   ];
 
   // ── Triggered when user clicks "Buscar cursos" ───────────────────────────
-  const handleSearch = async () => {
+  // Filtra en cliente el catálogo ya cargado (por período) y dispara la carga
+  // de métricas solo para el subconjunto resultante. El filtro por categoría y
+  // nombre se aplica en `sortedCourses` (useMemo) de forma reactiva.
+  const handleSearch = () => {
     setHasSearched(true);
-    setLoading(true);
-    setCourses([]);
     setCourseMetrics({});
-    try {
-      const qs = filterSemester
-        ? `?active_only=true&limit=200&period=${encodeURIComponent(filterSemester)}`
-        : "?active_only=true&limit=200";
-      const data = await apiGet(`/brightspace/courses/enrolled${qs}`);
-      const items = Array.isArray(data?.items) ? data.items : [];
-      const relevant = items.filter((c) => !isStudentRole(c.roleName));
-      setCourses(relevant);
-    } catch {
-      setCourses([]);
-    } finally {
-      setLoading(false);
-    }
+    const relevant = filterSemester
+      ? catalog.filter((c) => extractSemester(c) === filterSemester)
+      : catalog.slice();
+    setCourses(relevant);
   };
 
   // ── Load metrics for each course (rate-limited) ───────────────────────────
@@ -143,6 +157,20 @@ export default function CoordinatorDashboard({ onClose }) {
     return `${year}-${roman}`;
   };
 
+  // Períodos disponibles derivados del catálogo real (no del endpoint /semesters,
+  // que viene vacío). Ordenados del más reciente al más antiguo. Mismo criterio
+  // que el panel de profesor, garantizando que el dropdown solo muestre períodos
+  // que sí tienen cursos y que el filtro siempre funcione.
+  const availableSemesters = useMemo(() => {
+    const set = new Set();
+    for (const c of catalog) {
+      const s = extractSemester(c);
+      if (s) set.add(s);
+    }
+    return Array.from(set).sort().reverse();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [catalog]);
+
   // ── Client-side filtering + sorting on loaded courses ────────────────────
   const sortedCourses = useMemo(() => {
     const q = filterSearch.trim().toLowerCase();
@@ -177,15 +205,22 @@ export default function CoordinatorDashboard({ onClose }) {
     if (metrics.length === 0) return { totalStudents: 0, atRiskCount: 0, avgGrade: null, avgCoverage: null };
     const totalStudents = metrics.reduce((a, m) => a + (m.totalStudents || 0), 0);
     const atRiskCount = metrics.reduce((a, m) => a + (m.atRiskCount || 0), 0);
+    // Promedio SIMPLE de promedios de curso (cada curso pesa igual).
     const withAvg = metrics.filter((m) => m.avgPct != null);
-    const avgGrade = withAvg.length > 0 ? withAvg.reduce((a, m) => a + m.avgPct, 0) / withAvg.length : null;
+    const avgGrade = withAvg.length > 0
+      ? withAvg.reduce((a, m) => a + m.avgPct, 0) / withAvg.length
+      : null;
     const withCov = metrics.filter((m) => m.avgCoverage != null);
-    const avgCoverage = withCov.length > 0 ? withCov.reduce((a, m) => a + m.avgCoverage, 0) / withCov.length : null;
+    const avgCoverage = withCov.length > 0
+      ? withCov.reduce((a, m) => a + m.avgCoverage, 0) / withCov.length
+      : null;
     return { totalStudents, atRiskCount, avgGrade, avgCoverage };
   }, [sortedCourses]);
 
   const metricsLoaded = Object.values(courseMetrics).filter((m) => !m?.error).length;
-  const canSearch = true; // always allows searching
+  const metricsDone = Object.keys(courseMetrics).length;      // atendidos (éxito + error)
+  const metricsTotal = courses.length;                        // conjunto que se está cargando
+  const metricsPct = metricsTotal > 0 ? Math.round((metricsDone / metricsTotal) * 100) : 0;
 
   return (
     <div style={{ minHeight: "100vh", background: "var(--bg)", fontFamily: "var(--font)" }}>
@@ -243,15 +278,19 @@ export default function CoordinatorDashboard({ onClose }) {
               <select
                 value={filterSemester}
                 onChange={(e) => setFilterSemester(e.target.value)}
+                disabled={catalogLoading}
                 style={{
                   padding: "9px 12px", borderRadius: 8, border: "1px solid var(--border)",
                   background: "var(--bg)", color: "var(--text)",
-                  fontSize: 12, fontFamily: "var(--font)", outline: "none", cursor: "pointer",
+                  fontSize: 12, fontFamily: "var(--font)", outline: "none",
+                  cursor: catalogLoading ? "wait" : "pointer",
                 }}
               >
-                <option value="">Todos los períodos</option>
-                {semesters.map((s) => (
-                  <option key={s.id} value={s.code}>{s.code} — {s.name}</option>
+                <option value="">
+                  {catalogLoading ? "Cargando períodos…" : "Todos los períodos"}
+                </option>
+                {availableSemesters.map((code) => (
+                  <option key={code} value={code}>{formatSemester(code)}</option>
                 ))}
               </select>
             </label>
@@ -294,16 +333,16 @@ export default function CoordinatorDashboard({ onClose }) {
             {/* Search button */}
             <button
               onClick={handleSearch}
-              disabled={loading}
+              disabled={catalogLoading}
               style={{
                 padding: "9px 20px", borderRadius: 8, border: "none",
-                background: loading ? "var(--border)" : "var(--brand)",
-                color: loading ? "var(--muted)" : "#fff",
-                fontSize: 13, fontWeight: 800, cursor: loading ? "not-allowed" : "pointer",
+                background: catalogLoading ? "var(--border)" : "var(--brand)",
+                color: catalogLoading ? "var(--muted)" : "#fff",
+                fontSize: 13, fontWeight: 800, cursor: catalogLoading ? "not-allowed" : "pointer",
                 fontFamily: "var(--font)", flexShrink: 0, alignSelf: "flex-end",
               }}
             >
-              {loading ? "Buscando..." : "🔍 Buscar cursos"}
+              {catalogLoading ? "Cargando catálogo…" : "🔍 Buscar cursos"}
             </button>
 
             {hasSearched && (
@@ -330,7 +369,7 @@ export default function CoordinatorDashboard({ onClose }) {
           </div>
 
           {/* Active filter summary */}
-          {hasSearched && !loading && (
+          {hasSearched && (
             <div style={{ marginTop: 12, display: "flex", gap: 8, flexWrap: "wrap" }}>
               {filterSemester && (
                 <span style={{ fontSize: 10, fontWeight: 800, padding: "3px 10px", borderRadius: 99, background: "var(--brand-light)", color: "var(--brand)", textTransform: "uppercase" }}>
@@ -375,7 +414,7 @@ export default function CoordinatorDashboard({ onClose }) {
         {hasSearched && (
           <>
             {/* KPI totals */}
-            {!loading && sortedCourses.length > 0 && (
+            {sortedCourses.length > 0 && (
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 12, marginBottom: 20 }}>
                 <div className="kpi-card">
                   <div style={{ fontSize: 10, fontWeight: 800, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.08em" }}>Cursos</div>
@@ -410,7 +449,7 @@ export default function CoordinatorDashboard({ onClose }) {
             {/* Table */}
             <div className="kpi-card" style={{ padding: 0, overflow: "hidden" }}>
               {/* Sort bar */}
-              {!loading && sortedCourses.length > 0 && (
+              {sortedCourses.length > 0 && (
                 <div style={{ padding: "10px 14px", borderBottom: "1px solid var(--border)", display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
                   <span style={{ fontSize: 11, color: "var(--muted)", fontWeight: 700 }}>Ordenar:</span>
                   <select
@@ -428,12 +467,24 @@ export default function CoordinatorDashboard({ onClose }) {
                   </select>
                   <span style={{ fontSize: 11, color: "var(--muted)", marginLeft: "auto" }}>
                     {sortedCourses.length} curso{sortedCourses.length !== 1 ? "s" : ""}
-                    {metricsLoaded < sortedCourses.length && (
-                      <span style={{ marginLeft: 6, color: "var(--brand)" }}>
-                        · cargando métricas {metricsLoaded}/{sortedCourses.length}...
-                      </span>
-                    )}
                   </span>
+                </div>
+              )}
+
+              {/* Barra de progreso de carga de métricas — reemplaza el texto
+                  "cargando métricas x/y" por un indicador visual con porcentaje. */}
+              {metricsTotal > 0 && metricsDone < metricsTotal && (
+                <div style={{ padding: "12px 14px", borderBottom: "1px solid var(--border)", background: "var(--bg)" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 7 }}>
+                    <span style={{ fontSize: 11, fontWeight: 800, color: "var(--brand)", display: "flex", alignItems: "center", gap: 7 }}>
+                      <span style={{ width: 8, height: 8, borderRadius: "50%", background: "var(--brand)", display: "inline-block", animation: "pulse 1.2s ease-in-out infinite" }} />
+                      Analizando cursos… {metricsDone}/{metricsTotal}
+                    </span>
+                    <span style={{ fontSize: 12, fontWeight: 900, color: "var(--brand)", fontFamily: "var(--font-mono)" }}>{metricsPct}%</span>
+                  </div>
+                  <div style={{ height: 7, borderRadius: 99, background: "var(--border)", overflow: "hidden" }}>
+                    <div style={{ height: "100%", width: `${metricsPct}%`, background: "var(--brand)", borderRadius: 99, transition: "width 0.35s ease" }} />
+                  </div>
                 </div>
               )}
 
@@ -450,14 +501,14 @@ export default function CoordinatorDashboard({ onClose }) {
                     </tr>
                   </thead>
                   <tbody>
-                    {loading && (
+                    {catalogLoading && (
                       <tr>
                         <td colSpan={6} style={{ padding: 40, textAlign: "center", color: "var(--muted)" }}>
-                          <div style={{ fontSize: 13 }}>Cargando cursos...</div>
+                          <div style={{ fontSize: 13 }}>Cargando catálogo de cursos…</div>
                         </td>
                       </tr>
                     )}
-                    {!loading && sortedCourses.length === 0 && (
+                    {!catalogLoading && sortedCourses.length === 0 && (
                       <tr>
                         <td colSpan={6} style={{ padding: 40, textAlign: "center", color: "var(--muted)" }}>
                           <div style={{ fontSize: 36, opacity: 0.35, marginBottom: 8 }}>📚</div>
@@ -519,7 +570,7 @@ export default function CoordinatorDashboard({ onClose }) {
         )}
 
         <div style={{ textAlign: "center", padding: "24px 0", fontSize: 11, color: "var(--muted)" }}>
-          CESA · G.D 2026.7.1 · Panel Coordinador
+          CESA · G.D 2026.7.3 · Panel Coordinador
         </div>
       </main>
     </div>
