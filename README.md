@@ -42,7 +42,7 @@ gemelo-frontend/
 - **Frontend:** S3 (`gemelo-frontend-prod`) + CloudFront (`E32WDBCT7SFCRD`)
 - **Backend:** ECS Fargate (`cluster: default`, `service: gemelo-digital-api`) + ECR (`gemelo-backend`)
 - **Base de datos:** RDS Postgres
-- **CI/CD:** GitHub Actions con OIDC (`GemeloDigitalDeployerRole`)
+- **CI/CD:** GitHub Actions con OIDC (`GemeloDigitalDeployerRole`) — ⚠️ **actualmente roto**, se despliega manualmente (ver sección [Deploy](#deploy))
 
 ---
 
@@ -211,42 +211,108 @@ También hay entrada vía LTI 1.3 desde Brightspace (ver `app/api/lti.py`).
 
 ## Deploy
 
-### Producción (recomendado)
+> ⚠️ **El CI/CD automático está roto.** Los workflows `deploy-backend.yml` / `deploy-frontend.yml` fallan en el step *"Configurar credenciales AWS (via OIDC)"* porque la *trust policy* del rol IAM `GemeloDigitalDeployerRole` no acepta el token OIDC de este repo. **Hasta que se arregle (requiere acceso a AWS IAM), se despliega manualmente desde local** con el AWS CLI + Docker. Todo lo de abajo asume que ya hiciste `aws configure` con un IAM user con permisos de ECR/ECS/S3/CloudFront (cuenta `718624265053`, región `us-east-1`).
 
-Los deploys automáticos vía GitHub Actions se disparan al hacer push a `main` cuando cambian los folders correspondientes. Ver `.github/workflows/deploy-backend.yml` y `deploy-frontend.yml`.
+**Referencia rápida de recursos AWS:**
 
-### Deploy manual desde local
+| Recurso | Valor |
+|---|---|
+| Cuenta / región | `718624265053` / `us-east-1` |
+| Frontend | S3 `gemelo-frontend-prod` + CloudFront `E32WDBCT7SFCRD` |
+| Backend | ECS cluster `default`, service `gemelo-digital-api`, ECR repo `gemelo-backend` |
+| URL backend | https://ge-9d9d0220a8704eeabada1b951f3f2d37.ecs.us-east-1.on.aws |
 
-**Frontend (S3 + CloudFront):**
+### Flujo completo para subir una actualización
+
+El backend **también sirve el SPA** (copia del build del frontend en `gemelo-digital-backend/frontend_dist/`), así que un cambio de frontend implica reconstruir el bundle **y** refrescar `frontend_dist` antes de construir la imagen del backend.
+
+**1) Build del frontend:**
 ```bash
 cd gemelo-digital-frontend/gemelo-frontend
-npm run build
-aws s3 sync ./dist/ s3://gemelo-frontend-prod --delete
-aws cloudfront create-invalidation --distribution-id E32WDBCT7SFCRD --paths "/*"
+npm run build                      # genera dist/ con un bundle content-hashed (ej: index-XXXX.js)
 ```
 
-**Backend (ECR + ECS):**
+**2) Deploy del frontend (S3 + CloudFront):**
 ```bash
-cd gemelo-digital-backend
+aws s3 sync ./dist/ s3://gemelo-frontend-prod --delete --region us-east-1
+aws cloudfront create-invalidation --distribution-id E32WDBCT7SFCRD --paths "/*" --region us-east-1
+```
+
+**3) Refrescar el bundle embebido en el backend:**
+```bash
+cd ../../gemelo-digital-backend
+rm -rf frontend_dist && cp -r ../gemelo-digital-frontend/gemelo-frontend/dist ./frontend_dist
+```
+
+**4) Build + push de la imagen backend (⚠️ flags obligatorios para Fargate):**
+```bash
+# git-bash en Windows: evita que se mangleen los args con "/"
+export MSYS_NO_PATHCONV=1
+
 aws ecr get-login-password --region us-east-1 \
   | docker login --username AWS --password-stdin 718624265053.dkr.ecr.us-east-1.amazonaws.com
-docker build -t gemelo-backend:latest .
-docker tag gemelo-backend:latest 718624265053.dkr.ecr.us-east-1.amazonaws.com/gemelo-backend:latest
-docker push 718624265053.dkr.ecr.us-east-1.amazonaws.com/gemelo-backend:latest
+
+# Fargate SOLO acepta un manifiesto Docker v2 de una plataforma. BuildKit por
+# defecto agrega provenance/attestation (OCI image index) y Fargate lo rechaza
+# con "tasks failed to start". Por eso: --provenance=false --sbom=false --platform linux/amd64
+docker buildx build \
+  --platform linux/amd64 --provenance=false --sbom=false \
+  -t 718624265053.dkr.ecr.us-east-1.amazonaws.com/gemelo-backend:latest \
+  --push .
+```
+
+**5) Forzar el redeploy en ECS:**
+```bash
 aws ecs update-service --cluster default --service gemelo-digital-api \
   --force-new-deployment --region us-east-1
 ```
 
-Verificar rollout:
+**6) Esperar a que quede estable y verificar:**
 ```bash
-aws ecs describe-services --cluster default --services gemelo-digital-api \
-  --region us-east-1 \
-  --query 'services[0].deployments[0].{rollout:rolloutState,running:runningCount}'
+aws ecs wait services-stable --cluster default --services gemelo-digital-api --region us-east-1
+
+# health y que sirva el bundle nuevo (reemplaza el hash por el de tu build)
+BASE=https://ge-9d9d0220a8704eeabada1b951f3f2d37.ecs.us-east-1.on.aws
+curl -s "$BASE/health"
+curl -s -o /dev/null -w "%{http_code}\n" "$BASE/assets/index-XXXX.js"
 ```
+
+### Gotchas del deploy (aprendidos a la mala)
+
+- **`start.sh` con CRLF** → el contenedor Linux falla con `exec ./start.sh: no such file or directory`. El `Dockerfile` ya normaliza el CRLF (`sed -i 's/\r$//' ./start.sh`); no lo revierta.
+- **Estrategia CANARY con auto-rollback:** el servicio usa despliegue canary (5%, bake ~3 min) con `deploymentCircuitBreaker` y una alarma CloudWatch `default/gemelo-digital-api/RollbackAlarm` (error % > 1.0). Un deploy que falle genera 5xx y **deja la alarma en ALARM**; el siguiente deploy —aunque la imagen sea sana— hará rollback con *"alarm detected"*. Si eso pasa, **espera a que la alarma vuelva a `OK`** antes de reintentar:
+  ```bash
+  aws cloudwatch describe-alarms --alarm-names \
+    "default/gemelo-digital-api/RollbackAlarm" --region us-east-1 \
+    --query 'MetricAlarms[0].StateValue'
+  ```
+- **Verifica el digest de la task en ejecución** para confirmar que corre la imagen nueva (no una cacheada):
+  ```bash
+  TASK=$(aws ecs list-tasks --cluster default --service-name gemelo-digital-api \
+    --desired-status RUNNING --region us-east-1 --query 'taskArns[0]' --output text)
+  aws ecs describe-tasks --cluster default --tasks "$TASK" --region us-east-1 \
+    --query 'tasks[0].containers[0].imageDigest'
+  ```
+
+### Avisos a usuarios (in-app / correo)
+
+Para notificar una actualización a los usuarios existe el endpoint `POST /gemelo/admin/announcement` (requiere sesión **super-admin**, `user_id` en `SUPERADMIN_IDS`, default `5427`). Publica un aviso in-app (campana del portal + Centro de ayuda del docente) y opcionalmente envía correo (BCC) a staff no-estudiante.
+
+```bash
+BASE=https://ge-9d9d0220a8704eeabada1b951f3f2d37.ecs.us-east-1.on.aws
+curl -s -X POST "$BASE/gemelo/admin/announcement" \
+  -H "Authorization: Bearer <TU_gemelo_sid>" -H "Content-Type: application/json" \
+  -d '{"subject":"Novedades — versión X.Y.Z","message":"...","tag":"Actualización","send_email":false}'
+```
+
+Dos limitaciones actuales en prod:
+- **Sin SMTP en el task definition** de ECS → `send_email:true` no envía nada (`smtp_configured()` es false). Las credenciales de `desarrolloprofesoral@cesa.edu.co` sí funcionan vía `smtp.office365.com:587` (STARTTLS); para habilitar correo hay que agregar `SMTP_HOST/PORT/USER/PASSWORD/SMTP_FROM(_NAME)` al task definition y redeployar.
+- **Sistema de archivos efímero** → los avisos in-app se guardan en `frontend_dist/../announcements.json` dentro del contenedor y **se pierden en el próximo redeploy** (no hay `GEMELO_DATA_DIR` con volumen persistente). Para persistirlos habría que montar un volumen o moverlos a la base de datos.
 
 ### Ver logs backend
 
 ```bash
+export MSYS_NO_PATHCONV=1   # git-bash en Windows
 aws logs tail /aws/ecs/default/gemelo-digital-api-cbc4 \
   --region us-east-1 --since 10m --follow
 ```
