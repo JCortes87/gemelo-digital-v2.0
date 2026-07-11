@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
-import { apiGet } from "../utils/api";
+import { apiGet, apiGetCached } from "../utils/api";
 import { fmtPct, fmtGrade10FromPct, computeRiskFromPct } from "../utils/helpers";
 import { COLORS, colorForPct } from "../utils/colors";
 import { injectStyles } from "../styles/global";
@@ -98,7 +98,7 @@ export default function CoordinatorDashboard({ onClose }) {
           const c = queue.shift();
           if (!c) break;
           try {
-            const ov = await apiGet(`/gemelo/course/${c.id}/overview`);
+            const ov = await apiGetCached(`/gemelo/course/${c.id}/overview`);
             if (!alive) return;
             const total = Number(ov?.studentsCount ?? 0);
             const atRiskCount = Number(ov?.studentsAtRisk?.length ?? 0);
@@ -570,7 +570,7 @@ export default function CoordinatorDashboard({ onClose }) {
         )}
 
         <div style={{ textAlign: "center", padding: "24px 0", fontSize: 11, color: "var(--muted)" }}>
-          CESA · G.D 2026.7.3 · Panel Coordinador
+          CESA · G.D 2026.7.10 · Panel Coordinador
         </div>
       </main>
     </div>

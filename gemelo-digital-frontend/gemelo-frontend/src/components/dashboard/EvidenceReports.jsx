@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect } from "react";
-import { apiGet, apiDownloadUrl } from "../../utils/api";
+import { apiGet, apiGetCached, apiDownloadUrl } from "../../utils/api";
 import { exportInstitutionalFeedbackPdf } from "../../utils/export";
 import { COLORS, colorForPct } from "../../utils/colors";
 import { fmtPct, fmtGrade10FromPct, computeRiskFromPct } from "../../utils/helpers";
@@ -84,7 +84,7 @@ export default function EvidenceReports({
       if (details[s.userId]?.evidences || details[s.userId]?.loading) return;
       setDetails((prev) => ({ ...prev, [s.userId]: { loading: true } }));
       try {
-        const data = await apiGet(`/gemelo/course/${orgUnitId}/student/${s.userId}`);
+        const data = await apiGetCached(`/gemelo/course/${orgUnitId}/student/${s.userId}`);
         const evidences = Array.isArray(data?.gradebook?.evidences)
           ? data.gradebook.evidences.filter((e) => !e.isCorte)
           : [];

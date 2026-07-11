@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid, ReferenceLine } from "recharts";
-import { apiGet, mapLimit } from "../utils/api";
+import { apiGet, apiGetCached, mapLimit } from "../utils/api";
 import { COLORS, colorForPct } from "../utils/colors";
 import { computeRiskFromPct, fmtPct, fmtGrade10FromPct } from "../utils/helpers";
 import { injectStyles } from "../styles/global";
@@ -90,7 +90,7 @@ export default function StudentOverviewPanel({ userId, period, onClose }) {
         const courseId = course.id || course.orgUnitId;
         if (!courseId) return;
         try {
-          const data = await apiGet(`/gemelo/course/${courseId}/student/${userId}`);
+          const data = await apiGetCached(`/gemelo/course/${courseId}/student/${userId}`);
           if (!alive) return;
           const summary = data?.summary || {};
           setCourseMetrics((prev) => ({

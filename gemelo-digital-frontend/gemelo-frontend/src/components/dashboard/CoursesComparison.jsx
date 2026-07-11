@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { BookOpen } from "lucide-react";
-import { apiGet } from "../../utils/api";
+import { apiGetCached } from "../../utils/api";
 import { COLORS, colorForPct } from "../../utils/colors";
 import { fmtPct, fmtGrade10FromPct, computeRiskFromPct } from "../../utils/helpers";
 import { isStudentRole } from "../../utils/roles";
@@ -22,7 +22,7 @@ export default function CoursesComparison({ currentOrgUnitId, onSelectCourse }) 
     (async () => {
       setLoading(true);
       try {
-        const data = await apiGet("/brightspace/courses/enrolled?active_only=true&limit=50");
+        const data = await apiGetCached("/brightspace/courses/enrolled?active_only=true&limit=50", { ttl: 300_000 });
         if (!alive) return;
         const items = Array.isArray(data?.items) ? data.items : [];
         const teacherCourses = items.filter((c) => !isStudentRole(c.roleName));
@@ -45,7 +45,7 @@ export default function CoursesComparison({ currentOrgUnitId, onSelectCourse }) 
       await Promise.all(
         courses.map(async (c) => {
           try {
-            const ov = await apiGet(`/gemelo/course/${c.id}/overview`);
+            const ov = await apiGetCached(`/gemelo/course/${c.id}/overview`);
             if (!alive) return;
             const atRiskCount = Number(ov?.studentsAtRisk?.length ?? 0);
             const totalStudents = Number(ov?.studentsCount ?? 0);

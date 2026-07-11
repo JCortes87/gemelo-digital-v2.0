@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import ReactDOM from "react-dom";
 import { useNavigate, useSearchParams } from "react-router-dom";
+import { Presentation, GraduationCap, ArrowRight, LogOut } from "lucide-react";
 import {
   ResponsiveContainer,
   BarChart,
@@ -24,6 +25,7 @@ import LastUpdated from "../components/ui/LastUpdated";
 import CommandPalette from "../components/ui/CommandPalette";
 import ContextualTip from "../components/ui/ContextualTip";
 import SharedCesaLoader from "../components/ui/CesaLoader";
+import ErrorBoundary from "../components/ui/ErrorBoundary";
 import SmartAlerts from "../components/dashboard/SmartAlerts";
 import CourseTrends from "../components/dashboard/CourseTrends";
 import DueDateCalendar from "../components/dashboard/DueDateCalendar";
@@ -37,9 +39,8 @@ import useKeyboardShortcuts from "../hooks/useKeyboardShortcuts";
 import useCourseSnapshots from "../hooks/useCourseSnapshots";
 import useStudentChat from "../hooks/useStudentChat";
 import { exportStudentsCsv, exportCourseReport, STUDENT_CSV_COLUMNS } from "../utils/export";
-import { apiUrl, apiGet, apiPost, mapLimit, API_BASE_URL } from "../utils/api";
-import { sanitizeHtml } from "../utils/sanitize";
-import { elSpeak, elStop, elListen } from "../utils/speech";
+import { apiUrl, apiGet, apiGetCached, apiPost, mapLimit, invalidateApiCache, API_BASE_URL } from "../utils/api";
+import { elSpeak } from "../utils/speech";
 import { COLORS, STATUS_CONFIG, colorForRisk, colorForPct, colorForLearningOutcome } from "../utils/colors";
 import {
   toDate, weeksBetween, clamp, normStatus,
@@ -51,6 +52,9 @@ import {
   computeRiskFromPct, suggestRouteForStudent,
 } from "../utils/helpers";
 import { isStudentRole } from "../utils/roles";
+import VoiceAssistant from "../components/dashboard/VoiceAssistant";
+import { parseVoiceCommand, findLowestResultStudent, findHighestRiskStudent, findStudentByName } from "../utils/voiceCommands";
+import RoutesView from "../components/dashboard/RoutesView";
 /**
  * =========================
  * Config
@@ -1801,7 +1805,7 @@ function LoginScreen({ orgUnitId }) {
               G.D
             </div>
             <div style={{ fontSize: 11, fontWeight: 600, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.08em" }}>
-              Vista Docente · 2026.7.3
+              Vista Docente · 2026.7.10
             </div>
           </div>
         </div>
@@ -2401,517 +2405,6 @@ function EvidencesTimeline({ evidences, thresholds }) {
 }
 
 // ─────────────────────────────────────────────────────────
-// VoiceAssistant — Panel completo con chat, voz y TTS
-// ─────────────────────────────────────────────────────────
-function VoiceAssistant({ studentRows, overview, raDashboard, courseInfo, thresholds }) {
-  const [msgs, setMsgs] = React.useState(() => [{
-    id: 0, role: "bot", fromVoice: false,
-    text: `Listo. Tengo cargados los datos de <strong>${courseInfo?.Name || "este curso"}</strong>. Puedo analizar riesgo, evidencias y desempeño por RA. Escríbeme o usa el micrófono 🎙️.`,
-  }]);
-  const [input, setInput] = React.useState("");
-  const [aiStatus, setAiStatus] = React.useState("idle");
-  const [voiceOut, setVoiceOut] = React.useState(true);
-  const [speed, setSpeed]   = React.useState(1.2);
-  const [activeSpeakId, setActiveSpeakId] = React.useState(null);
-  const [liveText, setLiveText] = React.useState("");
-  const chatRef  = React.useRef(null);
-  const synthRef = React.useRef(null);
-  const recRef   = React.useRef(null);
-  const inputRef = React.useRef(null);
-
-  React.useEffect(() => {
-    if (chatRef.current) chatRef.current.scrollTop = chatRef.current.scrollHeight;
-  }, [msgs, aiStatus]);
-
-  // ── Pre-compute course data ──
-  const withGrades = (Array.isArray(studentRows) ? studentRows : []).filter((s) => s.currentPerformancePct != null);
-  const avg = withGrades.length
-    ? (withGrades.reduce((a, s) => a + Number(s.currentPerformancePct) / 10, 0) / withGrades.length).toFixed(2)
-    : null;
-  const altos  = (Array.isArray(studentRows) ? studentRows : []).filter((s) => computeRiskFromPct(s.currentPerformancePct) === "alto");
-  const medios = (Array.isArray(studentRows) ? studentRows : []).filter((s) => computeRiskFromPct(s.currentPerformancePct) === "medio");
-  const zeros  = (Array.isArray(studentRows) ? studentRows : []).filter((s) => s.currentPerformancePct == null);
-  const top    = withGrades.filter((s) => s.currentPerformancePct / 10 >= 8);
-  const courseName = courseInfo?.Name || "el curso";
-
-  // ── Banco de sugerencias (rotación aleatoria cada apertura) ──
-  const SUGGESTION_BANK = [
-    { icon: "🔴", label: "¿Quiénes están en riesgo alto?" },
-    { icon: "📊", label: "¿Cuál es la nota promedio?" },
-    { icon: "📉", label: "¿Quién tiene la nota más baja?" },
-    { icon: "⚠️", label: "¿Hay estudiantes sin nota?" },
-    { icon: "🏆", label: "¿Cuáles son los top 3?" },
-    { icon: "🎯", label: "¿Qué RA está más crítico?" },
-    { icon: "📋", label: "Dame un resumen del curso" },
-    { icon: "🟡", label: "¿Quiénes están en riesgo medio?" },
-    { icon: "📦", label: "¿Cuántos aprobaron (≥7.0)?" },
-    { icon: "🔍", label: "¿Cuál es la cobertura promedio?" },
-    { icon: "⏳", label: "¿Cuántos tienen pendientes sin calificar?" },
-    { icon: "🛤️", label: "¿Qué rutas de intervención hay?" },
-    { icon: "📅", label: "¿Cómo va el ritmo de contenidos?" },
-    { icon: "🧮", label: "¿Cuántos están por debajo de 5.0?" },
-    { icon: "🚀", label: "¿Quiénes mejoraron su desempeño?" },
-    { icon: "🎓", label: "¿Hay estudiantes sin actividad reciente?" },
-  ];
-  // Seleccionar 4 aleatorias estables por montaje
-  const [visibleChips, setVisibleChipsState] = React.useState(() => {
-    const shuffled = [...SUGGESTION_BANK].sort(() => Math.random() - 0.5);
-    return shuffled.slice(0, 6);
-  });
-  const CHIPS = visibleChips;
-
-  // ── Command processor — respuestas cortas y precisas ──
-  // Regla de orden: más específico SIEMPRE antes que más genérico
-  function processCmd(cmd) {
-    const c = cmd.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
-    const n = studentRows.length;
-
-    // ── Ritmo de contenidos (antes de "contenido" genérico)
-    if (c.includes("ritmo") || c.includes("ritmo de contenido")) {
-      const kpis = overview?.contentKpis;
-      if (!kpis) return "Sin datos de ritmo de contenidos disponibles.";
-      return `Contenidos creados: <strong>${kpis.createdCount ?? "—"}</strong> · Mínimo esperado: <strong>${kpis.minExpected ?? "—"}</strong> · Cumplimiento: <strong>${kpis.progressRatio != null ? Math.round(kpis.progressRatio*100)+"%" : "—"}</strong>.`;
-    }
-
-    // ── Actividad reciente (antes de cualquier otra rama)
-    if (c.includes("actividad reciente") || c.includes("sin actividad") || c.includes("inactiv")) {
-      if (!zeros.length) return "Todos los estudiantes han tenido actividad registrada.";
-      return `Sin actividad registrada: <strong>${zeros.length}</strong>:<br>${zeros.slice(0,5).map(s => `‣ ${s.displayName.split(",")[0]}`).join("<br>")}${zeros.length > 5 ? `<br>… y ${zeros.length - 5} más` : ""}`;
-    }
-
-    // ── RA / Resultados de aprendizaje (ANTES de "critico" genérico y "menor")
-    if (c.includes("que ra") || c.includes("cual ra") || c.includes("ra critico") || c.includes("ra mas") ||
-        c.includes("resultado de aprendizaje") || c.includes("resultados de aprendizaje") ||
-        c.includes("competencia") || (c.includes("ra") && (c.includes("critico") || c.includes("bajo") || c.includes("peor")))) {
-      const ras = Array.isArray(raDashboard?.ras) ? raDashboard.ras.filter(r => r.studentsWithData > 0) : [];
-      if (!ras.length) return "Sin datos de RA aún. Se requieren evaluaciones con rúbricas calificadas.";
-      const sorted = [...ras].sort((a,b) => a.avgPct - b.avgPct);
-      return `${sorted.map(r => `${r.avgPct < 50 ? "[Crítico]" : r.avgPct < 70 ? "[Observación]" : "[OK]"} <strong>${r.code}:</strong> ${fmtPct(r.avgPct)}`).join("<br>")}.<br>Foco: <strong>${sorted[0].code}</strong> (menor desempeño).`;
-    }
-
-    // ── Por debajo de 5 (ANTES de "menor" o "bajo" genérico que también captura "nota más baja")
-    if (c.includes("debajo de 5") || c.includes("menor a 5") || c.includes("menor de 5") ||
-        c.includes("5.0") || c.includes("reprobado") || c.includes("cuantos") && c.includes("5")) {
-      const rep = withGrades.filter(s => s.currentPerformancePct / 10 < 5);
-      return `Con nota menor a 5.0: <strong>${rep.length} de ${n}</strong>.${rep.length ? "<br>" + rep.slice(0,4).map(s=>`‣ ${s.displayName.split(",")[0]} (${fmtGrade10FromPct(s.currentPerformancePct)})`).join("<br>") : ""}`;
-    }
-
-    // ── Nota más baja / quién tiene la peor nota
-    if ((c.includes("nota") && (c.includes("mas baja") || c.includes("baja") || c.includes("peor") || c.includes("menor nota"))) ||
-        c.includes("nota minima") || (c.includes("quien") && c.includes("baj"))) {
-      const worst = [...withGrades].sort((a, b) => a.currentPerformancePct - b.currentPerformancePct)[0];
-      if (!worst) return "Sin calificaciones registradas aún.";
-      return `Nota más baja: <strong>${worst.displayName}</strong> con <strong>${fmtGrade10FromPct(worst.currentPerformancePct)}</strong>.`;
-    }
-
-    // ── Riesgo alto (ANTES de riesgo genérico)
-    if (c.includes("riesgo alto") || c.includes("alto riesgo") ||
-        (c.includes("riesgo") && (c.includes("quienes") || c.includes("quién") || c.includes("quienes estan"))) ) {
-      if (!altos.length) return "Ningún estudiante en riesgo alto actualmente.";
-      return `Riesgo alto (${altos.length}):<br>${altos.slice(0, 6).map(s => `‣ ${s.displayName.split(",")[0]} — ${fmtGrade10FromPct(s.currentPerformancePct)}`).join("<br>")}${altos.length > 6 ? `<br>… y ${altos.length - 6} más` : ""}`;
-    }
-
-    // ── Riesgo medio
-    if (c.includes("riesgo medio") || c.includes("medio riesgo")) {
-      if (!medios.length) return "Ningún estudiante en riesgo medio actualmente.";
-      return `Riesgo medio (${medios.length}):<br>${medios.slice(0, 5).map(s => `‣ ${s.displayName.split(",")[0]} — ${fmtGrade10FromPct(s.currentPerformancePct)}`).join("<br>")}${medios.length > 5 ? `<br>… y ${medios.length - 5} más` : ""}`;
-    }
-
-    // ── Riesgo general
-    if (c.includes("riesgo") || c.includes("risk")) {
-      const ok = n - altos.length - medios.length - zeros.length;
-      return `Riesgo en <strong>${courseName}</strong>:<br>Alto: ${altos.length} · Medio: ${medios.length} · OK: ${ok} · Sin nota: ${zeros.length}.<br>${altos.length > 0 ? `Prioridad: ${altos.slice(0,3).map(s => s.displayName.split(",")[0]).join(", ")}.` : ""}`;
-    }
-
-    // ── Alertas críticas
-    if (c.includes("alerta")) {
-      const crit = altos.filter(s => s.currentPerformancePct != null && s.currentPerformancePct < 50);
-      return `Sin nota: <strong>${zeros.length}</strong> · Nota menor a 5: <strong>${crit.length}</strong>.<br>${crit.length ? crit.slice(0,3).map(s => `‣ ${s.displayName.split(",")[0]} (${fmtGrade10FromPct(s.currentPerformancePct)})`).join("<br>") : ""}`;
-    }
-
-    // ── Top estudiantes
-    if (c.includes("top") || c.includes("mejor") || c.includes("destacado") || (c.includes("cuales") && c.includes("top"))) {
-      const sorted = [...withGrades].sort((a, b) => b.currentPerformancePct - a.currentPerformancePct).slice(0, 3);
-      if (!sorted.length) return "Sin calificaciones disponibles aún.";
-      return `Top 3:<br>${sorted.map((s, i) => `${i+1}. ${s.displayName.split(",")[0]} — ${fmtGrade10FromPct(s.currentPerformancePct)}`).join("<br>")}`;
-    }
-
-    // ── Resumen del curso
-    if (c.includes("resumen") || c.includes("informe") || c.includes("reporte") || c.includes("como va") || c.includes("dame un")) {
-      return `<strong>${courseName}</strong><br>Estudiantes: ${n} · Promedio: ${avg ?? "—"}/10<br>Alto: ${altos.length} · Medio: ${medios.length} · Sin nota: ${zeros.length}`;
-    }
-
-    // ── Sin nota
-    if (c.includes("sin nota") || c.includes("sin evidencia") || c.includes("ruta 0")) {
-      if (!zeros.length) return "Todos los estudiantes tienen nota registrada.";
-      return `Sin nota: <strong>${zeros.length}</strong>:<br>${zeros.slice(0,5).map(s => `‣ ${s.displayName.split(",")[0]}`).join("<br>")}${zeros.length > 5 ? `<br>… y ${zeros.length - 5} más` : ""}`;
-    }
-
-    // ── Aprobados
-    if (c.includes("aprobado") || c.includes("pasando") || c.includes("aprobaron") || c.includes("aprobaron")) {
-      const ap = withGrades.filter(s => s.currentPerformancePct / 10 >= 7);
-      return `Aprobados (nota mayor o igual a 7.0): <strong>${ap.length} de ${n}</strong> (${n ? Math.round(ap.length/n*100) : 0}%).`;
-    }
-
-    // ── Cobertura
-    if (c.includes("cobertura") || (c.includes("50") && c.includes("cobertura"))) {
-      const avgCov = overview?.courseGradebook?.avgCoveragePct;
-      const lowCov = (Array.isArray(studentRows) ? studentRows : []).filter(s => s.coveragePct != null && s.coveragePct < 50);
-      return `Cobertura promedio: <strong>${fmtPct(avgCov)}</strong>.${lowCov.length ? `<br>${lowCov.length} est. con cobertura menor al 50%.` : ""}`;
-    }
-
-    // ── Promedio (último catch-all de nota)
-    if (c.includes("promedio") || c.includes("nota promedio") || c.includes("cual es la nota")) {
-      return `Promedio del curso: <strong>${avg ?? "—"}/10</strong> (${withGrades.length} estudiantes con nota).`;
-    }
-
-    // ── RA general (logro por RA)
-    if (c.includes("ra") || c.includes("logro") || c.includes("aprendizaje")) {
-      const ras = Array.isArray(raDashboard?.ras) ? raDashboard.ras.filter(r => r.studentsWithData > 0) : [];
-      if (!ras.length) return "Sin datos de RA aún. Se requieren evaluaciones con rúbricas calificadas.";
-      const sorted = [...ras].sort((a,b) => a.avgPct - b.avgPct);
-      return `${sorted.map(r => `${r.avgPct < 50 ? "[Crítico]" : r.avgPct < 70 ? "[Obs]" : "[OK]"} <strong>${r.code}:</strong> ${fmtPct(r.avgPct)}`).join(" · ")}<br>Foco: <strong>${sorted[0].code}</strong>.`;
-    }
-
-    // ── Rutas de intervención
-    if (c.includes("ruta") || c.includes("intervencion") || c.includes("prescripcion") || c.includes("plan activo")) {
-      const routeCounts = { route_coverage: 0, route_high_risk: 0, route_watch: 0, route_ok: 0 };
-      (Array.isArray(studentRows) ? studentRows : []).forEach(s => {
-        const rid = s.route?.id || "";
-        if (routeCounts[rid] !== undefined) routeCounts[rid]++;
-      });
-      const total = Object.values(routeCounts).reduce((a,b) => a+b, 0);
-      if (!total) return "No hay datos de rutas disponibles aún.";
-      return `Rutas activas:<br>` +
-        `<strong>Ruta 0</strong> (Activar evidencia): ${routeCounts.route_coverage} est.<br>` +
-        `<strong>Ruta 1</strong> (Recuperación): ${routeCounts.route_high_risk} est.<br>` +
-        `<strong>Ruta 2</strong> (Ajuste dirigido): ${routeCounts.route_watch} est.<br>` +
-        `<strong>Ruta 3</strong> (Mantener desempeño): ${routeCounts.route_ok} est.`;
-    }
-
-    return `No encontré esa consulta. Prueba: riesgo alto, riesgo medio, promedio, sin nota, top estudiantes, resultados de aprendizaje, aprobados, cobertura, rutas.`;
-  }
-
-  // ── TTS — usa ElevenLabs (alta calidad) con fallback a Web Speech API ──
-  function speakText(html, msgId) {
-    setAiStatus("speaking"); setActiveSpeakId(msgId);
-    elSpeak(
-      html,
-      () => { setAiStatus("speaking"); setActiveSpeakId(msgId); },
-      () => { setAiStatus("idle");     setActiveSpeakId(null); },
-    );
-  }
-
-  function stopSpeaking() {
-    elStop();
-    setAiStatus("idle"); setActiveSpeakId(null);
-  }
-
-  // ── Send message ──
-  function sendMsg(text, fromVoice = false) {
-    const t = (text || input).trim();
-    if (!t) return;
-    setInput("");
-    const uid = Date.now();
-    setMsgs((prev) => [...prev, { id: uid, role: "user", fromVoice, text: t }]);
-    setAiStatus("thinking");
-    setTimeout(() => {
-      const resp = processCmd(t);
-      const bid = Date.now() + 1;
-      setMsgs((prev) => [...prev, { id: bid, role: "bot", fromVoice: false, text: resp }]);
-      setAiStatus("idle");
-      if (voiceOut) speakText(resp, bid);
-    }, 500 + Math.random() * 300);
-  }
-
-  // ── Mic ──
-  const voiceOk = typeof window !== "undefined" &&
-    !!(window.SpeechRecognition || window.webkitSpeechRecognition);
-
-  function toggleMic() {
-    if (aiStatus === "speaking") stopSpeaking();
-    if (aiStatus === "listening") {
-      recRef.current?.stop();
-      setAiStatus("idle"); setLiveText("");
-      return;
-    }
-    if (!voiceOk) return;
-    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-    const rec = new SR();
-    rec.lang = "es-CO"; rec.continuous = false; rec.interimResults = true;
-    rec.onstart  = () => { setAiStatus("listening"); setLiveText(""); };
-    rec.onend    = () => { if (aiStatus === "listening") { setAiStatus("idle"); setLiveText(""); } };
-    rec.onerror  = () => { setAiStatus("idle"); setLiveText(""); };
-    rec.onresult = (e) => {
-      const t = Array.from(e.results).map((r) => r[0].transcript).join("");
-      setLiveText(t);
-      if (e.results[e.results.length - 1].isFinal) {
-        rec.stop(); setAiStatus("thinking"); setLiveText("");
-        setTimeout(() => sendMsg(t, true), 300);
-      }
-    };
-    recRef.current = rec; rec.start();
-  }
-
-  const SM = {
-    idle:      { icon: "🎓", label: "Listo para instrucciones", sub: "Escribe o usa el micrófono", color: "var(--muted)" },
-    listening: { icon: "🎙️", label: "Escuchando…", sub: liveText || "Habla en español", color: "var(--critical)" },
-    thinking:  { icon: "⚙️", label: "Analizando datos…", sub: "Procesando tu consulta", color: "var(--brand)" },
-    speaking:  { icon: "🔊", label: "Respondiendo en voz…", sub: "Haz clic en ⏹ para detener", color: "var(--ok)" },
-  };
-  const sm = SM[aiStatus] || SM.idle;
-
-  return (
-    <div className="ai-panel">
-      {/* Header */}
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 10 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <div style={{ width: 10, height: 10, borderRadius: "50%", background: "var(--brand)", boxShadow: "0 0 8px var(--brand)", animation: aiStatus !== "idle" ? "pulse 1.4s ease infinite" : "none" }} />
-          <div style={{ fontSize: 14, fontWeight: 800, color: "var(--text)" }}>Asistente IA Académica</div>
-          <span className="tag" style={{ background: "var(--brand-light)", color: "var(--brand)", fontSize: 10 }}>2026.7.3 · 16/04/2026</span>
-        </div>
-        <div style={{ fontSize: 12, color: "var(--muted)" }}>
-          {studentRows.length} estudiantes · {courseInfo?.Name || "Curso activo"}
-        </div>
-      </div>
-
-      {/* Status bar */}
-      <div className={`ai-status-outer ${aiStatus !== "idle" ? aiStatus : ""}`}>
-        <div className="ai-status-icon" style={{ fontSize: 18 }}>{sm.icon}</div>
-        <div style={{ flex: 1 }}>
-          <div style={{ fontSize: 11, fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.06em", color: sm.color }}>{sm.label}</div>
-          <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 2 }}>{sm.sub}</div>
-        </div>
-        {(aiStatus === "listening" || aiStatus === "speaking") && (
-          <div className="ai-wave">
-            {[1,2,3,4,5].map((n) => (
-              <div key={n} className="ai-wave-bar" style={{
-                background: aiStatus === "listening" ? "var(--critical)" : "var(--ok)"
-              }} />
-            ))}
-          </div>
-        )}
-      </div>
-
-      {/* Sugerencias rotativas */}
-      <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 2 }}>
-          <span style={{ fontSize: 10, fontWeight: 800, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.07em" }}>Sugerencias</span>
-          <button
-            onClick={() => {
-              const shuffled = [...SUGGESTION_BANK].sort(() => Math.random() - 0.5).slice(0, 6);
-              setVisibleChipsState(shuffled);
-            }}
-            style={{ background: "none", border: "none", cursor: "pointer", fontSize: 11, color: "var(--muted)", padding: "2px 4px", borderRadius: 4 }}
-            title="Nuevas sugerencias"
-          >↻ nuevas</button>
-        </div>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 5 }}>
-          {visibleChips.map((c) => (
-            <button
-              key={c.label}
-              className="ai-chip-btn"
-              onClick={() => sendMsg(c.label)}
-              style={{ textAlign: "left", fontSize: 11, padding: "6px 9px", borderRadius: 8, lineHeight: 1.35 }}
-            >
-              <span style={{ marginRight: 5 }}>{c.icon}</span>{c.label}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* Chat */}
-      <div className="ai-chat" ref={chatRef}>
-        {msgs.map((m) => (
-          <div key={m.id} className={`ai-bubble-wrap ${m.role}`}>
-            <div className="ai-meta">
-              {m.role === "bot" ? "Asistente" : "Tú"}
-              {m.fromVoice && <span className="ai-voice-badge">🎙️ voz</span>}
-            </div>
-            <div className={`ai-bubble ${m.role}`} dangerouslySetInnerHTML={{ __html: sanitizeHtml(m.text) }} />
-            {m.role === "bot" && (
-              <button
-                className={`ai-speak-btn${activeSpeakId === m.id ? " active" : ""}`}
-                onClick={() => activeSpeakId === m.id ? stopSpeaking() : speakText(m.text, m.id)}
-              >
-                {activeSpeakId === m.id ? "⏸ Detener" : "🔊 Escuchar"}
-              </button>
-            )}
-          </div>
-        ))}
-        {aiStatus === "thinking" && (
-          <div className="ai-bubble-wrap bot">
-            <div className="ai-meta">Asistente</div>
-            <div className="ai-bubble bot">
-              <div className="ai-typing">
-                <div className="ai-typing-dot" /><div className="ai-typing-dot" /><div className="ai-typing-dot" />
-              </div>
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* Input row */}
-      <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-        <button
-          className={`voice-btn${aiStatus === "listening" ? " listening" : ""}`}
-          onClick={voiceOk ? toggleMic : undefined}
-          title={voiceOk ? (aiStatus === "listening" ? "Detener" : "Hablar por voz") : "Micrófono no disponible en este navegador"}
-          style={{ height: 40, width: 40, fontSize: 17, flexShrink: 0, opacity: voiceOk ? 1 : 0.4, cursor: voiceOk ? "pointer" : "not-allowed" }}
-        >
-          {aiStatus === "listening" ? "⏹" : "🎙️"}
-        </button>
-        <input
-          ref={inputRef}
-          className="ai-input"
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMsg(); } }}
-          placeholder={aiStatus === "listening" ? "🎙️ Escuchando…" : "Pregunta sobre el curso…"}
-          style={{ height: 40 }}
-        />
-        <button className="ai-send-btn" onClick={() => sendMsg()} style={{ height: 40, padding: "0 14px", fontSize: 13 }}>↵</button>
-      </div>
-
-      {/* Controls row */}
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
-        <button
-          className={`ai-toggle${voiceOut ? " active" : ""}`}
-          onClick={() => { setVoiceOut((v) => !v); if (aiStatus === "speaking") stopSpeaking(); }}
-        >
-          <div className="ai-toggle-dot" />
-          <span style={{ fontSize: 11, fontWeight: 700, color: voiceOut ? "var(--ok)" : "var(--muted)" }}>
-            {voiceOut ? "🔊 Voz activada" : "🔇 Voz desactivada"}
-          </span>
-        </button>
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <span style={{ fontSize: 10, color: "var(--muted)", fontWeight: 700 }}>TTS:</span>
-          <select
-            value={speed}
-            onChange={(e) => setSpeed(Number(e.target.value))}
-            style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 8, padding: "4px 8px", fontSize: 11, color: "var(--text)", fontFamily: "var(--font-mono)", outline: "none" }}
-          >
-            <option value={0.8}>Lenta</option>
-            <option value={1.0}>Normal</option>
-            <option value={1.2}>Rápida</option>
-            <option value={1.5}>Muy rápida</option>
-          </select>
-          <button className={`ai-stop-btn${aiStatus === "speaking" ? " visible" : ""}`} onClick={stopSpeaking}>⏹ Detener</button>
-        </div>
-      </div>
-
-      {/* Guide cards */}
-      <div className="ai-guide-grid">
-        {[
-          { icon: "🎙️", color: "var(--brand)", title: "Entrada de Voz", desc: "Presiona el micrófono y habla en español. La transcripción se procesa automáticamente." },
-          { icon: "🔊", color: "var(--ok)", title: "Salida de Voz", desc: "Activa la voz y el asistente leerá cada respuesta. Usa '🔊 Escuchar' en mensajes anteriores." },
-          { icon: "⚡", color: "var(--watch)", title: "Datos Reales", desc: "Todas las respuestas usan los datos del curso en tiempo real — notas, cobertura, riesgo y RAs." },
-        ].map((g) => (
-          <div key={g.title} style={{ background: "var(--bg)", border: "1px solid var(--border)", borderRadius: 10, padding: 14 }}>
-            <div style={{ fontSize: 20, marginBottom: 8 }}>{g.icon}</div>
-            <div style={{ fontSize: 10, fontWeight: 800, color: g.color, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 6 }}>{g.title}</div>
-            <div style={{ fontSize: 12, color: "var(--muted)", lineHeight: 1.5 }}>{g.desc}</div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-// ─────────────────────────────────────────────────────────
-// Voice command helpers
-// ─────────────────────────────────────────────────────────
-function normalizeVoiceText(text) {
-  return String(text || "")
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[̀-ͯ]/g, "")
-    .trim();
-}
-
-function includesAny(text, patterns) {
-  return patterns.some((p) => text.includes(p));
-}
-
-function parseVoiceCommand(rawText) {
-  const text = normalizeVoiceText(rawText);
-  if (!text) return { type: "unknown", message: "No se reconoció ningún comando." };
-
-  if (includesAny(text, ["resultado de aprendizaje","resultados de aprendizaje","prioridad academica","competencias","subcompetencias","logro por ra"])) {
-    return { type: "navigate_section", section: "learning-outcomes", message: "Mostrando resultados de aprendizaje." };
-  }
-  if (includesAny(text, ["estudiantes prioritarios","prioritarios","mayor riesgo","riesgo mas alto","riesgo alto","en riesgo"])) {
-    return { type: "highest_risk_student", message: "Buscando el estudiante con mayor riesgo académico." };
-  }
-  if (includesAny(text, ["resultado mas bajo","peor resultado","nota mas baja","menor nota","estudiante mas bajo","peor desempe"])) {
-    return { type: "lowest_result_student", message: "Buscando el estudiante con menor desempeño." };
-  }
-  if (includesAny(text, ["estudiantes en riesgo","solo riesgo","muestrame los de riesgo","filtrar riesgo"])) {
-    return { type: "filter_students_risk", message: "Filtrando estudiantes en riesgo." };
-  }
-  if (includesAny(text, ["evidencias","abre evidencias","mostrar evidencias"])) {
-    return { type: "open_drawer_tab", tab: "evidencias", message: "Abriendo evidencias." };
-  }
-  if (includesAny(text, ["unidades","subcompetencias","abre unidades"])) {
-    return { type: "open_drawer_tab", tab: "unidades", message: "Abriendo unidades." };
-  }
-  if (includesAny(text, ["intervencion","prescripcion"])) {
-    return { type: "open_drawer_tab", tab: "prescripcion", message: "Abriendo intervención personalizada." };
-  }
-  if (includesAny(text, ["calidad","flags","calidad del modelo"])) {
-    return { type: "open_drawer_tab", tab: "calidad", message: "Abriendo calidad del modelo." };
-  }
-  if (includesAny(text, ["resumen","volver al resumen"])) {
-    return { type: "open_drawer_tab", tab: "resumen", message: "Abriendo resumen del estudiante." };
-  }
-  if (includesAny(text, ["aprobados","aprobado","pasando"])) {
-    return { type: "filter_approved", message: "Mostrando estudiantes aprobados (≥7.0)." };
-  }
-
-  const buscarMatch = text.match(/(?:busca|buscar|abrir|abre|mostrar|muestrame)\s+a?\s*([a-zà-ü\s]+)$/i);
-  if (buscarMatch?.[1] && buscarMatch[1].trim().length >= 3) {
-    return { type: "find_student_by_name", name: buscarMatch[1].trim(), message: `Buscando a ${buscarMatch[1].trim()}.` };
-  }
-  if (includesAny(text, ["estudiantes","lista de estudiantes"])) {
-    return { type: "navigate_section", section: "students", message: "Mostrando listado de estudiantes." };
-  }
-  if (text.length >= 3) {
-    return { type: "text_search", text: rawText, message: `Buscando: ${rawText}` };
-  }
-  return { type: "unknown", message: "No se entendió el comando. Prueba: 'estudiante con resultado más bajo' o 'resultados de aprendizaje'." };
-}
-
-function findLowestResultStudent(rows) {
-  const valid = (Array.isArray(rows) ? rows : []).filter(
-    (s) => !s?.isLoading && s?.currentPerformancePct != null && !Number.isNaN(Number(s.currentPerformancePct))
-  );
-  if (!valid.length) return null;
-  return valid.slice().sort((a, b) => Number(a.currentPerformancePct) - Number(b.currentPerformancePct))[0];
-}
-
-function findHighestRiskStudent(rows) {
-  const valid = (Array.isArray(rows) ? rows : []).filter((s) => !s?.isLoading);
-  if (!valid.length) return null;
-  const riskRank = (s) => {
-    const risk = computeRiskFromPct(s?.currentPerformancePct);
-    if (risk === "alto") return 0;
-    if (risk === "medio") return 1;
-    if (risk === "bajo") return 2;
-    return 3;
-  };
-  return valid.slice().sort((a, b) => {
-    const rd = riskRank(a) - riskRank(b);
-    if (rd !== 0) return rd;
-    return Number(a?.currentPerformancePct ?? 999) - Number(b?.currentPerformancePct ?? 999);
-  })[0];
-}
-
-function findStudentByName(rows, name) {
-  const q = normalizeVoiceText(name);
-  return (Array.isArray(rows) ? rows : []).find((s) => normalizeVoiceText(s?.displayName).includes(q)) || null;
-}
-
-// ─────────────────────────────────────────────────────────
 // CoursePanel — lista de cursos del docente
 // ─────────────────────────────────────────────────────────
 function CoursePanel({ courses, loadingCourses, currentId, onSelect, onClose }) {
@@ -3211,220 +2704,20 @@ function GradeDistributionCard({ studentRows, thresholds }) {
   );
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// RoutesView — Vista completa de rutas de intervención
-// ─────────────────────────────────────────────────────────────────────────────
-const ROUTE_DEFS = {
-  route_coverage: {
-    id: "route_coverage",
-    num: 0,
-    title: "Ruta 0 — Activar evidencia",
-    color: "var(--critical)",
-    bg: "var(--critical-bg)",
-    border: "var(--critical-border)",
-    icon: "📋",
-    description: "El estudiante tiene muy poca cobertura de evaluación. La prioridad es identificar evidencias sin calificar y activarlas antes de que el semestre avance.",
-    objective: "Subir cobertura por encima del 40% en los próximos 7 días.",
-    actions: [
-      "Identificar 1 evidencia crítica sin nota y publicarla esta semana",
-      "Acordar fecha concreta de entrega con el estudiante",
-      "Verificar que el estudiante tenga acceso al material del curso",
-    ],
-    success: "Cobertura superior al 40% confirmada en gradebook.",
-  },
-  route_high_risk: {
-    id: "route_high_risk",
-    num: 1,
-    title: "Ruta 1 — Recuperación",
-    color: "var(--watch)",
-    bg: "var(--watch-bg)",
-    border: "var(--watch-border)",
-    icon: "🚨",
-    description: "El estudiante está en riesgo alto. Su nota actual está por debajo del umbral crítico. Se requiere intervención inmediata con plan estructurado de corto plazo.",
-    objective: "Subir nota por encima del umbral crítico en 2 semanas.",
-    actions: [
-      "Reunión 1:1 de 15 minutos para acordar objetivo semanal",
-      "Actividad de refuerzo o re-entrega enfocada en el error principal",
-      "Retroalimentación concreta + checklist de mejora",
-    ],
-    success: "Nota supera el umbral crítico en la siguiente evidencia.",
-  },
-  route_watch: {
-    id: "route_watch",
-    num: 2,
-    title: "Ruta 2 — Ajuste dirigido",
-    color: "var(--brand)",
-    bg: "var(--brand-light)",
-    border: "var(--brand-light2, #D6E4FF)",
-    icon: "🎯",
-    description: "El estudiante está en riesgo medio. Su desempeño es insuficiente en algún resultado de aprendizaje específico. El ajuste debe ser puntual y enfocado.",
-    objective: "Subir el RA crítico por encima del umbral de observación.",
-    actions: [
-      "Microtarea guiada (30–45 min) sobre el punto débil identificado",
-      "Ejemplo resuelto + plantilla de entrega para orientar al estudiante",
-      "Seguimiento en la próxima evidencia del RA crítico",
-    ],
-    success: "RA crítico supera el 70% en la siguiente evaluación.",
-  },
-  route_ok: {
-    id: "route_ok",
-    num: 3,
-    title: "Ruta 3 — Mantener desempeño",
-    color: "var(--ok)",
-    bg: "var(--ok-bg)",
-    border: "var(--ok-border)",
-    icon: "✅",
-    description: "El estudiante tiene buen desempeño. La gestión aquí es de sostenimiento y motivación para que mantenga el ritmo hasta el cierre del semestre.",
-    objective: "Sostener nota por encima del umbral de observación.",
-    actions: [
-      "Reconocer el logro con retroalimentación positiva específica",
-      "Mantener entregas a tiempo para no perder cobertura",
-      "Extensión opcional: reto avanzado para profundizar competencias",
-    ],
-    success: "Nota se mantiene por encima del umbral de observación al cierre.",
-  },
-};
-
-function RoutesView({ studentRows, overview, courseInfo, thresholds, onSelectStudent, isMobile }) {
-  const [selectedRoute, setSelectedRoute] = React.useState(null);
-  const rows = Array.isArray(studentRows) ? studentRows : [];
-
-  const byRoute = {};
-  Object.keys(ROUTE_DEFS).forEach(id => { byRoute[id] = []; });
-  rows.forEach(s => {
-    const rid = s.route?.id;
-    if (rid && byRoute[rid]) byRoute[rid].push(s);
-  });
-
-  const totalAssigned = Object.values(byRoute).reduce((a, arr) => a + arr.length, 0);
-
-  return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
-      {/* Page header */}
-      <div>
-        <div style={{ fontSize: 10, fontWeight: 800, color: "var(--brand)", textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: 4 }}>
-          G.D · Rutas de atención
-        </div>
-        <h1 style={{ fontSize: isMobile ? 20 : 26, fontWeight: 900, color: "var(--text)", letterSpacing: "-0.02em", lineHeight: 1.1 }}>
-          {courseInfo?.Name || "Curso activo"}
-        </h1>
-        <div style={{ fontSize: 13, color: "var(--muted)", marginTop: 4, fontWeight: 500 }}>
-          {totalAssigned} estudiantes asignados · {Object.values(byRoute).filter(arr => arr.length > 0).length} rutas activas
-        </div>
-      </div>
-
-      {/* Route cards grid */}
-      <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 14 }}>
-        {Object.values(ROUTE_DEFS).map(route => {
-          const students = byRoute[route.id] || [];
-          const isSelected = selectedRoute === route.id;
-          return (
-            <div key={route.id}
-              onClick={() => setSelectedRoute(isSelected ? null : route.id)}
-              style={{
-                border: `1.5px solid ${isSelected ? route.color : "var(--border)"}`,
-                borderRadius: 16,
-                background: isSelected ? route.bg : "var(--card)",
-                cursor: "pointer",
-                transition: "all 0.18s ease",
-                overflow: "hidden",
-              }}
-              onMouseEnter={e => { if (!isSelected) { e.currentTarget.style.borderColor = route.color; e.currentTarget.style.background = route.bg; }}}
-              onMouseLeave={e => { if (!isSelected) { e.currentTarget.style.borderColor = "var(--border)"; e.currentTarget.style.background = "var(--card)"; }}}
-            >
-              {/* Route header */}
-              <div style={{ padding: "14px 16px 12px", borderBottom: "1px solid var(--border)" }}>
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                    <div style={{ width: 36, height: 36, borderRadius: 10, background: route.color + "22", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18, flexShrink: 0 }}>
-                      {route.icon}
-                    </div>
-                    <div>
-                      <div style={{ fontSize: 13, fontWeight: 800, color: route.color }}>{route.title}</div>
-                      <div style={{ fontSize: 10, color: "var(--muted)", fontWeight: 600, marginTop: 1 }}>{route.objective}</div>
-                    </div>
-                  </div>
-                  <div style={{ textAlign: "center", flexShrink: 0 }}>
-                    <div style={{ fontSize: 28, fontWeight: 900, fontFamily: "var(--font-mono)", color: route.color, lineHeight: 1 }}>{students.length}</div>
-                    <div style={{ fontSize: 9, fontWeight: 800, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.06em" }}>est.</div>
-                  </div>
-                </div>
-                <p style={{ fontSize: 12, color: "var(--muted)", lineHeight: 1.5, margin: 0 }}>{route.description}</p>
-              </div>
-
-              {/* Actions */}
-              <div style={{ padding: "10px 16px" }}>
-                <div style={{ fontSize: 10, fontWeight: 800, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 7 }}>Acciones docentes</div>
-                <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-                  {route.actions.map((a, i) => (
-                    <div key={i} style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
-                      <span style={{ fontSize: 11, fontWeight: 900, color: route.color, flexShrink: 0, marginTop: 1 }}>{i + 1}.</span>
-                      <span style={{ fontSize: 12, color: "var(--text)", lineHeight: 1.45 }}>{a}</span>
-                    </div>
-                  ))}
-                </div>
-                <div style={{ marginTop: 10, padding: "6px 10px", borderRadius: 8, background: route.color + "14", fontSize: 11, color: route.color, fontWeight: 700 }}>
-                  Criterio de éxito: {route.success}
-                </div>
-              </div>
-
-              {/* Student list (when selected) */}
-              {isSelected && students.length > 0 && (
-                <div style={{ padding: "0 16px 14px" }}>
-                  <div style={{ height: 1, background: "var(--border)", marginBottom: 10 }} />
-                  <div style={{ fontSize: 10, fontWeight: 800, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 7 }}>
-                    Estudiantes en esta ruta ({students.length})
-                  </div>
-                  <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-                    {students.map(s => (
-                      <div key={s.userId}
-                        onClick={e => { e.stopPropagation(); onSelectStudent?.(s); }}
-                        style={{ display: "flex", alignItems: "center", gap: 10, padding: "7px 10px", borderRadius: 9, background: "var(--card)", border: "1px solid var(--border)", cursor: "pointer" }}
-                        onMouseEnter={e => e.currentTarget.style.borderColor = route.color}
-                        onMouseLeave={e => e.currentTarget.style.borderColor = "var(--border)"}
-                      >
-                        <div style={{ width: 28, height: 28, borderRadius: "50%", background: route.color + "22", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 900, color: route.color, flexShrink: 0 }}>
-                          {(s.displayName || "?").charAt(0)}
-                        </div>
-                        <div style={{ flex: 1, minWidth: 0 }}>
-                          <div style={{ fontSize: 12, fontWeight: 700, color: "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.displayName}</div>
-                          {s.route?.summary && <div style={{ fontSize: 10, color: "var(--muted)" }}>{s.route.summary}</div>}
-                        </div>
-                        <div style={{ flexShrink: 0, textAlign: "right" }}>
-                          <div style={{ fontSize: 13, fontWeight: 900, fontFamily: "var(--font-mono)", color: colorForPct(s.currentPerformancePct, thresholds) }}>{fmtGrade10FromPct(s.currentPerformancePct)}</div>
-                          <div style={{ fontSize: 9, color: "var(--muted)" }}>{fmtPct(s.coveragePct)}</div>
-                        </div>
-                        <span style={{ color: "var(--muted)", fontSize: 12 }}>→</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-              {isSelected && students.length === 0 && (
-                <div style={{ padding: "10px 16px 14px", fontSize: 12, color: "var(--muted)", fontStyle: "italic" }}>
-                  Ningún estudiante asignado a esta ruta actualmente.
-                </div>
-              )}
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
 // AppSidebar — Fixed left navigation
 // ──────────────────────────────────────────────
 function AppSidebar({ activeTab, setActiveTab, currentCourseName, mobileOpen, onClose }) {
+  const { t } = useI18n();
   const NAV = [
-    { id: "dashboard",  icon: "📊", label: "Dashboard" },
-    { id: "routes",     icon: "🛤️", label: "Rutas de atención" },
-    { id: "predictions", icon: "🔮", label: "Predicción de notas" },
-    { id: "evidences",  icon: "📑", label: "Evidencias" },
-    { id: "assistant",  icon: "🤖", label: "Asistente IA" },
+    { id: "dashboard",  icon: "📊", label: t("nav.dashboard", "Dashboard") },
+    { id: "routes",     icon: "🛤️", label: t("nav.routes", "Rutas de atención") },
+    { id: "predictions", icon: "🔮", label: t("nav.predictions", "Predicción de notas") },
+    { id: "evidences",  icon: "📑", label: t("nav.evidences", "Evidencias") },
+    { id: "learning-outcomes", icon: "🎯", label: t("nav.learningOutcomes", "Resultados de aprendizaje") },
+    { id: "assistant",  icon: "🤖", label: t("nav.assistant", "Asistente IA") },
   ];
   const NAV_BOTTOM = [
-    { id: "help", icon: "💬", label: "Soporte" },
+    { id: "help", icon: "💬", label: t("nav.support", "Soporte") },
   ];
 
   return (
@@ -3442,13 +2735,13 @@ function AppSidebar({ activeTab, setActiveTab, currentCourseName, mobileOpen, on
           <div className="sidebar-logo-icon" style={{ fontSize: 12, letterSpacing: "0.01em" }}>CESA</div>
           <div className="sidebar-logo-text">
             <div className="sidebar-logo-name">CESA · G.D</div>
-            <div className="sidebar-logo-sub">Vista Docente</div>
+            <div className="sidebar-logo-sub">{t("nav.teacherView", "Vista Docente")}</div>
           </div>
         </div>
 
         {/* Nav */}
         <nav className="sidebar-nav" aria-label="Vistas del docente">
-          <div className="sidebar-section-label" id="sidebar-views-label">Vistas</div>
+          <div className="sidebar-section-label" id="sidebar-views-label">{t("nav.views", "Vistas")}</div>
           <ul
             aria-labelledby="sidebar-views-label"
             style={{ listStyle: "none", margin: 0, padding: 0, display: "flex", flexDirection: "column", gap: 2 }}
@@ -3477,7 +2770,7 @@ function AppSidebar({ activeTab, setActiveTab, currentCourseName, mobileOpen, on
         <div className="sidebar-footer">
           {currentCourseName && (
             <div className="sidebar-course-pill">
-              <div className="sidebar-course-label">Curso activo</div>
+              <div className="sidebar-course-label">{t("nav.activeCourse", "Curso activo")}</div>
               <div className="sidebar-course-name" style={{ maxWidth: 160, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                 {currentCourseName}
               </div>
@@ -3485,7 +2778,7 @@ function AppSidebar({ activeTab, setActiveTab, currentCourseName, mobileOpen, on
           )}
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "6px 2px" }}>
             <span style={{ fontSize: 9, fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.08em" }}>G.D</span>
-            <span style={{ fontSize: 9, fontWeight: 700, color: "var(--muted)", background: "var(--bg)", padding: "2px 7px", borderRadius: 99, border: "1px solid var(--border)" }}>2026.7.3</span>
+            <span style={{ fontSize: 9, fontWeight: 700, color: "var(--muted)", background: "var(--bg)", padding: "2px 7px", borderRadius: 99, border: "1px solid var(--border)" }}>2026.7.10</span>
           </div>
         </div>
       </aside>
@@ -3507,6 +2800,7 @@ function AppTopbar({
 }) {
   const [showImpersonateMenu, setShowImpersonateMenu] = useState(false);
   const [impersonateSearch, setImpersonateSearch] = useState("");
+  const { t } = useI18n();
   return (
     <header className="app-topbar">
       {/* Left */}
@@ -3532,7 +2826,7 @@ function AppTopbar({
           <input
             value={orgUnitInput}
             onChange={(e) => setOrgUnitInput(e.target.value)}
-            placeholder="ID de curso…"
+            placeholder={t("topbar.courseIdPlaceholder", "ID de curso…")}
             type="number"
             onKeyDown={(e) => {
               if (e.key === "Enter") {
@@ -3556,7 +2850,7 @@ function AppTopbar({
           >
             <span>🔎</span>
             {!isMobile && <>
-              <span>Comandos</span>
+              <span>{t("topbar.commands", "Comandos")}</span>
               <span style={{
                 fontSize: 9, fontWeight: 800, padding: "2px 5px", borderRadius: 4,
                 background: "var(--bg)", border: "1px solid var(--border)", color: "var(--muted)",
@@ -3572,7 +2866,7 @@ function AppTopbar({
             aria-label="Volver al inicio"
             style={{ padding: "7px 12px", fontSize: 12, borderRadius: 10 }}
           >
-            🏠 {isMobile ? "" : "Inicio"}
+            🏠 {isMobile ? "" : t("topbar.home", "Inicio")}
           </button>
         )}
         <button
@@ -3580,7 +2874,7 @@ function AppTopbar({
           onClick={handleOpenCoursePanel}
           style={{ padding: "7px 14px", fontSize: 12, borderRadius: 10 }}
         >
-          📚 {isMobile ? "" : "Mis cursos"}
+          📚 {isMobile ? "" : t("topbar.myCourses", "Mis cursos")}
         </button>
 
         {onOpenCoordinator && (
@@ -3606,7 +2900,7 @@ function AppTopbar({
                 border: "1px solid rgba(255, 170, 0, 0.3)",
               }}
             >
-              👁 {isMobile ? "" : "Ver como..."}
+              👁 {isMobile ? "" : t("topbar.viewAs", "Ver como...")}
             </button>
             {showImpersonateMenu && (
               <div
@@ -4068,6 +3362,576 @@ function FloatingAI({ onOpenTutorial, onOpenAssistant }) {
   );
 }
 
+// ──────────────────────────────────────────────
+// RaLinker — Página "Resultados de aprendizaje" (vista docente)
+// Lista las actividades del curso y permite al profesor elegir a qué
+// Resultado(s) de Aprendizaje apunta cada una. Espeja el módulo de
+// administración (LearningOutcomesAdmin) pero con una UX más amable:
+// autofetch de su propia copia de datos + refresco tras guardar.
+// ──────────────────────────────────────────────
+const RA_ACTIVITY_TYPE_LABELS = {
+  Assignment: "Tarea",
+  Quiz: "Cuestionario",
+  DiscussionTopic: "Discusión",
+  ContentObject: "Contenido",
+  QuizQuestion: "Pregunta",
+  Checklist: "Lista",
+  Survey: "Encuesta",
+  SelfAssessment: "Autoeval.",
+  LtiLink: "LTI",
+};
+
+// Deriva la lista de RA { guid, code, title, description } recorriendo el
+// árbol crudo de outcomeSets de Brightspace. Se usa como fallback cuando el
+// índice derivado del backend (outcomeIndex/outcomeCodeMap) llega vacío por
+// caché obsoleta: el outcomeSets crudo siempre viene fresco en la respuesta.
+// Separador amplio: guión ASCII, guiones Unicode (U+2010–2015), signo menos
+// (U+2212) o dos puntos. Brightspace a veces usa un guión no-ASCII entre el
+// código y el texto, lo que antes rompía la extracción del código.
+const RA_CODE_RE = /^([A-Za-z0-9._-]+)\s*[-\u2010-\u2015\u2212:]\s*(.+)$/;
+// Normaliza espacios/saltos de línea/NBSP a un solo espacio y elimina
+// caracteres invisibles (zero-width, BOM, marcas direccionales) para que el
+// regex (cuyo `.` no cruza saltos de línea) encaje siempre.
+function normalizeDesc(v) {
+  return String(v ?? "")
+    .replace(/[\u200B-\u200F\u2060\uFEFF]/g, "")
+    .replace(/\u00a0/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+function parseOutcomeSetsToList(outcomeSets) {
+  const acc = {};
+  const walk = (node) => {
+    if (!node) return;
+    if (Array.isArray(node)) { node.forEach(walk); return; }
+    if (typeof node !== "object") return;
+    const guid = node.SourceId || node.OutcomeId || node.Id || node.id;
+    const desc = normalizeDesc(node.Description ?? node.description ?? "");
+    if (guid && desc) {
+      const key = String(guid);
+      if (!acc[key]) {
+        const m = desc.match(RA_CODE_RE);
+        acc[key] = m
+          ? { guid: key, code: m[1].toUpperCase(), title: m[2].trim(), description: desc }
+          : { guid: key, code: String(node.ShortCode || "").trim() || key.slice(0, 6), title: desc, description: desc };
+      }
+    }
+    for (const k of ["Outcomes", "outcomes", "SubOutcomes", "subOutcomes", "ChildOutcomes", "childOutcomes", "Children", "children"]) {
+      if (node[k]) walk(node[k]);
+    }
+  };
+  walk(outcomeSets);
+  return Object.values(acc);
+}
+
+// Devuelve {code, title} legibles para un outcome, derivándolos SIEMPRE de la
+// descripción "CÓDIGO-texto" (que el backend guarda completa). Así el chip
+// muestra el código real (p.ej. L1O1DNR2) y el título aunque el índice del
+// backend traiga el code vacío o un fragmento del GUID.
+function raParts(o) {
+  const desc = normalizeDesc(o?.description ?? o?.title ?? "");
+  const m = desc.match(RA_CODE_RE);
+  if (m) return { code: m[1].toUpperCase(), title: m[2].trim(), full: desc };
+  const code = String(o?.code ?? "").trim();
+  // Si el `code` recibido parece un fragmento de GUID (hex de 6), no lo mostramos.
+  const cleanCode = /^[0-9a-f]{6}$/i.test(code) ? "" : code;
+  return { code: cleanCode, title: desc || code, full: desc || code };
+}
+
+// Base pública de Brightspace para deep-links (editor de quizzes, etc.).
+const BS_PUBLIC_BASE = (import.meta.env?.VITE_BRIGHTSPACE_BASE_URL || "https://cesa.brightspace.com").replace(/\/$/, "");
+
+// Estilo de pestaña tipo navegador para el switch Tareas | Quizzes del RaLinker.
+const raTabStyle = (active) => ({
+  display: "inline-flex", alignItems: "center", gap: 7,
+  padding: "9px 16px 8px", borderRadius: "10px 10px 0 0",
+  border: "1.5px solid var(--border)",
+  borderBottom: active ? "1.5px solid var(--card)" : "1.5px solid var(--border)",
+  marginBottom: -1.5,
+  background: active ? "var(--card)" : "var(--bg)",
+  color: active ? "var(--brand)" : "var(--muted)",
+  fontSize: 12.5, fontWeight: 800, fontFamily: "var(--font)",
+  cursor: "pointer", whiteSpace: "nowrap",
+});
+
+function RaLinker({ orgUnitId, courseName }) {
+  const [lo, setLo] = useState(null);
+  const [gradeItems, setGradeItems] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [sel, setSel] = useState({});           // key "Type:Id" → [guid,...]
+  const [savingKey, setSavingKey] = useState(null);
+  const [msg, setMsg] = useState(null);
+  const [query, setQuery] = useState("");
+  const [raTab, setRaTab] = useState("tasks");  // "tasks" | "quizzes"
+
+  const load = useCallback(async (fresh = false) => {
+    if (!orgUnitId) return;
+    setLoading(true); setError("");
+    try {
+      if (fresh) invalidateApiCache(`/gemelo/course/${orgUnitId}/`);
+      const [loRes, giRes] = await Promise.allSettled([
+        apiGetCached(`/gemelo/course/${orgUnitId}/learning-outcomes`, { force: fresh }),
+        apiGetCached(`/gemelo/course/${orgUnitId}/grade-items`, { force: fresh }),
+      ]);
+      if (loRes.status !== "fulfilled") throw loRes.reason;
+      setLo(loRes.value);
+      setGradeItems(giRes.status === "fulfilled" ? (giRes.value?.items || []) : []);
+    } catch (e) {
+      setError(String(e?.message || "No se pudieron cargar los resultados de aprendizaje."));
+    } finally {
+      setLoading(false);
+    }
+  }, [orgUnitId]);
+
+  useEffect(() => { load(false); }, [load]);
+
+  // RA seleccionables (todos los del/los conjunto(s) del curso).
+  const allOutcomes = useMemo(() => {
+    const idx = lo?.outcomeIndex || {};
+    let list = Object.entries(idx).map(([guid, info]) => ({ guid, ...(info || {}) }));
+    // Fallback: si el índice derivado del backend viene vacío (caché obsoleta tras
+    // importar RA), derivamos los RA del outcomeSets crudo, que siempre llega fresco.
+    if (list.length === 0 && lo?.outcomeSets) list = parseOutcomeSetsToList(lo.outcomeSets);
+    return list.sort((a, b) => String(a.code || a.title || "").localeCompare(String(b.code || b.title || ""), "es", { numeric: true }));
+  }, [lo]);
+
+  // Lista unificada de actividades alineables:
+  //  1) carpetas de entrega / grade items del gradebook → Assignment:folderId
+  //  2) cualquier actividad ya alineada (incluye quizzes) desde activityToOutcomes
+  const activities = useMemo(() => {
+    const a2o = lo?.activityToOutcomes || {};
+    const names = lo?.activityNames || {};
+    const byKey = new Map();
+
+    const add = (key, name, type) => {
+      if (!key) return;
+      if (!byKey.has(key)) byKey.set(key, { key, name: name || null, type });
+      else if (name && !byKey.get(key).name) byKey.get(key).name = name;
+    };
+
+    // 1) Del gradebook: carpetas de entrega (Assignment) y grade items ligados.
+    for (const gi of gradeItems) {
+      const folderId =
+        gi?.source === "dropbox" ? gi?.id
+        : gi?.linkedDropboxId != null ? gi.linkedDropboxId
+        : null;
+      if (folderId != null) add(`Assignment:${folderId}`, gi?.name, "Assignment");
+    }
+
+    // 2) Actividades ya alineadas (para no perder quizzes u otros tipos).
+    for (const key of Object.keys(a2o)) {
+      const type = key.slice(0, key.indexOf(":"));
+      add(key, names[key], type);
+    }
+
+    return Array.from(byKey.values()).sort((a, b) =>
+      String(a.name || a.key).localeCompare(String(b.name || b.key), "es", { numeric: true }));
+  }, [lo, gradeItems]);
+
+  // Inicializa selección desde las alineaciones existentes.
+  useEffect(() => {
+    const a2o = lo?.activityToOutcomes || {};
+    const init = {};
+    for (const [k, guids] of Object.entries(a2o)) init[k] = Array.isArray(guids) ? [...guids] : [];
+    setSel(init);
+    setMsg(null);
+  }, [lo]);
+
+  const toggleSel = useCallback((key, guid) => {
+    setSel(prev => {
+      const cur = prev[key] || [];
+      const next = cur.includes(guid) ? cur.filter(g => g !== guid) : [...cur, guid];
+      return { ...prev, [key]: next };
+    });
+  }, []);
+
+  const dirty = useCallback((key) => {
+    const orig = (lo?.activityToOutcomes || {})[key] || [];
+    const cur = sel[key] || [];
+    if (orig.length !== cur.length) return true;
+    const os = new Set(orig);
+    return cur.some(g => !os.has(g));
+  }, [lo, sel]);
+
+  const saveActivity = useCallback(async (key) => {
+    if (!orgUnitId) return;
+    const idx = key.indexOf(":");
+    const type = key.slice(0, idx);
+    const objectId = key.slice(idx + 1);
+    const outcomeIds = sel[key] || [];
+    setSavingKey(key); setMsg(null);
+    try {
+      await apiPost(
+        `/gemelo/course/${orgUnitId}/alignments/activity/${type}/${encodeURIComponent(objectId)}`,
+        { action: "replace", outcomeIds },
+      );
+      setMsg({ type: "ok", text: "Vínculo guardado. Los RA de esa actividad se actualizaron." });
+      await load(true);
+    } catch (e) {
+      const raw = String(e?.message || "");
+      const forbidden = /403|super|admin|forbidden/i.test(raw);
+      setMsg({
+        type: "err",
+        text: forbidden
+          ? "Tu usuario no tiene permiso para escribir alineaciones (actualmente restringido a administradores). Avísale al equipo para habilitar la vinculación a docentes."
+          : (raw || "No se pudo guardar el vínculo."),
+      });
+    } finally {
+      setSavingKey(null);
+    }
+  }, [sel, orgUnitId, load]);
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return activities;
+    return activities.filter(a =>
+      String(a.name || a.key).toLowerCase().includes(q) ||
+      RA_ACTIVITY_TYPE_LABELS[a.type]?.toLowerCase().includes(q));
+  }, [activities, query]);
+
+  // Los quizzes vinculan RA POR PREGUNTA en Brightspace (no a nivel de quiz):
+  // una escritura global de quiz devuelve ok:true pero NO tiene efecto real
+  // (los alignments efectivos llevan QuestionId). Por eso separamos:
+  // tareas/actividades editables vs quizzes de solo lectura.
+  const editableAll = useMemo(() => activities.filter(a => a.type !== "Quiz"), [activities]);
+  const editableActs = useMemo(() => filtered.filter(a => a.type !== "Quiz"), [filtered]);
+  const quizActs = useMemo(() => filtered.filter(a => a.type === "Quiz"), [filtered]);
+  const hasQuizzes = useMemo(() => activities.some(a => a.type === "Quiz"), [activities]);
+
+  const linkedCount = useMemo(
+    () => editableAll.filter(a => (sel[a.key] || []).length > 0).length,
+    [editableAll, sel]);
+
+  if (loading) {
+    return (
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "center", padding: 60, gap: 10, color: "var(--muted)" }}>
+        <span className="pulse-dot" style={{ background: "var(--brand)", width: 10, height: 10 }} />
+        <span style={{ fontSize: 13, fontWeight: 600 }}>Cargando actividades y resultados de aprendizaje…</span>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <Card accent="critical">
+        <div style={{ padding: 8, color: "var(--critical)", fontSize: 13, fontWeight: 600 }}>⚠️ {error}</div>
+        <button className="btn" onClick={() => load(true)} style={{ marginTop: 8, fontSize: 12 }}>Reintentar</button>
+      </Card>
+    );
+  }
+
+  const noOutcomes = allOutcomes.length === 0;
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+      {/* Header */}
+      <div>
+        <div style={{ fontSize: 10, fontWeight: 800, color: "var(--brand)", textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: 4 }}>
+          G.D · Vinculación de RA
+        </div>
+        <h1 style={{ fontSize: 24, fontWeight: 900, color: "var(--text)", letterSpacing: "-0.02em", lineHeight: 1.1, marginBottom: 4 }}>
+          Resultados de aprendizaje
+        </h1>
+        <div style={{ fontSize: 13, color: "var(--muted)", fontWeight: 500 }}>
+          {courseName || `Curso ${orgUnitId}`} · Elige a qué RA apunta cada actividad para activar la analítica por resultado.
+        </div>
+      </div>
+
+      {noOutcomes ? (
+        <Card accent="watch">
+          <div className="empty-state">
+            <span className="empty-state-icon">🎯</span>
+            <span style={{ fontSize: 13, fontWeight: 700 }}>Este curso aún no tiene Resultados de Aprendizaje registrados</span>
+            <span style={{ fontSize: 12, color: "var(--muted-strong)", textAlign: "center", lineHeight: 1.5, maxWidth: 420, marginTop: 4 }}>
+              Primero deben importarse o registrarse los RA del curso en Brightspace. Una vez existan, aquí podrás vincular tus actividades a cada uno.
+            </span>
+          </div>
+        </Card>
+      ) : (
+        <>
+          {/* RA del curso (referencia) */}
+          <Card
+            title={<span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>Resultados de aprendizaje del curso <InfoTooltip text="Estos son los RA definidos para tu curso. Úsalos como referencia al vincular cada actividad." /></span>}
+            right={<span className="tag">{allOutcomes.length}</span>}
+            accent="brand"
+          >
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              {allOutcomes.map(o => {
+                const p = raParts(o);
+                return (
+                  <div key={o.guid}
+                    style={{ display: "flex", alignItems: "flex-start", gap: 10, fontSize: 12.5, padding: "8px 12px", borderRadius: 10, border: "1px solid var(--border)", background: "var(--bg)", color: "var(--text)" }}>
+                    {p.code && (
+                      <span style={{ flex: "0 0 auto", fontFamily: "var(--font-mono)", fontSize: 11, fontWeight: 800, color: "var(--brand)", background: "var(--brand-light)", padding: "3px 8px", borderRadius: 6, whiteSpace: "nowrap", marginTop: 1 }}>
+                        {p.code}
+                      </span>
+                    )}
+                    <span style={{ flex: "1 1 auto", color: "var(--text)", fontWeight: 500, lineHeight: 1.5 }}>
+                      {p.title}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          </Card>
+
+          {/* Actividades → RA · pestañas tipo navegador: Tareas | Quizzes */}
+          <Card>
+            <div style={{ display: "flex", alignItems: "flex-end", gap: 6, borderBottom: "1.5px solid var(--border)", margin: "-2px 0 14px", flexWrap: "wrap" }}>
+              <button onClick={() => setRaTab("tasks")} style={raTabStyle(raTab === "tasks")}>
+                📋 Vincular tareas y actividades
+              </button>
+              {hasQuizzes && (
+                <button onClick={() => setRaTab("quizzes")} style={raTabStyle(raTab === "quizzes")}>
+                  📝 Quizzes
+                  <span style={{
+                    fontSize: 10, fontWeight: 800, borderRadius: 99, padding: "1px 7px",
+                    background: raTab === "quizzes" ? "var(--brand-light)" : "var(--border)",
+                    color: raTab === "quizzes" ? "var(--brand)" : "var(--muted)",
+                  }}>{quizActs.length}</span>
+                </button>
+              )}
+              <span style={{ marginLeft: "auto", display: "inline-flex", alignItems: "center", gap: 8, paddingBottom: 9 }}>
+                {raTab === "tasks" ? (
+                  <span style={{ fontSize: 11.5, fontWeight: 800, color: linkedCount > 0 ? "var(--solid)" : "var(--muted)" }}>
+                    {linkedCount}/{editableAll.length} vinculadas
+                  </span>
+                ) : (
+                  <span style={{ fontSize: 11.5, fontWeight: 800, color: "var(--muted)" }}>RA por pregunta</span>
+                )}
+                <InfoTooltip text={raTab === "tasks"
+                  ? "Para cada tarea o actividad, marca el o los RA que evalúa y presiona Guardar. Un vínculo por actividad; puedes cambiarlo cuando quieras. Los quizzes tienen su propia pestaña porque sus RA se vinculan por pregunta."
+                  : "Los RA de un quiz se vinculan pregunta por pregunta desde el editor del quiz en Brightspace, no de forma global. Aquí se muestran los RA que ya miden sus preguntas."} />
+              </span>
+            </div>
+
+            {raTab === "tasks" && msg && (
+              <div style={{
+                fontSize: 12.5, borderRadius: 10, padding: "9px 12px", marginBottom: 12,
+                display: "flex", alignItems: "center", gap: 8, fontWeight: 600,
+                color: msg.type === "ok" ? "var(--solid)" : "var(--critical)",
+                background: msg.type === "ok" ? "var(--solid-bg, rgba(16,185,129,0.1))" : "var(--critical-bg, rgba(220,38,38,0.08))",
+              }}>
+                <span>{msg.type === "ok" ? "✅" : "⚠️"}</span>{msg.text}
+              </div>
+            )}
+
+            {activities.length > 6 && (
+              <input
+                type="text"
+                placeholder="Buscar actividad…"
+                value={query}
+                onChange={e => setQuery(e.target.value)}
+                style={{ width: "100%", boxSizing: "border-box", padding: "9px 12px", borderRadius: 10, border: "1px solid var(--border)", background: "var(--bg)", color: "var(--text)", fontSize: 12.5, marginBottom: 12, outline: "none" }}
+              />
+            )}
+
+            {raTab === "tasks" && (editableAll.length === 0 ? (
+              <div className="empty-state">
+                <span className="empty-state-icon">📭</span>
+                <span style={{ fontSize: 12.5 }}>No se detectaron tareas o actividades vinculables en este curso.</span>
+                <span style={{ fontSize: 11.5, color: "var(--muted-strong)", textAlign: "center", maxWidth: 360, marginTop: 4 }}>
+                  Crea tareas (asignaciones) en Brightspace y vuelve aquí para vincularlas a tus RA.
+                </span>
+              </div>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                {editableActs.map(act => {
+                  const chosen = sel[act.key] || [];
+                  const idx = act.key.indexOf(":");
+                  const objectId = act.key.slice(idx + 1);
+                  const typeLabel = RA_ACTIVITY_TYPE_LABELS[act.type] || act.type;
+                  const isDirty = dirty(act.key);
+                  const hasLink = chosen.length > 0;
+                  return (
+                    <div key={act.key} style={{
+                      background: "var(--card)", border: `1px solid ${hasLink ? "var(--brand)" : "var(--border)"}`,
+                      borderRadius: 12, padding: "12px 14px", transition: "border-color 0.15s",
+                    }}>
+                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, marginBottom: 10, flexWrap: "wrap" }}>
+                        <span style={{ fontSize: 13, fontWeight: 800, color: "var(--text)", display: "inline-flex", alignItems: "center", gap: 8, minWidth: 0 }}>
+                          <span style={{ flex: "0 0 auto", fontSize: 10, fontWeight: 800, color: "var(--brand)", background: "var(--brand-light)", padding: "3px 8px", borderRadius: 6, textTransform: "uppercase", letterSpacing: 0.3 }}>{typeLabel}</span>
+                          {act.name
+                            ? <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{act.name}</span>
+                            : <span style={{ color: "var(--muted)", fontFamily: "var(--font-mono)", fontWeight: 600 }}>#{objectId}</span>}
+                        </span>
+                        <button
+                          onClick={() => saveActivity(act.key)}
+                          disabled={savingKey === act.key || !isDirty}
+                          style={{
+                            display: "inline-flex", alignItems: "center", gap: 6,
+                            padding: "6px 14px", borderRadius: 8, border: "none",
+                            cursor: (savingKey === act.key || !isDirty) ? "not-allowed" : "pointer",
+                            background: isDirty ? "linear-gradient(135deg, var(--brand) 0%, #1e40af 100%)" : "var(--bg)",
+                            color: isDirty ? "#fff" : "var(--muted)",
+                            fontSize: 12, fontWeight: 800, fontFamily: "var(--font)",
+                            opacity: savingKey === act.key ? 0.6 : 1,
+                          }}
+                        >
+                          {savingKey === act.key ? "Guardando…" : isDirty ? "💾 Guardar" : "Guardado"}
+                        </button>
+                      </div>
+                      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                        {allOutcomes.map(o => {
+                          const on = chosen.includes(o.guid);
+                          const p = raParts(o);
+                          return (
+                            <button
+                              key={o.guid}
+                              onClick={() => toggleSel(act.key, o.guid)}
+                              title={p.full}
+                              style={{
+                                display: "flex", alignItems: "flex-start", gap: 9, width: "100%",
+                                textAlign: "left", fontSize: 12, fontWeight: 600, padding: "8px 11px",
+                                borderRadius: 10, cursor: "pointer",
+                                border: on ? "1.5px solid var(--brand)" : "1.5px solid var(--border)",
+                                background: on ? "var(--brand-light)" : "transparent",
+                                color: on ? "var(--text)" : "var(--muted)",
+                                transition: "all 0.12s",
+                              }}
+                            >
+                              <span style={{
+                                flex: "0 0 auto", marginTop: 1, width: 16, height: 16, borderRadius: 5,
+                                display: "inline-flex", alignItems: "center", justifyContent: "center",
+                                fontSize: 11, fontWeight: 900,
+                                border: on ? "none" : "1.5px solid var(--border)",
+                                background: on ? "var(--brand)" : "transparent",
+                                color: on ? "#fff" : "transparent",
+                              }}>✓</span>
+                              {p.code && (
+                                <span style={{ flex: "0 0 auto", fontFamily: "var(--font-mono)", fontWeight: 800, color: "var(--brand)", fontSize: 11.5, marginTop: 1 }}>
+                                  {p.code}
+                                </span>
+                              )}
+                              <span style={{ flex: "1 1 auto", lineHeight: 1.4 }}>{p.title}</span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                      {!hasLink && (
+                        <div style={{ fontSize: 10.5, color: "var(--muted)", fontStyle: "italic", marginTop: 8 }}>
+                          Sin vincular — marca al menos un RA.
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            ))}
+
+            {/* Pestaña Quizzes: RA por pregunta (solo lectura + acceso directo a Brightspace) */}
+            {raTab === "quizzes" && (
+              <>
+              <div style={{
+                fontSize: 12, borderRadius: 10, padding: "9px 12px", marginBottom: 12,
+                display: "flex", alignItems: "flex-start", gap: 8, fontWeight: 600, lineHeight: 1.5,
+                color: "var(--watch, #b45309)", background: "var(--watch-bg, rgba(245,158,11,0.1))",
+              }}>
+                <span>ℹ️</span>
+                <span style={{ flex: "1 1 auto" }}>
+                  Los quizzes no se vinculan globalmente: en Brightspace cada <b>pregunta</b> del quiz
+                  se alinea a su RA (editor del quiz → pregunta → Learning Outcomes). Los RA listados
+                  abajo provienen de esas alineaciones por pregunta y se actualizan solos al editarlas.
+                </span>
+                <a
+                  href={`${BS_PUBLIC_BASE}/d2l/lms/quizzing/admin/quizzes_manage.d2l?ou=${orgUnitId}`}
+                  target="_blank" rel="noreferrer"
+                  style={{
+                    flex: "0 0 auto", display: "inline-flex", alignItems: "center", gap: 5,
+                    padding: "6px 12px", borderRadius: 8, textDecoration: "none",
+                    background: "linear-gradient(135deg, var(--brand) 0%, #1e40af 100%)",
+                    color: "#fff", fontSize: 11.5, fontWeight: 800, whiteSpace: "nowrap",
+                  }}
+                >
+                  Abrir quizzes en Brightspace ↗
+                </a>
+              </div>
+
+              {quizActs.length === 0 ? (
+                <div style={{ fontSize: 12, color: "var(--muted)", fontStyle: "italic", padding: "4px 2px" }}>
+                  Ningún quiz coincide con la búsqueda.
+                </div>
+              ) : (
+                <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                  {quizActs.map(act => {
+                    const idx = act.key.indexOf(":");
+                    const objectId = act.key.slice(idx + 1);
+                    const typeLabel = RA_ACTIVITY_TYPE_LABELS[act.type] || act.type;
+                    const guids = (lo?.activityToOutcomes || {})[act.key] || [];
+                    const linked = guids
+                      .map(g => allOutcomes.find(o => o.guid === g))
+                      .filter(Boolean);
+                    return (
+                      <div key={act.key} style={{
+                        background: "var(--card)", border: `1px solid ${linked.length > 0 ? "var(--brand)" : "var(--border)"}`,
+                        borderRadius: 12, padding: "12px 14px",
+                      }}>
+                        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, marginBottom: linked.length > 0 ? 10 : 0, flexWrap: "wrap" }}>
+                          <span style={{ fontSize: 13, fontWeight: 800, color: "var(--text)", display: "inline-flex", alignItems: "center", gap: 8, minWidth: 0 }}>
+                            <span style={{ flex: "0 0 auto", fontSize: 10, fontWeight: 800, color: "var(--watch, #b45309)", background: "var(--watch-bg, rgba(245,158,11,0.12))", padding: "3px 8px", borderRadius: 6, textTransform: "uppercase", letterSpacing: 0.3 }}>{typeLabel}</span>
+                            {act.name
+                              ? <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{act.name}</span>
+                              : <span style={{ color: "var(--muted)", fontFamily: "var(--font-mono)", fontWeight: 600 }}>#{objectId}</span>}
+                          </span>
+                          <span style={{ flex: "0 0 auto", display: "inline-flex", alignItems: "center", gap: 10 }}>
+                            <span style={{ fontSize: 11, fontWeight: 700, color: linked.length > 0 ? "var(--solid)" : "var(--muted)" }}>
+                              {linked.length > 0 ? `${linked.length} RA por pregunta` : "Sin RA en preguntas"}
+                            </span>
+                            <a
+                              href={`${BS_PUBLIC_BASE}/d2l/lms/quizzing/admin/modify/quiz_newedit_properties.d2l?qi=${encodeURIComponent(objectId)}&ou=${orgUnitId}`}
+                              target="_blank" rel="noreferrer"
+                              title="Abre el editor del quiz en Brightspace para vincular RA a cada pregunta"
+                              style={{
+                                display: "inline-flex", alignItems: "center", gap: 5,
+                                padding: "5px 11px", borderRadius: 8, textDecoration: "none",
+                                border: "1.5px solid var(--brand)", background: "var(--brand-light)",
+                                color: "var(--brand)", fontSize: 11, fontWeight: 800, whiteSpace: "nowrap",
+                              }}
+                            >
+                              Vincular en Brightspace ↗
+                            </a>
+                          </span>
+                        </div>
+                        {linked.length > 0 ? (
+                          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                            {linked.map(o => {
+                              const p = raParts(o);
+                              return (
+                                <div key={o.guid} title={p.full} style={{
+                                  display: "flex", alignItems: "flex-start", gap: 9,
+                                  fontSize: 12, fontWeight: 600, padding: "8px 11px", borderRadius: 10,
+                                  border: "1.5px solid var(--border)", background: "var(--bg)", color: "var(--text)",
+                                }}>
+                                  {p.code && (
+                                    <span style={{ flex: "0 0 auto", fontFamily: "var(--font-mono)", fontWeight: 800, color: "var(--brand)", fontSize: 11.5, marginTop: 1 }}>
+                                      {p.code}
+                                    </span>
+                                  )}
+                                  <span style={{ flex: "1 1 auto", lineHeight: 1.4 }}>{p.title}</span>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        ) : (
+                          <div style={{ fontSize: 10.5, color: "var(--muted)", fontStyle: "italic", marginTop: 8 }}>
+                            Vincula RA a las preguntas de este quiz desde Brightspace para verlos aquí.
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+              </>
+            )}
+          </Card>
+        </>
+      )}
+    </div>
+  );
+}
+
 /**
  * =========================
  * Main App
@@ -4148,11 +4012,8 @@ export default function TeacherDashboard() {
           setOrgUnitInput(String(_hashOu));
         }
 
-        // Llamar /auth/me con sid como query param (bypass cross-domain cookie)
-        const _meUrl = _sid
-          ? apiUrl(`/auth/me?sid=${encodeURIComponent(_sid)}`)
-          : apiUrl("/auth/me");
-        const res = await fetch(_meUrl, {
+        // Llamar /auth/me (el sid va solo en el header Bearer, nunca en la URL)
+        const res = await fetch(apiUrl("/auth/me"), {
           credentials: "include",
           headers: _sid ? { "Authorization": `Bearer ${_sid}` } : {},
         });
@@ -4379,7 +4240,7 @@ export default function TeacherDashboard() {
   const [drawerTab, setDrawerTab] = useState("resumen");
 
   // ── Main navigation tabs (persisted in URL) ──────────
-  const VALID_TABS = ["dashboard", "routes", "predictions", "evidences", "assistant", "help"];
+  const VALID_TABS = ["dashboard", "routes", "predictions", "evidences", "learning-outcomes", "assistant", "help"];
   const [searchParams, setSearchParams] = useSearchParams();
   const tabFromUrl = searchParams.get("tab");
   const activeTab = VALID_TABS.includes(tabFromUrl) ? tabFromUrl : "dashboard";
@@ -4409,8 +4270,8 @@ export default function TeacherDashboard() {
       // enrolled es la fuente principal: incluye TODOS los cursos con roleName
       // my-course-offerings como fallback (solo cursos como instructor)
       const [enrolledData, myData] = await Promise.allSettled([
-        apiGet(`/brightspace/courses/enrolled?active_only=false&limit=200`),
-        apiGet(`/brightspace/my-course-offerings?active_only=false&limit=50`),
+        apiGetCached(`/brightspace/courses/enrolled?active_only=false&limit=200`, { ttl: 300_000 }),
+        apiGetCached(`/brightspace/my-course-offerings?active_only=false&limit=50`, { ttl: 300_000 }),
       ]);
 
       const enrolledItems = enrolledData.status === "fulfilled"
@@ -4698,11 +4559,12 @@ export default function TeacherDashboard() {
 
     (async () => {
       try {
+        if (forceFresh) invalidateApiCache(`/gemelo/course/${orgUnitId}/`);
         const [ovRes, stRes, raRes, loRes] = await Promise.allSettled([
-          apiGet(overviewUrl, { signal: controller.signal }),
-          apiGet(`/gemelo/course/${orgUnitId}/students?include=summary`, { signal: controller.signal }),
-          apiGet(`/gemelo/course/${orgUnitId}/ra/dashboard`, { signal: controller.signal }),
-          apiGet(`/gemelo/course/${orgUnitId}/learning-outcomes`, { signal: controller.signal }),
+          apiGetCached(overviewUrl, { signal: controller.signal, force: forceFresh }),
+          apiGetCached(`/gemelo/course/${orgUnitId}/students?include=summary`, { signal: controller.signal, force: forceFresh }),
+          apiGetCached(`/gemelo/course/${orgUnitId}/ra/dashboard`, { signal: controller.signal, force: forceFresh }),
+          apiGetCached(`/gemelo/course/${orgUnitId}/learning-outcomes`, { signal: controller.signal, force: forceFresh }),
         ]);
 
         if (!isMounted) return;
@@ -4907,7 +4769,9 @@ export default function TeacherDashboard() {
           })
         );
       } catch (e) {
-        if (controller.signal.aborted || !isMounted) return;
+        // Ignorar aborts (propios o de un consumidor compartido en apiGetCached):
+        // no son errores reales del curso, solo cancelaciones de montaje/unmount.
+        if (controller.signal.aborted || !isMounted || e?.name === "AbortError") return;
         setErr(String(e?.message || e));
         setLoading(false);
       }
@@ -4934,8 +4798,8 @@ export default function TeacherDashboard() {
     (async () => {
       try {
         const [courseRes, contentRes] = await Promise.allSettled([
-          apiGet(`/brightspace/course/${orgUnitId}`, { signal: controller.signal }),
-          apiGet(`/brightspace/course/${orgUnitId}/content/root`, { signal: controller.signal }),
+          apiGetCached(`/brightspace/course/${orgUnitId}`, { signal: controller.signal, ttl: 300_000 }),
+          apiGetCached(`/brightspace/course/${orgUnitId}/content/root`, { signal: controller.signal, ttl: 300_000 }),
         ]);
 
         if (!alive) return;
@@ -4984,7 +4848,7 @@ export default function TeacherDashboard() {
 
     (async () => {
       try {
-        const g = await apiGet(`/gemelo/course/${orgUnitId}/student/${selectedStudent.userId}`, {
+        const g = await apiGetCached(`/gemelo/course/${orgUnitId}/student/${selectedStudent.userId}`, {
           signal: controller.signal,
         });
         if (!alive) return;
@@ -5708,61 +5572,141 @@ const contentKpis = useMemo(() => {
   }
   if (!authUser) return <LoginScreen orgUnitId={orgUnitId} />;
 
-  // Sin curso seleccionado → mostrar selector automáticamente
+  // Sin curso seleccionado → mostrar selector automáticamente (visual de tarjetas, igual que RoleHome)
   if (!orgUnitId || orgUnitId === 0) {
+    const instructorCourses = courseList.filter(c => !isStudentRole(c.roleName));
+    const studentCourses = courseList.filter(c => isStudentRole(c.roleName));
+
+    const openCourse = (c) => {
+      if (isStudentRole(c.roleName)) {
+        sessionStorage.setItem("gemelo_pending_org", String(c.id));
+        window.location.href = window.location.origin + "/portal";
+      } else {
+        switchCourse(c.id);
+      }
+    };
+
+    const CourseCardV2 = ({ c, role }) => {
+      const isActive = c.isActive !== false;
+      const RoleIcon = role === "student" ? GraduationCap : Presentation;
+      return (
+        <button
+          onClick={() => openCourse(c)}
+          className={`course-card-v2 role-${role} ${!isActive ? "inactive" : ""}`}
+          aria-label={`Abrir curso ${c.name}`}
+        >
+          <div className="course-card-icon">
+            <RoleIcon size={22} strokeWidth={2} />
+          </div>
+          <div className="course-card-title">{c.name || `Curso ${c.id}`}</div>
+          <div className="course-card-meta">
+            <span className="course-card-id">
+              #{c.id}{c.code ? ` · ${c.code}` : ""}
+            </span>
+            {!isActive && (
+              <span style={{
+                fontSize: 9, fontWeight: 800, color: "var(--muted)",
+                background: "var(--bg)", border: "1px solid var(--border)",
+                borderRadius: 99, padding: "1px 8px", textTransform: "uppercase", letterSpacing: "0.06em",
+              }}>
+                Inactivo
+              </span>
+            )}
+          </div>
+          <span className="course-card-arrow"><ArrowRight size={18} strokeWidth={2.5} /></span>
+        </button>
+      );
+    };
+
+    const SectionHeaderV2 = ({ icon, title, count, variant = "instructor" }) => (
+      <div className="section-header-v2">
+        <div className={`section-header-icon-wrap ${variant === "student" ? "student" : ""}`}>
+          {icon}
+        </div>
+        <div>
+          <div className="section-header-title">{title}</div>
+          <div className="section-header-count">{count} curso{count !== 1 ? "s" : ""}</div>
+        </div>
+      </div>
+    );
+
     return (
-      <div style={{ minHeight: "100vh", background: "var(--bg)", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "var(--font)", padding: 20 }}>
-        <div style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: "var(--radius-lg)", padding: "36px 40px", maxWidth: 480, width: "100%", boxShadow: "var(--shadow-lg)" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 20 }}>
-            <div style={{ width: 40, height: 40, borderRadius: 10, background: "var(--brand)", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: 13, fontWeight: 900 }}>CESA</div>
+      <div style={{ minHeight: "100vh", background: "var(--bg)", fontFamily: "var(--font)" }}>
+        {/* ── Top bar ─────────────────────────────────────────────── */}
+        <header style={{
+          position: "sticky", top: 0, zIndex: 50,
+          background: "var(--card)", borderBottom: "1px solid var(--border)",
+          display: "flex", alignItems: "center", justifyContent: "space-between",
+          padding: "0 24px", height: 60,
+        }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+            <div style={{ width: 36, height: 36, borderRadius: 10, background: "linear-gradient(135deg, var(--brand) 0%, #1e40af 100%)", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: 11, fontWeight: 900, letterSpacing: "0.02em" }}>CESA</div>
             <div>
-              <div style={{ fontSize: 15, fontWeight: 900, color: "var(--text)" }}>G.D</div>
+              <div style={{ fontSize: 14, fontWeight: 900, color: "var(--text)", lineHeight: 1.15, letterSpacing: "-0.01em" }}>Gemelo Digital</div>
               <div style={{ fontSize: 11, color: "var(--muted)", fontWeight: 600 }}>
                 Hola, {authUser?.user_name?.split(" ")[0] || "docente"} — selecciona tu curso
               </div>
             </div>
           </div>
-          <div style={{ height: 1, background: "var(--border)", marginBottom: 20 }} />
-          {/* Header con total */}
-          {!loadingCourses && courseList.length > 0 && (
-            <div style={{ fontSize: 11, color: "var(--muted)", marginBottom: 6, fontWeight: 600 }}>
-              {courseSearch
-                ? `${courseList.length} resultado${courseList.length !== 1 ? "s" : ""} para "${courseSearch}"`
-                : `${courseList.length} cursos recientes · ${courseList.filter(c => c.isActive).length} activos`
-              }
+          <button
+            onClick={async () => {
+              try {
+                const _sid2 = localStorage.getItem("gemelo_sid");
+                const _lh = _sid2 ? { "Authorization": `Bearer ${_sid2}` } : {};
+                await fetch(apiUrl("/auth/logout"), { method: "POST", credentials: "include", headers: _lh });
+              } catch {}
+              localStorage.removeItem("gemelo_sid");
+              sessionStorage.clear();
+              window.location.href = window.location.origin + "/";
+            }}
+            style={{ display: "flex", alignItems: "center", gap: 6, background: "none", border: "1px solid var(--border)", borderRadius: 8, padding: "6px 14px", fontSize: 12, fontWeight: 700, color: "var(--muted)", cursor: "pointer", fontFamily: "var(--font)" }}
+          >
+            <LogOut size={14} strokeWidth={2.2} /> Cerrar sesión
+          </button>
+        </header>
+
+        {/* ── Contenido ───────────────────────────────────────────── */}
+        <main style={{ maxWidth: 1100, margin: "0 auto", padding: "28px 24px 60px" }}>
+          {/* Buscador + contador */}
+          {!loadingCourses && (courseList.length > 0 || courseSearch) && (
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, flexWrap: "wrap", marginBottom: 24 }}>
+              <div style={{ position: "relative", flex: "1 1 320px", maxWidth: 440 }}>
+                <input
+                  type="text"
+                  placeholder="Buscar por nombre, código o ID…"
+                  value={courseSearch}
+                  onChange={e => {
+                    const val = e.target.value;
+                    setCourseSearch(val);
+                    // Debounce: esperar 400ms antes de buscar en backend
+                    clearTimeout(window._courseSearchTimer);
+                    window._courseSearchTimer = setTimeout(() => {
+                      setCourseListLoaded(false);
+                      searchCourses(val);
+                    }, 400);
+                  }}
+                  style={{ width: "100%", padding: "10px 14px 10px 36px", borderRadius: 10, border: "1px solid var(--border)", background: "var(--card)", color: "var(--text)", fontSize: 13, fontFamily: "var(--font)", outline: "none", boxSizing: "border-box", boxShadow: "var(--shadow-sm)" }}
+                  onFocus={e => e.target.style.borderColor = "var(--brand)"}
+                  onBlur={e => e.target.style.borderColor = "var(--border)"}
+                />
+                <span style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", fontSize: 14, color: "var(--muted)" }}>🔍</span>
+              </div>
+              <div style={{ fontSize: 12, color: "var(--muted)", fontWeight: 600 }}>
+                {courseSearch
+                  ? `${courseList.length} resultado${courseList.length !== 1 ? "s" : ""} para "${courseSearch}"`
+                  : `${courseList.length} cursos recientes · ${courseList.filter(c => c.isActive).length} activos`
+                }
+              </div>
             </div>
           )}
-          {/* Buscador */}
-          {!loadingCourses && courseList.length > 0 && (
-            <div style={{ position: "relative", marginBottom: 10 }}>
-              <input
-                type="text"
-                placeholder="Buscar por nombre, código o ID…"
-                value={courseSearch}
-                onChange={e => {
-                  const val = e.target.value;
-                  setCourseSearch(val);
-                  // Debounce: esperar 400ms antes de buscar en backend
-                  clearTimeout(window._courseSearchTimer);
-                  window._courseSearchTimer = setTimeout(() => {
-                    setCourseListLoaded(false);
-                    searchCourses(val);
-                  }, 400);
-                }}
-                style={{ width: "100%", padding: "9px 12px 9px 34px", borderRadius: 9, border: "1px solid var(--border)", background: "var(--bg)", color: "var(--text)", fontSize: 12, fontFamily: "var(--font)", outline: "none", boxSizing: "border-box" }}
-                onFocus={e => e.target.style.borderColor = "var(--brand)"}
-                onBlur={e => e.target.style.borderColor = "var(--border)"}
-              />
-              <span style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", fontSize: 14, color: "var(--muted)" }}>🔍</span>
-            </div>
-          )}
+
           {loadingCourses ? (
-            <div style={{ textAlign: "center", padding: "20px 0", color: "var(--muted)", fontSize: 13 }}>
+            <div style={{ textAlign: "center", padding: "60px 0", color: "var(--muted)", fontSize: 13 }}>
               Cargando tus cursos…
             </div>
           ) : courseList.length === 0 ? (
-            <div style={{ textAlign: "center", padding: "24px 0" }}>
-              <div style={{ fontSize: 14, color: "var(--muted)", marginBottom: 10 }}>
+            <div style={{ textAlign: "center", padding: "60px 0" }}>
+              <div style={{ fontSize: 14, color: "var(--muted)", marginBottom: 12 }}>
                 {courseSearch ? `Sin resultados para "${courseSearch}"` : "No se encontraron cursos."}
               </div>
               {courseSearch && (
@@ -5772,92 +5716,33 @@ const contentKpis = useMemo(() => {
                     setCourseListLoaded(false);
                     searchCourses("");
                   }}
-                  style={{ background: "var(--brand)", color: "#fff", border: "none", borderRadius: 8, padding: "7px 16px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}
+                  style={{ background: "var(--brand)", color: "#fff", border: "none", borderRadius: 8, padding: "8px 18px", fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "var(--font)" }}
                 >
                   Limpiar búsqueda
                 </button>
               )}
             </div>
-          ) : (() => {
-            const instructorCourses = courseList.filter(c => !isStudentRole(c.roleName));
-            const studentCourses = courseList.filter(c => isStudentRole(c.roleName));
-
-            const CourseBtn = ({ c, color, hoverBg }) => (
-              <button key={c.id}
-                onClick={() => {
-                  if (isStudentRole(c.roleName)) {
-                    sessionStorage.setItem("gemelo_pending_org", String(c.id));
-                    window.location.href = window.location.origin + "/portal";
-                  } else {
-                    switchCourse(c.id);
-                  }
-                }}
-                aria-label={`Abrir curso ${c.name}`}
-                style={{
-                  display: "flex", alignItems: "center", justifyContent: "space-between",
-                  padding: "12px 14px", borderRadius: 10, border: `1.5px solid var(--border)`,
-                  background: "var(--bg)", cursor: "pointer", textAlign: "left",
-                  transition: "all 0.15s", fontFamily: "var(--font)", width: "100%",
-                }}
-                onMouseEnter={e => { e.currentTarget.style.borderColor = color; e.currentTarget.style.background = hoverBg; }}
-                onMouseLeave={e => { e.currentTarget.style.borderColor = "var(--border)"; e.currentTarget.style.background = "var(--bg)"; }}
-              >
-                <div>
-                  <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text)", marginBottom: 2 }}>{c.name}</div>
-                  <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                    <span style={{ fontSize: 11, color: "var(--muted)" }}>ID {c.id}{c.code ? ` · ${c.code}` : ""}</span>
-                    {!c.isActive && <span style={{ fontSize: 9, fontWeight: 800, color: "var(--muted)", background: "var(--bg)", border: "1px solid var(--border)", borderRadius: 99, padding: "1px 6px", textTransform: "uppercase" }}>Inactivo</span>}
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 32 }}>
+              {instructorCourses.length > 0 && (
+                <section>
+                  <SectionHeaderV2 icon={<Presentation size={22} strokeWidth={2.2} />} title="Como Profesor" count={instructorCourses.length} />
+                  <div className="course-grid stagger-children">
+                    {instructorCourses.map(c => <CourseCardV2 key={`i-${c.id}`} c={c} role="instructor" />)}
                   </div>
-                </div>
-                <span style={{ color, fontSize: 16, flexShrink: 0 }}>→</span>
-              </button>
-            );
-
-            return (
-              <div style={{ display: "flex", flexDirection: "column", gap: 14, maxHeight: 420, overflowY: "auto" }}>
-                {instructorCourses.length > 0 && (
-                  <div>
-                    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
-                      <span style={{ fontSize: 14 }}>📊</span>
-                      <span style={{ fontSize: 12, fontWeight: 800, color: "var(--brand)" }}>Como Profesor ({instructorCourses.length})</span>
-                    </div>
-                    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                      {instructorCourses.map(c => <CourseBtn key={`i-${c.id}`} c={c} color="var(--brand)" hoverBg="var(--brand-light)" />)}
-                    </div>
+                </section>
+              )}
+              {studentCourses.length > 0 && (
+                <section>
+                  <SectionHeaderV2 icon={<GraduationCap size={22} strokeWidth={2.2} />} title="Como Estudiante" count={studentCourses.length} variant="student" />
+                  <div className="course-grid stagger-children">
+                    {studentCourses.map(c => <CourseCardV2 key={`s-${c.id}`} c={c} role="student" />)}
                   </div>
-                )}
-                {studentCourses.length > 0 && (
-                  <div>
-                    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
-                      <span style={{ fontSize: 14 }}>🎓</span>
-                      <span style={{ fontSize: 12, fontWeight: 800, color: "var(--ok)" }}>Como Estudiante ({studentCourses.length})</span>
-                    </div>
-                    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                      {studentCourses.map(c => <CourseBtn key={`s-${c.id}`} c={c} color="var(--ok)" hoverBg="var(--ok-bg)" />)}
-                    </div>
-                  </div>
-                )}
-              </div>
-            );
-          })()}
-          <div style={{ marginTop: 16, paddingTop: 14, borderTop: "1px solid var(--border)", display: "flex", justifyContent: "flex-end" }}>
-            <button
-              onClick={async () => {
-                try {
-                  const _sid2 = localStorage.getItem("gemelo_sid");
-                  const _lh = _sid2 ? { "Authorization": `Bearer ${_sid2}` } : {};
-                  await fetch(apiUrl("/auth/logout"), { method: "POST", credentials: "include", headers: _lh });
-                } catch {}
-                localStorage.removeItem("gemelo_sid");
-                sessionStorage.clear();
-                window.location.href = window.location.origin + "/";
-              }}
-              style={{ background: "none", border: "1px solid var(--border)", borderRadius: 8, padding: "6px 14px", fontSize: 12, fontWeight: 700, color: "var(--muted)", cursor: "pointer" }}
-            >
-              Cerrar sesión
-            </button>
-          </div>
-        </div>
+                </section>
+              )}
+            </div>
+          )}
+        </main>
       </div>
     );
   }
@@ -6004,12 +5889,14 @@ const contentKpis = useMemo(() => {
               </div>
             </div>
             <Card>
-              <GradePredictions
-                studentRows={studentRows}
-                onStudentClick={selectStudentById}
-                courseInfo={courseInfo}
-                variant="full"
-              />
+              <ErrorBoundary sectionName="Predicción de notas">
+                <GradePredictions
+                  studentRows={studentRows}
+                  onStudentClick={selectStudentById}
+                  courseInfo={courseInfo}
+                  variant="full"
+                />
+              </ErrorBoundary>
             </Card>
           </div>
         )}
@@ -6029,26 +5916,39 @@ const contentKpis = useMemo(() => {
               </div>
             </div>
             <Card>
-              <EvidenceReports
-                orgUnitId={orgUnitId}
-                studentRows={studentRows}
-                courseInfo={courseInfo}
-                onStudentClick={selectStudentById}
-              />
+              <ErrorBoundary sectionName="Informes de evidencias">
+                <EvidenceReports
+                  orgUnitId={orgUnitId}
+                  studentRows={studentRows}
+                  courseInfo={courseInfo}
+                  onStudentClick={selectStudentById}
+                />
+              </ErrorBoundary>
             </Card>
+          </div>
+        )}
+
+        {/* ── Resultados de aprendizaje (vincular actividades → RA) ── */}
+        {activeTab === "learning-outcomes" && (
+          <div className="fade-up tab-enter">
+            <ErrorBoundary sectionName="Resultados de aprendizaje">
+              <RaLinker orgUnitId={orgUnitId} courseName={courseInfo?.Name} />
+            </ErrorBoundary>
           </div>
         )}
 
         {/* ── Assistant tab ── */}
         {activeTab === "assistant" && (
           <div className="fade-up tab-enter">
-            <VoiceAssistant
-              studentRows={studentRows}
-              overview={overview}
-              raDashboard={raDashboard}
-              courseInfo={courseInfo}
-              thresholds={thresholds}
-            />
+            <ErrorBoundary sectionName="Asistente de voz">
+              <VoiceAssistant
+                studentRows={studentRows}
+                overview={overview}
+                raDashboard={raDashboard}
+                courseInfo={courseInfo}
+                thresholds={thresholds}
+              />
+            </ErrorBoundary>
           </div>
         )}
 
@@ -6086,14 +5986,16 @@ const contentKpis = useMemo(() => {
 
         {/* ── Alertas inteligentes (fusiona Radar docente + heurísticas locales) ── */}
         <div className="fade-up fade-up-1" style={{ marginBottom: 16 }}>
-          <SmartAlerts
-            studentRows={studentRows}
-            overview={overview}
-            courseInfo={courseInfo}
-            contentKpis={contentKpis}
-            backendAlerts={overview?.alerts}
-            onStudentClick={selectStudentById}
-          />
+          <ErrorBoundary sectionName="Alertas inteligentes">
+            <SmartAlerts
+              studentRows={studentRows}
+              overview={overview}
+              courseInfo={courseInfo}
+              contentKpis={contentKpis}
+              backendAlerts={overview?.alerts}
+              onStudentClick={selectStudentById}
+            />
+          </ErrorBoundary>
         </div>
 
         {/* ── Resumen semanal IA (narrativa) ── */}
@@ -6104,13 +6006,15 @@ const contentKpis = useMemo(() => {
             description="Tu dashboard ahora tiene resumen narrativo con IA, predicción de notas finales (menú lateral), alertas inteligentes, tendencias históricas y más. Haz Ctrl+K para la paleta de comandos, o presiona ? para ver todos los atajos."
           />
           <Card title={<span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>🤖 Resumen semanal <InfoTooltip text="Resumen narrativo en lenguaje natural del estado del curso. Se genera automáticamente a partir de los datos actuales. Puedes escucharlo con TTS." /></span>} accent="brand">
-            <AINarrativeSummary
-              studentRows={studentRows}
-              overview={overview}
-              courseInfo={courseInfo}
-              raDashboard={raDashboard}
-              contentKpis={contentKpis}
-            />
+            <ErrorBoundary sectionName="Resumen semanal">
+              <AINarrativeSummary
+                studentRows={studentRows}
+                overview={overview}
+                courseInfo={courseInfo}
+                raDashboard={raDashboard}
+                contentKpis={contentKpis}
+              />
+            </ErrorBoundary>
           </Card>
         </div>
 
@@ -6518,7 +6422,25 @@ const contentKpis = useMemo(() => {
           </div>
 
           <div ref={learningOutcomesRef}>
-          <Card title={<span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>Prioridad académica <InfoTooltip text="Resultados de Aprendizaje (RA) del curso ordenados de menor a mayor desempeño. El RA en primera posición es donde tus estudiantes están más débiles — prioriza refuerzo ahí." /></span>} accent="brand">
+          <Card
+            title={<span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>Prioridad académica <InfoTooltip text="Resultados de Aprendizaje (RA) del curso ordenados de menor a mayor desempeño. El RA en primera posición es donde tus estudiantes están más débiles — prioriza refuerzo ahí." /></span>}
+            accent="brand"
+            right={
+              <button
+                onClick={() => setActiveTab("learning-outcomes")}
+                title="Vincula o ajusta los RA de tus actividades para activar/afinar la analítica por resultado."
+                style={{
+                  display: "inline-flex", alignItems: "center", gap: 6,
+                  padding: "6px 13px", borderRadius: 8, border: "none", cursor: "pointer",
+                  background: "linear-gradient(135deg, var(--brand) 0%, #1e40af 100%)",
+                  color: "#fff", fontSize: 12, fontWeight: 800, fontFamily: "var(--font)",
+                  boxShadow: "var(--shadow-sm, 0 1px 2px rgba(0,0,0,0.1))",
+                }}
+              >
+                🔗 Vincular
+              </button>
+            }
+          >
             <div
               style={{
                 display: "flex",
@@ -6665,14 +6587,18 @@ const contentKpis = useMemo(() => {
         {/* ── Analytics section: Trends ── */}
         <div className="fade-up fade-up-3" style={{ marginTop: 20, marginBottom: 16 }}>
           <Card title={<span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>Tendencias del curso <InfoTooltip text="Evolución de nota promedio, porcentaje en riesgo y cobertura a lo largo de los últimos días. Los datos se capturan automáticamente cada vez que abres el dashboard." /></span>} accent="brand">
-            <CourseTrends snapshots={courseSnapshots} />
+            <ErrorBoundary sectionName="Tendencias del curso">
+              <CourseTrends snapshots={courseSnapshots} />
+            </ErrorBoundary>
           </Card>
         </div>
 
         {/* ── Calendario de entregas ── */}
         <div className="fade-up fade-up-3" style={{ marginBottom: 16 }}>
           <Card title={<span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>Calendario de entregas <InfoTooltip text="Próximas entregas del curso con detección de sobrecarga (3+ en el mismo día). Heatmap semanal al final. Toma los datos directamente del gradebook del curso." /></span>}>
-            <DueDateCalendar orgUnitId={orgUnitId} studentRows={studentRows} />
+            <ErrorBoundary sectionName="Calendario de entregas">
+              <DueDateCalendar orgUnitId={orgUnitId} studentRows={studentRows} />
+            </ErrorBoundary>
           </Card>
         </div>
 

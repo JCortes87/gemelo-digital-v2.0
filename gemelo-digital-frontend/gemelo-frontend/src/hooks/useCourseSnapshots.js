@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from "react";
-import { apiGet } from "../utils/api";
+import { apiGetCached } from "../utils/api";
 
 /**
  * Snapshots diarios de tendencias del curso, servidos desde la DB del backend.
@@ -36,7 +36,7 @@ export default function useCourseSnapshots(orgUnitId, currentMetrics) {
     if (!orgUnitId) return;
     let cancelled = false;
 
-    apiGet(`/gemelo/course/${orgUnitId}/metric-history?days=90`)
+    apiGetCached(`/gemelo/course/${orgUnitId}/metric-history?days=90`)
       .then((data) => {
         if (cancelled) return;
         const apiSnaps = data?.snapshots;

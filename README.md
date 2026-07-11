@@ -4,6 +4,22 @@ Plataforma de analítica académica para CESA (Colegio de Estudios Superiores de
 
 - **Producción:** https://gemelo.cesa.edu.co
 - **Backend prod:** https://ge-9d9d0220a8704eeabada1b951f3f2d37.ecs.us-east-1.on.aws
+- **Versión actual:** `2026.7.10`
+
+---
+
+## Novedades — 2026.7.10 (Resultados de Aprendizaje)
+
+Actualización centrada en la administración de **Resultados de Aprendizaje (RA)** desde la consola super-admin (`/outcomes`):
+
+- **Consola `/outcomes` reorganizada en 4 pestañas** (estilo navegador): *Cursos y alineaciones* (buscar semestre, analizar estado RA de las ofertas, consultar un curso por ID y ver/editar alineaciones), *Registro global* (explorar y editar el catálogo de conjuntos del tenant), *Crear RA (plantilla)* y *Importar manual* (modo avanzado + sondeo de diagnóstico).
+- **Creación masiva de RA desde plantilla CSV**: plantilla descargable (compatible con Excel es-CO: BOM + `;`), columna `conjunto` como título del set global (ej. `ACELERACIÓN PARA EL EMPRENDIMIENTO-AE2`), vista previa (dry-run) y escritura real vía `POST /gemelo/outcomes/bulk-create`. Se corrigió el formato `ImportExportOutcome` (discriminador `Source: "lores"`) que provocaba `HTTP 400 JSON Binding Error` en Brightspace.
+- **Cursos destino opcionales y múltiples al crear RA**: se pueden agregar varios cursos con el botón «+», o dejar vacío para crear los conjuntos solo en el **catálogo global** (nivel organización, con confirmación). El backend acepta `targetOrgUnitIds[]` y reporta resultado por curso.
+- **Análisis de estado RA por semestre**: clasifica cada oferta como *Sin RA / Sin alinear / Alineada* con filtros y contadores.
+- **Emparejador automático curso → conjunto**: sugiere el conjunto del catálogo global que coincide con el nombre de la asignatura (con puntaje de afinidad) e importa con vista previa.
+- **Import masivo a varios cursos**: checkboxes en la lista de cursos (p. ej. las 8 secciones homónimas de una asignatura), botón *Marcar visibles*, panel con conjuntos sugeridos, dry-run, confirmación, progreso y detalle por curso. Los cursos importados actualizan su estado en la lista sin reanalizar.
+- **Editor del registro global**: edición de descripciones de RA con previsualización antes de escribir en Brightspace.
+- **Enlazador RA ↔ actividades**: pestañas separadas para asignaciones (rúbricas) y quizzes, con enlaces directos a Brightspace.
 
 ---
 
@@ -279,6 +295,20 @@ curl -s -o /dev/null -w "%{http_code}\n" "$BASE/assets/index-XXXX.js"
 
 ### Gotchas del deploy (aprendidos a la mala)
 
+- **Secretos obligatorios en producción (desde 2026-07):** el backend **falla al arrancar** si `TOOL_BASE_URL` es `https://` y no están definidos `SESSION_SECRET` y `LTI_STATE_SECRET` (antes caían al default inseguro `change-me`). Ojo: cambiarlos invalida las cookies LTI activas (los usuarios simplemente relanzan desde Brightspace).
+- **Secretos vía AWS Secrets Manager:** `taskdef-clean.json` ya no lleva secretos en `environment`; van en el bloque `secrets` referenciando Secrets Manager. Antes de registrar la nueva task definition:
+  ```bash
+  # Generar valores fuertes:  python -c "import secrets; print(secrets.token_urlsafe(48))"
+  aws secretsmanager create-secret --name gemelo/session-secret          --secret-string "<VALOR>" --region us-east-1
+  aws secretsmanager create-secret --name gemelo/lti-state-secret        --secret-string "<VALOR>" --region us-east-1
+  aws secretsmanager create-secret --name gemelo/brightspace-client-secret --secret-string "<VALOR>" --region us-east-1
+  aws secretsmanager create-secret --name gemelo/database-url            --secret-string "postgresql+psycopg://..." --region us-east-1
+  aws secretsmanager create-secret --name gemelo/elevenlabs-api-key      --secret-string "<VALOR>" --region us-east-1
+  ```
+  y verificar que `ecsTaskExecutionRole` tenga `secretsmanager:GetSecretValue` sobre `arn:aws:secretsmanager:us-east-1:718624265053:secret:gemelo/*`. Registrar con `aws ecs register-task-definition --cli-input-json file://taskdef-clean.json` y apuntar el servicio a la nueva revisión.
+- **⚠️ `secrets[].valueFrom` requiere el ARN COMPLETO con sufijo** (ej. `...secret:gemelo/database-url-gJuD2u`). Con el ARN parcial (sin el sufijo aleatorio de 6 caracteres) las tareas Fargate fallan con `ResourceNotFoundException: Secrets Manager can't find the specified secret` y el circuit breaker hace rollback. Obtén los ARNs completos con `aws secretsmanager list-secrets --region us-east-1 --query "SecretList[?starts_with(Name,'gemelo/')].ARN"`. El `taskdef-clean.json` ya los tiene.
+- **🔴 ROTAR credenciales expuestas:** el `BRIGHTSPACE_CLIENT_SECRET`, el `DATABASE_URL` (contraseña de RDS) y el `ELEVENLABS_API_KEY` estuvieron commiteados en texto plano en `taskdef*.json` y quedaron en el **historial de git**. Hay que rotarlos (Brightspace → Manage Extensibility → OAuth 2.0; RDS → modify master password; ElevenLabs → regenerar API key) y cargar los valores nuevos en Secrets Manager.
+- **Endpoints `/debug/*` ahora responden 404** salvo que el task definition tenga `DEBUG_ENDPOINTS_ENABLED=1`. Para los syncs manuales (`/debug/sync/*`) habilita la variable temporalmente o ejecútalos desde un entorno local apuntando a la BD.
 - **`start.sh` con CRLF** → el contenedor Linux falla con `exec ./start.sh: no such file or directory`. El `Dockerfile` ya normaliza el CRLF (`sed -i 's/\r$//' ./start.sh`); no lo revierta.
 - **Estrategia CANARY con auto-rollback:** el servicio usa despliegue canary (5%, bake ~3 min) con `deploymentCircuitBreaker` y una alarma CloudWatch `default/gemelo-digital-api/RollbackAlarm` (error % > 1.0). Un deploy que falle genera 5xx y **deja la alarma en ALARM**; el siguiente deploy —aunque la imagen sea sana— hará rollback con *"alarm detected"*. Si eso pasa, **espera a que la alarma vuelva a `OK`** antes de reintentar:
   ```bash
@@ -331,11 +361,12 @@ Endpoints principales consumidos:
 | `/d2l/api/le/{v}/{orgUnitId}/grades/values/` | Notas de estudiantes |
 | `/d2l/api/le/{v}/{orgUnitId}/dropbox/folders/` | Dropbox folders |
 | `/d2l/api/le/{v}/{orgUnitId}/lo/outcomeSets/` | Resultados de aprendizaje (RA) |
-| `/d2l/api/le/{v}/{orgUnitId}/lo/alignments/` | Alineamientos RA → rúbricas (⚠️ 404 en 1.92) |
+| `/d2l/api/le/{v}/{orgUnitId}/lo/alignments/` | Alineamientos RA → rúbricas (requiere `1.93+`; 404 en `1.92`) |
+| `/d2l/api/le/{v}/lo/bulkImport` (org) y `/{orgUnitId}/lo/bulkImport` | Creación/import de conjuntos de RA (merge, no destruye) |
 
 ### Resultados de Aprendizaje (RA)
 
-CESA usa el formato de descripción `CODIGO-Descripción` (ej: `Z1O1DOR3-Emplear los conceptos básicos...`). Actualmente el backend parsea `outcomeSets` para extraer los códigos y los muestra por curso; el mapeo a rúbricas/actividades individuales queda pendiente por incompatibilidad de versión de la API de alignments.
+CESA usa el formato de descripción `CODIGO-Descripción` (ej: `Z1O1DOR3-Emplear los conceptos básicos...`). El backend parsea `outcomeSets` para extraer los códigos, y con la API de alignments (`BRIGHTSPACE_ALIGN_VERSION=1.93`, separada de `BRIGHTSPACE_LO_VERSION=1.92`) mapea RA → rúbricas/quizzes automáticamente para cursos sin configuración manual. Ojo: la granularidad del alignment es a nivel de RÚBRICA (no por criterio), por lo que RA que comparten rúbrica muestran promedios idénticos. La consola `/outcomes` permite además crear conjuntos desde plantilla CSV, importarlos a uno o varios cursos (individual o masivo con checkboxes) y editar descripciones del registro global.
 
 ---
 

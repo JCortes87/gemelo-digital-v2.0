@@ -77,11 +77,8 @@ export function AuthProvider({ children }) {
           setInitialOrgUnitId(_hashOu);
         }
 
-        // Call /auth/me
-        const _meUrl = _sid
-          ? apiUrl(`/auth/me?sid=${encodeURIComponent(_sid)}`)
-          : apiUrl("/auth/me");
-        const res = await fetch(_meUrl, {
+        // Call /auth/me (el sid va solo en el header Bearer, nunca en la URL)
+        const res = await fetch(apiUrl("/auth/me"), {
           credentials: "include",
           headers: _sid ? { "Authorization": `Bearer ${_sid}` } : {},
         });

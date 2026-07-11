@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useMemo, useCallback, lazy, Suspense } from "react";
 import { useNavigate } from "react-router-dom";
 import {
-  Search, GraduationCap, Presentation, Eye, LayoutGrid, LogOut, User,
+  Search, GraduationCap, Presentation, Eye, LayoutGrid, LogOut,
   Sparkles, ArrowRight, Users, BookOpen, TrendingUp, ShieldCheck, X, Loader2,
   Ban, ExternalLink, Crown, Clock, ChevronDown, ChevronUp, Filter, Megaphone, Send,
+  Target, ListChecks,
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { apiGet, apiPost } from "../utils/api";
@@ -12,6 +13,89 @@ import { isStudentRole } from "../utils/roles";
 import CesaLoader from "../components/ui/CesaLoader";
 
 const StudentOverviewPanel = lazy(() => import("./StudentOverviewPanel"));
+
+// ────────────────────────────────────────────────────────────────
+// Reloj en vivo AISLADO. Antes el estado del reloj vivía dentro de
+// RoleHome y se actualizaba cada segundo, forzando un re-render de
+// TODO el componente. Como CourseCard y AdminAnnounce se definen en
+// línea, cada re-render las remontaba → parpadeo de las tarjetas y
+// consultas constantes al backend. Al aislar el reloj en su propio
+// componente, solo él se vuelve a renderizar.
+// ────────────────────────────────────────────────────────────────
+function AdminClock() {
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => {
+    const id = setInterval(() => setNow(new Date()), 30000);
+    return () => clearInterval(id);
+  }, []);
+  return (
+    <div className="admin-hero-clock">
+      <span className="big">{now.toLocaleTimeString("es-CO", { hour: "2-digit", minute: "2-digit" })}</span>
+      {now.toLocaleDateString("es-CO", { weekday: "long", day: "numeric", month: "long" })}
+    </div>
+  );
+}
+
+// ────────────────────────────────────────────────────────────────
+// Tarjeta de curso y header de sección AISLADOS a nivel de módulo y
+// memoizados. Antes se definían dentro de RoleHome, así que cada
+// re-render del padre creaba un TIPO de componente nuevo → React
+// desmontaba y volvía a montar el DOM de las tarjetas, y la animación
+// de `.stagger-children` (floatIn) se reproducía otra vez → parpadeo
+// constante de "Cursos recientes" en la vista admin. (Mismo patrón
+// que AdminClock, ver comentario arriba.)
+// ────────────────────────────────────────────────────────────────
+
+// ============ CARD DE CURSO REDISEÑADA ============
+const CourseCard = React.memo(function CourseCard({ course, role, onSelect }) {
+  const isActive = course.isActive !== false;
+  const RoleIcon = role === "student" ? GraduationCap : Presentation;
+  return (
+    <button
+      onClick={() => onSelect(course.id, role)}
+      className={`course-card-v2 role-${role} ${!isActive ? "inactive" : ""}`}
+      aria-label={`Abrir curso ${course.name}`}
+    >
+      <div className="course-card-icon">
+        <RoleIcon size={22} strokeWidth={2} />
+      </div>
+      <div className="course-card-title">{course.name || `Curso ${course.id}`}</div>
+      <div className="course-card-meta">
+        <span className="course-card-id">
+          #{course.id}{course.code ? ` · ${course.code}` : ""}
+        </span>
+        {!isActive && (
+          <span style={{
+            fontSize: 9, fontWeight: 800, color: "var(--muted)",
+            background: "var(--bg)", border: "1px solid var(--border)",
+            borderRadius: 99, padding: "1px 8px", textTransform: "uppercase", letterSpacing: "0.06em",
+          }}>
+            Inactivo
+          </span>
+        )}
+      </div>
+      <span className="course-card-arrow"><ArrowRight size={18} strokeWidth={2.5} /></span>
+    </button>
+  );
+});
+
+// ============ HEADER DE SECCIÓN CON ICONO LUCIDE ============
+const SectionHeader = React.memo(function SectionHeader({ Icon, title, count, variant = "instructor" }) {
+  const wrapClass = variant === "student" ? "student" : variant === "warn" ? "warn" : "";
+  return (
+    <div className="section-header-v2">
+      <div className={`section-header-icon-wrap ${wrapClass}`}>
+        <Icon size={22} strokeWidth={2.2} />
+      </div>
+      <div>
+        <div className="section-header-title">{title}</div>
+        <div className="section-header-count">
+          {count} curso{count !== 1 ? "s" : ""}
+        </div>
+      </div>
+    </div>
+  );
+});
 
 export default function RoleHome() {
   useEffect(() => { injectStyles(); }, []);
@@ -24,6 +108,20 @@ export default function RoleHome() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
 
+  // ── Modo admin "lazy" ──────────────────────────────────────────
+  // Los administradores / super administradores tienen acceso a muchísimos
+  // cursos y listar sus inscripciones completas (limit=500) hace muy lenta
+  // la carga inicial. Para ellos NO cargamos la lista automáticamente:
+  // solo la sección de recientes + búsqueda global bajo demanda, con un
+  // botón opcional para cargar la lista completa si la necesitan.
+  const isAdminRole = useMemo(() => (authUser?.all_roles || []).some(r => {
+    const s = String(r).toLowerCase();
+    // "administrator" / "super administrator" sí; "coordinador administrativo" no.
+    return s.includes("admin") && !s.includes("administrativo");
+  }), [authUser]);
+  const lazyMode = isSuperAdmin || isAdminRole;
+  const [myCoursesRequested, setMyCoursesRequested] = useState(false);
+
   // Instructor course filtering (semester + collapse)
   const [filterSemester, setFilterSemester] = useState("");
   const [showAllInst, setShowAllInst] = useState(false);
@@ -31,17 +129,25 @@ export default function RoleHome() {
 
   // Recently visited courses (localStorage-backed)
   const RECENT_KEY = "gemelo_recent_courses";
-  const [recentIds, setRecentIds] = useState(() => {
+  // Formato nuevo: [{id, name, code}] para poder pintar la tarjeta sin tener
+  // la lista de cursos cargada (modo admin). Compat con el formato viejo (["id"]).
+  const [recentEntries, setRecentEntries] = useState(() => {
     try {
       const raw = localStorage.getItem(RECENT_KEY);
       const arr = raw ? JSON.parse(raw) : [];
-      return Array.isArray(arr) ? arr.map(String) : [];
+      if (!Array.isArray(arr)) return [];
+      return arr
+        .map(e => (e && typeof e === "object") ? { ...e, id: String(e.id) } : { id: String(e) })
+        .filter(e => e.id && e.id !== "undefined" && e.id !== "null" && e.id !== "0");
     } catch { return []; }
   });
-  const pushRecent = useCallback((id) => {
-    const idStr = String(id);
-    setRecentIds(prev => {
-      const next = [idStr, ...prev.filter(x => x !== idStr)].slice(0, 5);
+  const pushRecent = useCallback((course) => {
+    const obj = (course && typeof course === "object")
+      ? { id: String(course.id), name: String(course.name || ""), code: String(course.code || "") }
+      : { id: String(course) };
+    if (!obj.id || obj.id === "0" || obj.id === "undefined") return;
+    setRecentEntries(prev => {
+      const next = [obj, ...prev.filter(x => x.id !== obj.id)].slice(0, 5);
       try { localStorage.setItem(RECENT_KEY, JSON.stringify(next)); } catch {}
       return next;
     });
@@ -69,8 +175,22 @@ export default function RoleHome() {
     })();
   }, [isSuperAdmin]);
 
+  // Estadísticas para el hero de administración (Super Admin)
+  const [adminStats, setAdminStats] = useState(null);
   useEffect(() => {
-    if (!isSuperAdmin || search.trim().length < 3) {
+    if (!isSuperAdmin) return;
+    let alive = true;
+    (async () => {
+      try {
+        const data = await apiGet("/gemelo/admin/known-users");
+        if (alive) setAdminStats({ total: data?.total ?? 0, withEmail: data?.withEmail ?? 0 });
+      } catch { /* silent */ }
+    })();
+    return () => { alive = false; };
+  }, [isSuperAdmin]);
+
+  useEffect(() => {
+    if (!lazyMode || search.trim().length < 3) {
       setGlobalResults([]);
       return;
     }
@@ -86,9 +206,16 @@ export default function RoleHome() {
       }
     }, 500);
     return () => clearTimeout(timer);
-  }, [search, isSuperAdmin]);
+  }, [search, lazyMode]);
 
   useEffect(() => {
+    // Modo admin: no cargar la lista completa de inscripciones automáticamente
+    // (demasiados cursos → carga muy lenta). Solo bajo demanda con el botón.
+    if (lazyMode && !myCoursesRequested) {
+      setCourses([]);
+      setLoading(false);
+      return;
+    }
     let alive = true;
     (async () => {
       setLoading(true);
@@ -105,7 +232,7 @@ export default function RoleHome() {
       }
     })();
     return () => { alive = false; };
-  }, []);
+  }, [lazyMode, myCoursesRequested]);
 
   const { instructorCourses, studentCourses } = useMemo(() => {
     const inst = [];
@@ -176,19 +303,29 @@ export default function RoleHome() {
     return list;
   }, [instructorCourses, filterCourses, filterSemester, extractSemester]);
 
-  // Recently visited instructor courses (from localStorage), only those still in the list
+  // Recently visited instructor courses (from localStorage).
+  // Con lista cargada: preferimos los datos frescos del curso. En modo admin
+  // (sin lista) usamos los metadatos guardados en localStorage.
   const recentInstCourses = useMemo(() => {
-    if (recentIds.length === 0) return [];
+    if (recentEntries.length === 0) return [];
     const map = new Map(instructorCourses.map(c => [String(c.id), c]));
-    return recentIds.map(id => map.get(id)).filter(Boolean).slice(0, 4);
-  }, [recentIds, instructorCourses]);
+    return recentEntries
+      .map(e => {
+        const fresh = map.get(e.id);
+        if (fresh) return fresh;
+        if (lazyMode) return { id: e.id, name: e.name || `Curso ${e.id}`, code: e.code || "", isActive: true };
+        return null;
+      })
+      .filter(Boolean)
+      .slice(0, lazyMode ? 5 : 4);
+  }, [recentEntries, instructorCourses, lazyMode]);
 
   const shouldCollapse = filteredInst.length > INITIAL_INST_LIMIT && !search && !filterSemester;
   const visibleInst = (shouldCollapse && !showAllInst)
     ? filteredInst.slice(0, INITIAL_INST_LIMIT)
     : filteredInst;
 
-  const handleSelectCourse = (courseId, asRole) => {
+  const handleSelectCourse = useCallback((courseId, asRole) => {
     const idStr = String(courseId);
     const isStudentInCourse = studentCourses.some(c => String(c.id) === idStr);
     const isInstructorInCourse = instructorCourses.some(c => String(c.id) === idStr);
@@ -197,62 +334,19 @@ export default function RoleHome() {
     if (isStudentInCourse && !isInstructorInCourse) targetRole = "student";
     else if (isInstructorInCourse && !isStudentInCourse) targetRole = "instructor";
 
-    pushRecent(courseId);
+    // Enriquecer el "reciente" con nombre/código para poder pintarlo luego
+    // sin necesidad de cargar la lista completa (modo admin).
+    const gMeta = (globalResults || []).find(c => String(c.id || c.Identifier) === idStr);
+    const meta =
+      instructorCourses.find(c => String(c.id) === idStr) ||
+      studentCourses.find(c => String(c.id) === idStr) ||
+      recentInstCourses.find(c => String(c.id) === idStr) ||
+      (gMeta ? { id: idStr, name: gMeta.name || gMeta.Name || "", code: gMeta.code || gMeta.Code || "" } : null);
+    pushRecent(meta || courseId);
     sessionStorage.setItem("gemelo_pending_org", String(courseId));
     const target = targetRole === "student" ? "/portal" : "/dashboard";
     window.location.href = window.location.origin + target;
-  };
-
-  // ============ CARD DE CURSO REDISEÑADA ============
-  const CourseCard = ({ course, role }) => {
-    const isActive = course.isActive !== false;
-    const RoleIcon = role === "student" ? GraduationCap : Presentation;
-    return (
-      <button
-        onClick={() => handleSelectCourse(course.id, role)}
-        className={`course-card-v2 role-${role} ${!isActive ? "inactive" : ""}`}
-        aria-label={`Abrir curso ${course.name}`}
-      >
-        <div className="course-card-icon">
-          <RoleIcon size={22} strokeWidth={2} />
-        </div>
-        <div className="course-card-title">{course.name || `Curso ${course.id}`}</div>
-        <div className="course-card-meta">
-          <span className="course-card-id">
-            #{course.id}{course.code ? ` · ${course.code}` : ""}
-          </span>
-          {!isActive && (
-            <span style={{
-              fontSize: 9, fontWeight: 800, color: "var(--muted)",
-              background: "var(--bg)", border: "1px solid var(--border)",
-              borderRadius: 99, padding: "1px 8px", textTransform: "uppercase", letterSpacing: "0.06em",
-            }}>
-              Inactivo
-            </span>
-          )}
-        </div>
-        <span className="course-card-arrow"><ArrowRight size={18} strokeWidth={2.5} /></span>
-      </button>
-    );
-  };
-
-  // ============ HEADER DE SECCIÓN CON ICONO LUCIDE ============
-  const SectionHeader = ({ Icon, title, count, variant = "instructor" }) => {
-    const wrapClass = variant === "student" ? "student" : variant === "warn" ? "warn" : "";
-    return (
-      <div className="section-header-v2">
-        <div className={`section-header-icon-wrap ${wrapClass}`}>
-          <Icon size={22} strokeWidth={2.2} />
-        </div>
-        <div>
-          <div className="section-header-title">{title}</div>
-          <div className="section-header-count">
-            {count} curso{count !== 1 ? "s" : ""}
-          </div>
-        </div>
-      </div>
-    );
-  };
+  }, [studentCourses, instructorCourses, globalResults, recentInstCourses, pushRecent]);
 
   return (
     <div style={{ minHeight: "100vh", background: "var(--bg)", fontFamily: "var(--font)" }}>
@@ -314,7 +408,44 @@ export default function RoleHome() {
       {/* ==================== CONTENIDO ==================== */}
       <main id="main-content" tabIndex={-1} style={{ maxWidth: 1100, margin: "0 auto", padding: "40px 24px 60px" }}>
 
-        {/* ── Welcome ── */}
+        {/* ── Admin hero (Super Admin) ── */}
+        {isSuperAdmin && (
+          <div className="admin-hero">
+            <div className="admin-hero-inner">
+              <div>
+                <span className="admin-hero-badge">
+                  <Crown size={12} strokeWidth={2.6} /> Super Admin · Consola
+                </span>
+                <h1 className="admin-hero-title">Hola, {firstName}</h1>
+                <p className="admin-hero-sub">
+                  Panel de administración de G.D. Gestiona usuarios, revisa el rendimiento académico y comunica novedades a toda la plataforma desde un solo lugar.
+                </p>
+              </div>
+              <AdminClock />
+            </div>
+            <div className="admin-stat-row">
+              <div className="admin-stat">
+                <div className="admin-stat-value">{adminStats ? adminStats.total : "—"}</div>
+                <div className="admin-stat-label"><Users size={12} strokeWidth={2.4} /> Usuarios G.D</div>
+              </div>
+              <div className="admin-stat">
+                <div className="admin-stat-value">{adminStats ? adminStats.withEmail : "—"}</div>
+                <div className="admin-stat-label"><Send size={12} strokeWidth={2.4} /> Con correo</div>
+              </div>
+              <div className="admin-stat">
+                <div className="admin-stat-value">{loading ? "…" : (lazyMode && !myCoursesRequested) ? "—" : courses.length}</div>
+                <div className="admin-stat-label"><BookOpen size={12} strokeWidth={2.4} /> Mis cursos</div>
+              </div>
+              <div className="admin-stat">
+                <div className="admin-stat-value">{semesters.length || availableSemesters.length || "—"}</div>
+                <div className="admin-stat-label"><LayoutGrid size={12} strokeWidth={2.4} /> Períodos</div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ── Welcome (no Super Admin) ── */}
+        {!isSuperAdmin && (
         <div style={{ textAlign: "center", marginBottom: 32, animation: "floatIn 0.5s cubic-bezier(0.16, 1, 0.3, 1) both" }}>
           <div style={{
             display: "inline-flex", alignItems: "center", gap: 6,
@@ -349,9 +480,10 @@ export default function RoleHome() {
             </div>
           )}
         </div>
+        )}
 
         {/* ── Search bar ── */}
-        {!loading && courses.length > 0 && (
+        {!loading && (courses.length > 0 || lazyMode) && (
           <div style={{
             position: "relative", marginBottom: 24, maxWidth: 640,
             marginLeft: "auto", marginRight: "auto",
@@ -363,7 +495,9 @@ export default function RoleHome() {
             }} />
             <input
               type="text"
-              placeholder="Buscar por nombre, código o ID..."
+              placeholder={lazyMode && courses.length === 0
+                ? "Buscar en todos los cursos por nombre, código o ID (mín. 3 caracteres)..."
+                : "Buscar por nombre, código o ID..."}
               value={search}
               onChange={e => setSearch(e.target.value)}
               style={{
@@ -406,8 +540,8 @@ export default function RoleHome() {
         ) : (
           <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
 
-            {/* ── Recientes (solo si hay historial y ≥ 4 cursos totales) ── */}
-            {isInstructor && recentInstCourses.length > 0 && instructorCourses.length > INITIAL_INST_LIMIT && !search && !filterSemester && (
+            {/* ── Recientes (con historial; en modo admin siempre que existan) ── */}
+            {isInstructor && recentInstCourses.length > 0 && (lazyMode || instructorCourses.length > INITIAL_INST_LIMIT) && !search && !filterSemester && (
               <section className="home-panel" style={{ animationDelay: "0.06s" }}>
                 <div className="section-header-v2">
                   <div className="section-header-icon-wrap">
@@ -422,10 +556,54 @@ export default function RoleHome() {
                 </div>
                 <div className="course-grid stagger-children">
                   {recentInstCourses.map(c => (
-                    <CourseCard key={`recent-${c.id}`} course={c} role="instructor" />
+                    <CourseCard key={`recent-${c.id}`} course={c} role="instructor" onSelect={handleSelectCourse} />
                   ))}
                 </div>
               </section>
+            )}
+
+            {/* ── Admin: la lista completa no se carga automáticamente ── */}
+            {lazyMode && !myCoursesRequested && !search && (
+              <section className="home-panel" style={{ animationDelay: "0.10s", textAlign: "center", padding: "26px 20px" }}>
+                <div style={{ display: "flex", justifyContent: "center", marginBottom: 12 }}>
+                  <div className="section-header-icon-wrap">
+                    <BookOpen size={22} strokeWidth={2.2} />
+                  </div>
+                </div>
+                <div style={{ fontSize: 14, fontWeight: 800, color: "var(--text)", marginBottom: 6 }}>
+                  Tus cursos no se cargan automáticamente
+                </div>
+                <div style={{ fontSize: 12.5, color: "var(--muted)", lineHeight: 1.6, maxWidth: 540, margin: "0 auto 16px" }}>
+                  Como administrador tienes acceso a demasiados cursos y listarlos todos hace muy lenta esta página.
+                  Usa el buscador de arriba (mínimo 3 caracteres — por nombre, código o ID) para encontrar cualquier curso,
+                  o carga tu lista de inscripciones solo si la necesitas.
+                </div>
+                <button
+                  onClick={() => setMyCoursesRequested(true)}
+                  style={{
+                    display: "inline-flex", alignItems: "center", gap: 8,
+                    background: "var(--bg)", border: "1.5px solid var(--border)", borderRadius: 10,
+                    padding: "9px 18px", fontSize: 12.5, fontWeight: 800, color: "var(--brand)",
+                    cursor: "pointer", transition: "all 0.15s", fontFamily: "var(--font)",
+                  }}
+                  onMouseEnter={(e) => { e.currentTarget.style.borderColor = "var(--brand)"; e.currentTarget.style.background = "var(--brand-light)"; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.borderColor = "var(--border)"; e.currentTarget.style.background = "var(--bg)"; }}
+                >
+                  <BookOpen size={14} strokeWidth={2.4} /> Cargar mis cursos inscritos
+                </button>
+              </section>
+            )}
+
+            {/* ── Admin: búsqueda muy corta (la global exige 3 caracteres) ── */}
+            {lazyMode && courses.length === 0 && search.trim().length > 0 && search.trim().length < 3 && (
+              <div className="empty-v2">
+                <div className="empty-v2-icon">
+                  <Search size={30} strokeWidth={1.8} />
+                </div>
+                <div style={{ fontSize: 14, color: "var(--text)", fontWeight: 700 }}>
+                  Escribe al menos 3 caracteres para buscar en todos los cursos
+                </div>
+              </div>
             )}
 
             {/* ── Cursos como Profesor ── */}
@@ -489,7 +667,7 @@ export default function RoleHome() {
                   <>
                     <div className="course-grid stagger-children">
                       {visibleInst.map(c => (
-                        <CourseCard key={`inst-${c.id}`} course={c} role="instructor" />
+                        <CourseCard key={`inst-${c.id}`} course={c} role="instructor" onSelect={handleSelectCourse} />
                       ))}
                     </div>
 
@@ -529,13 +707,19 @@ export default function RoleHome() {
                 />
                 <div className="course-grid stagger-children">
                   {filteredStud.map(c => (
-                    <CourseCard key={`stud-${c.id}`} course={c} role="student" />
+                    <CourseCard key={`stud-${c.id}`} course={c} role="student" onSelect={handleSelectCourse} />
                   ))}
                 </div>
               </section>
             )}
 
             {/* ══════ SUPER ADMIN CARDS ══════ */}
+            {isSuperAdmin && (
+              <div className="admin-tools-wrap" style={{ order: -1, display: "flex", flexDirection: "column", gap: 14 }}>
+                <div className="admin-section-label">
+                  <span className="lbl"><ShieldCheck size={13} strokeWidth={2.4} /> Herramientas de administración</span>
+                </div>
+                <div className="admin-tools-grid">
 
             {/* 1. Rendimiento general del estudiante */}
             {isSuperAdmin && (
@@ -564,16 +748,16 @@ export default function RoleHome() {
                     placeholder="ID del estudiante"
                     value={overviewStudentSearchId}
                     onChange={e => setOverviewStudentSearchId(e.target.value)}
-                    style={{ flex: "1 1 180px", padding: "10px 14px", borderRadius: 10, border: "1.5px solid var(--border)", background: "var(--bg)", color: "var(--text)", fontSize: 13, fontFamily: "var(--font)", outline: "none", fontWeight: 500 }}
+                    style={{ flex: "1 1 160px", minWidth: 0, maxWidth: "100%", padding: "10px 14px", borderRadius: 10, border: "1.5px solid var(--border)", background: "var(--bg)", color: "var(--text)", fontSize: 13, fontFamily: "var(--font)", outline: "none", fontWeight: 500 }}
                   />
                   <select
                     value={impersonatePeriod}
                     onChange={e => setImpersonatePeriod(e.target.value)}
-                    style={{ flex: "1 1 220px", padding: "10px 14px", borderRadius: 10, border: "1.5px solid var(--border)", background: "var(--bg)", color: "var(--text)", fontSize: 13, fontFamily: "var(--font)", outline: "none", cursor: "pointer", fontWeight: 500 }}
+                    style={{ flex: "1 1 160px", minWidth: 0, maxWidth: "100%", textOverflow: "ellipsis", padding: "10px 14px", borderRadius: 10, border: "1.5px solid var(--border)", background: "var(--bg)", color: "var(--text)", fontSize: 13, fontFamily: "var(--font)", outline: "none", cursor: "pointer", fontWeight: 500 }}
                   >
                     <option value="">Todos los periodos (2025+)</option>
                     {semesters.map(s => (
-                      <option key={s.id} value={s.code}>{s.code} — {s.name}</option>
+                      <option key={s.id} value={s.code}>{s.code}</option>
                     ))}
                   </select>
                 </div>
@@ -694,11 +878,55 @@ export default function RoleHome() {
               </section>
             )}
 
-            {/* 3. Enviar anuncio / notificación a los usuarios */}
-            {isSuperAdmin && <AdminAnnounce />}
+            {/* 3. Resultados de aprendizaje — tarjeta que lleva a su página dedicada */}
+            {isSuperAdmin && (
+              <section className="home-panel superadmin-brand" style={{ animationDelay: "0.24s" }}>
+                <div className="section-header-v2">
+                  <div className="section-header-icon-wrap">
+                    <Target size={22} strokeWidth={2.2} />
+                  </div>
+                  <div>
+                    <div className="section-header-title">Resultados de aprendizaje</div>
+                    <div className="section-header-count">Super Admin · Página dedicada</div>
+                  </div>
+                </div>
+                <div style={{
+                  fontSize: 12, color: "var(--muted)", marginBottom: 14,
+                  padding: "10px 14px", background: "var(--brand-light)",
+                  borderRadius: 10, borderLeft: "3px solid var(--brand)",
+                  display: "flex", alignItems: "flex-start", gap: 8, lineHeight: 1.5,
+                }}>
+                  <ListChecks size={16} strokeWidth={2.2} style={{ color: "var(--brand)", flexShrink: 0, marginTop: 1 }} />
+                  <span>Registro global de RA, cursos por semestre y alineaciones por curso. Se abre en una página independiente con más espacio para trabajar.</span>
+                </div>
+                <button
+                  onClick={() => navigate("/outcomes")}
+                  style={{
+                    width: "100%", padding: "12px 16px", borderRadius: 12,
+                    border: "none", cursor: "pointer",
+                    background: "linear-gradient(135deg, var(--brand) 0%, #1e40af 100%)",
+                    color: "#fff", fontSize: 14, fontWeight: 800, fontFamily: "var(--font)",
+                    display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 8,
+                    transition: "transform 0.15s, box-shadow 0.2s",
+                    boxShadow: "0 6px 16px -6px rgba(11, 95, 255, 0.5)",
+                  }}
+                  onMouseEnter={(e) => { e.currentTarget.style.transform = "translateY(-1px)"; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.transform = "translateY(0)"; }}
+                >
+                  <Target size={16} strokeWidth={2.4} /> Abrir resultados de aprendizaje
+                  <ArrowRight size={16} strokeWidth={2.4} />
+                </button>
+              </section>
+            )}
+
+            {/* 4. Enviar anuncio / notificación a los usuarios */}
+                  <div className="span-full">{isSuperAdmin && <AdminAnnounce />}</div>
+                </div>
+              </div>
+            )}
 
             {/* 4. Búsqueda global de cursos */}
-            {isSuperAdmin && search.trim().length >= 3 && (
+            {lazyMode && search.trim().length >= 3 && (
               <section className="home-panel" style={{ animationDelay: "0.24s" }}>
                 <div className="section-header-v2">
                   <div className="section-header-icon-wrap">
@@ -773,7 +1001,7 @@ export default function RoleHome() {
             )}
 
             {/* ── No results for search ── */}
-            {!loading && search && filteredInst.length === 0 && filteredStud.length === 0 && !(isSuperAdmin && search.trim().length >= 3) && (
+            {!loading && search && courses.length > 0 && filteredInst.length === 0 && filteredStud.length === 0 && !(lazyMode && search.trim().length >= 3) && (
               <div className="empty-v2">
                 {/^\d{3,}$/.test(search.trim()) ? (
                   <>
@@ -859,7 +1087,7 @@ export default function RoleHome() {
         {/* Footer */}
         <div style={{ textAlign: "center", padding: "32px 0 8px", fontSize: 11, color: "var(--muted)" }}>
           <div style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-            <Sparkles size={12} strokeWidth={2} /> CESA · G.D 2026.7.3
+            <Sparkles size={12} strokeWidth={2} /> CESA · G.D 2026.7.10
           </div>
         </div>
       </main>

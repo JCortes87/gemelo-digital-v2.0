@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useMemo, useCallback } from "react";
-import { apiGet } from "../utils/api";
+import { apiGetCached } from "../utils/api";
 import { computeRiskFromPct, suggestRouteForStudent, flattenOutcomeDescriptions } from "../utils/helpers";
 
 const CourseContext = createContext(null);
@@ -34,6 +34,7 @@ export function CourseProvider({ children, orgUnitId: externalOrgUnitId }) {
   const [courseList, setCourseList] = useState([]);
   const [loadingCourses, setLoadingCourses] = useState(false);
   const [courseListLoaded, setCourseListLoaded] = useState(false);
+  const [courseListError, setCourseListError] = useState("");
 
   // Per-course threshold overrides (#13). Stored in localStorage as
   // gemelo_thresholds_<orgUnitId> = JSON.stringify({critical, watch}).
@@ -78,14 +79,19 @@ export function CourseProvider({ children, orgUnitId: externalOrgUnitId }) {
   // Search courses
   const searchCourses = useCallback(async (term) => {
     setLoadingCourses(true);
+    setCourseListError("");
     try {
       const q = term && term.trim().length > 0 ? term.trim() : "";
       const qs = q ? `?active_only=false&limit=50&search=${encodeURIComponent(q)}` : `?active_only=false&limit=50`;
 
       const [myData, allData] = await Promise.allSettled([
-        apiGet(`/brightspace/my-course-offerings${qs}`),
-        apiGet(`/brightspace/all-courses${qs}`),
+        apiGetCached(`/brightspace/my-course-offerings${qs}`, { ttl: 300_000 }),
+        apiGetCached(`/brightspace/all-courses${qs}`, { ttl: 300_000 }),
       ]);
+
+      if (myData.status === "rejected" && allData.status === "rejected") {
+        throw myData.reason || new Error("No se pudo cargar la lista de cursos");
+      }
 
       const myItems  = myData.status  === "fulfilled" ? (Array.isArray(myData.value?.items)  ? myData.value.items  : []) : [];
       const allItems = allData.status === "fulfilled" ? (Array.isArray(allData.value?.items) ? allData.value.items : []) : [];
@@ -102,8 +108,10 @@ export function CourseProvider({ children, orgUnitId: externalOrgUnitId }) {
 
       setCourseList(final.length > 0 ? final : myItems);
       setCourseListLoaded(true);
-    } catch {
-      // no bloquear
+    } catch (e) {
+      // No bloquea la UI, pero deja rastro y expone el error para mostrarlo
+      console.warn("searchCourses falló:", e);
+      setCourseListError(String(e?.message || e));
     } finally {
       setLoadingCourses(false);
     }
@@ -167,6 +175,7 @@ export function CourseProvider({ children, orgUnitId: externalOrgUnitId }) {
       courseList,
       loadingCourses,
       courseListLoaded,
+      courseListError,
       setCourseListLoaded,
       searchCourses,
       loadCourseList,

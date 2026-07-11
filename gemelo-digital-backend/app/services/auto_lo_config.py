@@ -32,26 +32,38 @@ _CACHE: Dict[int, Tuple[float, Dict[str, Any]]] = {}
 _TTL_SECONDS = 600  # 10 min
 
 # Regex del formato observado: "Z1O1DOR3-Emplear los conceptos..."
-# Permite letras/dígitos/._- en el código, y opcionalmente espacio alrededor
-# del guión (guión ASCII, medio, largo o dos puntos).
-_CODE_REGEX = re.compile(r"^([A-Za-z0-9._-]+)\s*[-–—:]\s*(.+)$")
+# Permite letras/dígitos/._- en el código. El separador acepta guión ASCII,
+# guiones Unicode (U+2010–2015), signo menos (U+2212) o dos puntos: Brightspace
+# a veces usa un guión no-ASCII que antes rompía la extracción del código.
+_CODE_REGEX = re.compile(r"^([A-Za-z0-9._-]+)\s*[-\u2010-\u2015\u2212:]\s*(.+)$")
 
 
 def _norm_str(v: Any) -> str:
     return str(v).strip() if v is not None else ""
 
 
+def _norm_desc(v: Any) -> str:
+    """Colapsa espacios/saltos de línea/NBSP a un solo espacio y elimina
+    caracteres invisibles (zero-width, BOM, marcas direccionales): así el `.`
+    del regex (que no cruza saltos de línea) siempre encaja el título."""
+    if v is None:
+        return ""
+    s = re.sub(r"[\u200B-\u200F\u2060\uFEFF]", "", str(v)).replace("\u00a0", " ")
+    return re.sub(r"\s+", " ", s).strip()
+
+
 def _parse_description(desc: str) -> Optional[Dict[str, str]]:
     """Devuelve {code, title, description} si el texto encaja el patrón."""
-    if not desc:
+    norm = _norm_desc(desc)
+    if not norm:
         return None
-    m = _CODE_REGEX.match(desc.strip())
+    m = _CODE_REGEX.match(norm)
     if not m:
         return None
     return {
         "code": m.group(1).upper(),
         "title": m.group(2).strip(),
-        "description": desc.strip(),
+        "description": norm,
     }
 
 
@@ -147,37 +159,55 @@ def _index_alignments(
     if not isinstance(items, list):
         return rubric_to_outcomes, activity_to_outcomes
 
-    for al in items:
-        if not isinstance(al, dict):
+    # Forma real del bulk /lo/alignments/ en v1.93 (verificada en
+    # cesa.brightspace.com): el OutcomeId está arriba y las actividades
+    # alineadas cuelgan de él en `Activities` (PLURAL), cada una con
+    # {ActivityType, ObjectId, RubricId, QuestionId}. La versión previa
+    # de este parser esperaba `Activity` (singular) con Type/LmsObjectId,
+    # forma que este tenant NO devuelve → por eso salía todo "sin alinear".
+    for entry in items:
+        if not isinstance(entry, dict):
             continue
         oid = (
-            al.get("OutcomeId")
-            or al.get("outcomeId")
-            or al.get("SourceId")
+            entry.get("OutcomeId")
+            or entry.get("outcomeId")
+            or entry.get("SourceId")
         )
         if not oid:
             continue
         oid = str(oid)
 
-        activity = al.get("Activity") or al.get("activity") or {}
-        if not isinstance(activity, dict):
-            continue
+        activities = entry.get("Activities") or entry.get("activities") or []
+        # Compat hacia atrás: algunos tenants podrían exponer un único `Activity`.
+        if not activities and isinstance(entry.get("Activity"), dict):
+            activities = [entry["Activity"]]
 
-        rubric_id = activity.get("RubricId") or activity.get("rubricId")
-        obj_type = activity.get("Type") or activity.get("type")
-        obj_id = activity.get("LmsObjectId") or activity.get("lmsObjectId")
+        for act in activities:
+            if not isinstance(act, dict):
+                continue
+            rubric_id = act.get("RubricId") or act.get("rubricId")
+            obj_type = (
+                act.get("ActivityType")
+                or act.get("Type")
+                or act.get("type")
+            )
+            obj_id = (
+                act.get("ObjectId")
+                or act.get("LmsObjectId")
+                or act.get("lmsObjectId")
+            )
 
-        if rubric_id is not None:
-            key = str(int(rubric_id))
-            rubric_to_outcomes.setdefault(key, [])
-            if oid not in rubric_to_outcomes[key]:
-                rubric_to_outcomes[key].append(oid)
+            if rubric_id not in (None, ""):
+                key = str(int(rubric_id))
+                rubric_to_outcomes.setdefault(key, [])
+                if oid not in rubric_to_outcomes[key]:
+                    rubric_to_outcomes[key].append(oid)
 
-        if obj_type and obj_id is not None:
-            akey = f"{obj_type}:{obj_id}"
-            activity_to_outcomes.setdefault(akey, [])
-            if oid not in activity_to_outcomes[akey]:
-                activity_to_outcomes[akey].append(oid)
+            if obj_type and obj_id not in (None, ""):
+                akey = f"{obj_type}:{obj_id}"
+                activity_to_outcomes.setdefault(akey, [])
+                if oid not in activity_to_outcomes[akey]:
+                    activity_to_outcomes[akey].append(oid)
 
     return rubric_to_outcomes, activity_to_outcomes
 
@@ -253,9 +283,12 @@ async def build_auto_lo_config(bs, orgUnitId: int) -> Dict[str, Any]:
         sets_payload = []
 
     try:
-        align_payload = await bs.list_lo_alignments(orgUnitId)
+        # Usar el endpoint bulk 1.93 (list_alignments), NO list_lo_alignments
+        # (que apunta a 1.92 y devuelve 404 en /lo/alignments/). list_alignments
+        # ya maneja 404/403 devolviendo [].
+        align_payload = await bs.list_alignments(orgUnitId)
     except Exception as e:
-        logger.warning("auto_lo_config: list_lo_alignments falló para %s: %s", orgUnitId, e)
+        logger.warning("auto_lo_config: list_alignments falló para %s: %s", orgUnitId, e)
         align_payload = []
 
     outcome_index = _index_outcome_sets(sets_payload)
@@ -284,7 +317,14 @@ async def build_auto_lo_config(bs, orgUnitId: int) -> Dict[str, Any]:
         "hasRubricAlignments": has_rubric,
         "hasQuestionOnly": has_question_only,
     }
-    _CACHE[orgUnitId] = (now, result)
+    # No cachear resultados vacíos: si el índice de RA quedó vacío (p.ej. justo
+    # antes de importar/alinear, o por un fallo transitorio de la API de
+    # Brightspace), guardarlo envenenaría la caché por _TTL_SECONDS y ocultaría
+    # los RA recién importados. Sólo cacheamos cuando hay outcomes reales.
+    if outcome_index:
+        _CACHE[orgUnitId] = (now, result)
+    else:
+        _CACHE.pop(orgUnitId, None)
     return result
 
 

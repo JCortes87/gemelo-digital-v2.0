@@ -14,7 +14,7 @@ import {
   ReferenceLine,
 } from "recharts";
 import { useAuth } from "../context/AuthContext";
-import { apiGet, apiPost } from "../utils/api";
+import { apiGet, apiGetCached, apiPost } from "../utils/api";
 import { COLORS, STATUS_CONFIG, colorForPct, colorForRisk } from "../utils/colors";
 import {
   fmtPct,
@@ -385,9 +385,9 @@ export default function StudentPortal({ orgUnitIdOverride, userIdOverride, allow
     (async () => {
       try {
         const [studentRes, courseRes, loRes] = await Promise.allSettled([
-          apiGet(`/gemelo/course/${orgUnitId}/student/${userId}`, { signal: controller.signal }),
-          apiGet(`/brightspace/course/${orgUnitId}`, { signal: controller.signal }),
-          apiGet(`/gemelo/course/${orgUnitId}/learning-outcomes`, { signal: controller.signal }),
+          apiGetCached(`/gemelo/course/${orgUnitId}/student/${userId}`, { signal: controller.signal }),
+          apiGetCached(`/brightspace/course/${orgUnitId}`, { signal: controller.signal, ttl: 300_000 }),
+          apiGetCached(`/gemelo/course/${orgUnitId}/learning-outcomes`, { signal: controller.signal }),
         ]);
 
         if (!alive) return;
@@ -1280,7 +1280,7 @@ export default function StudentPortal({ orgUnitIdOverride, userIdOverride, allow
 
         {/* Footer */}
         <div style={{ textAlign: "center", padding: "20px 0 40px", fontSize: 11, color: "var(--muted)" }}>
-          CESA · G.D 2026.7.3 · Portal Estudiante
+          CESA · G.D 2026.7.10 · Portal Estudiante
         </div>
       </main>
 

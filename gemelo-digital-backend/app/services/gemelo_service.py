@@ -85,6 +85,31 @@ _ALIGN_TTL = 600  # 10 min
 _QUIZ_ALIGN_CACHE: Dict[int, Tuple[float, Dict[str, List[str]]]] = {}
 _QUIZ_ALIGN_TTL = 600  # 10 min
 
+# Cache genérico por curso para datos que NO varían por estudiante
+# (dropbox folders, grade items, grade categories). Sin esto, build_gemelo()
+# refetchea estos recursos N veces por snapshot (N = estudiantes del curso).
+# El lock por key evita el stampede: con concurrency=8 en /ra/dashboard los
+# primeros 8 builds dispararían el mismo fetch en paralelo.
+_COURSE_DATA_CACHE: Dict[Tuple[str, int], Tuple[float, Any]] = {}
+_COURSE_DATA_LOCKS: Dict[Tuple[str, int], asyncio.Lock] = {}
+_COURSE_DATA_TTL = 300  # 5 min
+
+
+async def _get_course_data_cached(kind: str, orgUnitId: int, fetch) -> Any:
+    """Devuelve `fetch()` cacheado por (kind, orgUnitId) con TTL y dedup."""
+    key = (kind, int(orgUnitId))
+    hit = _COURSE_DATA_CACHE.get(key)
+    if hit and (time.time() - hit[0]) < _COURSE_DATA_TTL:
+        return hit[1]
+    lock = _COURSE_DATA_LOCKS.setdefault(key, asyncio.Lock())
+    async with lock:
+        hit = _COURSE_DATA_CACHE.get(key)
+        if hit and (time.time() - hit[0]) < _COURSE_DATA_TTL:
+            return hit[1]
+        data = await fetch()
+        _COURSE_DATA_CACHE[key] = (time.time(), data)
+        return data
+
 
 def _parse_outcome_desc(desc: str) -> Optional[Dict[str, str]]:
     """Devuelve {code,title,description} si el texto encaja "CODIGO-Texto"."""
@@ -1315,7 +1340,10 @@ class GemeloService:
         # Procesar rúbricas para TODOS los cursos, tengan o no config manual.
         # Sin config -> unidades sintéticas mapeadas a códigos RA reales
         # (Nivel 2) o RUB-{rubricId} como fallback (Nivel 1).
-        folders = await self.bs.list_dropbox_folders(orgUnitId)
+        folders = await _get_course_data_cached(
+            "dropbox_folders", orgUnitId,
+            lambda: self.bs.list_dropbox_folders(orgUnitId),
+        )
         outcome_index = await self._get_outcome_index(orgUnitId)
         align_index = await self._get_alignment_index(orgUnitId)
         if folders:
@@ -1623,7 +1651,9 @@ class GemeloService:
                 )
                 return {}
 
-            raw_items = await list_items_fn(orgUnitId)
+            raw_items = await _get_course_data_cached(
+                "grade_items", orgUnitId, lambda: list_items_fn(orgUnitId)
+            )
             if isinstance(raw_items, dict):
                 raw_items = raw_items.get("Items") or raw_items.get("items") or []
             if not isinstance(raw_items, list):
@@ -1645,7 +1675,10 @@ class GemeloService:
             list_cats_fn = getattr(self.bs, "list_grade_categories", None)
             if callable(list_cats_fn):
                 try:
-                    raw_cats = await list_cats_fn(orgUnitId)
+                    raw_cats = await _get_course_data_cached(
+                        "grade_categories", orgUnitId,
+                        lambda: list_cats_fn(orgUnitId),
+                    )
                     if isinstance(raw_cats, dict):
                         raw_cats = raw_cats.get("Items") or raw_cats.get("items") or []
                     for c in (raw_cats or []):
@@ -1711,7 +1744,9 @@ class GemeloService:
             dropbox_due_by_folder_id: Dict[int, Optional[datetime]] = {}
             if callable(list_dropbox_fn):
                 try:
-                    folders = await list_dropbox_fn(orgUnitId)
+                    folders = await _get_course_data_cached(
+                        "dropbox_folders", orgUnitId, lambda: list_dropbox_fn(orgUnitId)
+                    )
                     if isinstance(folders, dict):
                         folders = folders.get("Items") or folders.get("items") or []
                     if isinstance(folders, list):
@@ -2228,7 +2263,9 @@ class GemeloService:
         if not (callable(list_items_fn) and callable(list_values_fn)):
             return {}
 
-        raw_items = await list_items_fn(orgUnitId)
+        raw_items = await _get_course_data_cached(
+            "grade_items", orgUnitId, lambda: list_items_fn(orgUnitId)
+        )
         if isinstance(raw_items, dict):
             raw_items = raw_items.get("Items") or raw_items.get("items") or []
         if not isinstance(raw_items, list):
@@ -2269,7 +2306,9 @@ class GemeloService:
         dropbox_due_by_folder_id: Dict[int, Optional[datetime]] = {}
         if callable(list_dropbox_fn):
             try:
-                folders = await list_dropbox_fn(orgUnitId)
+                folders = await _get_course_data_cached(
+                    "dropbox_folders", orgUnitId, lambda: list_dropbox_fn(orgUnitId)
+                )
                 if isinstance(folders, dict):
                     folders = folders.get("Items") or folders.get("items") or []
                 if isinstance(folders, list):
