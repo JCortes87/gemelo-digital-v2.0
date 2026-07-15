@@ -16,6 +16,7 @@ const TeacherDashboard = lazy(() => import("./pages/TeacherDashboard"));
 const StudentPortal = lazy(() => import("./pages/StudentPortal"));
 const CoordinatorDashboard = lazy(() => import("./pages/CoordinatorDashboard"));
 const LearningOutcomesAdmin = lazy(() => import("./pages/LearningOutcomesAdmin"));
+const AdminPanel = lazy(() => import("./pages/AdminPanel"));
 
 // Suspense fallback — usa el loader CESA compartido
 function PageLoader() {
@@ -65,6 +66,18 @@ function AppRoutes() {
             <ProtectedRoute allowedRoles={["instructor", "admin"]}>
               <ErrorBoundary sectionName="Resultados de Aprendizaje">
                 <LearningOutcomesAdmin />
+              </ErrorBoundary>
+            </ProtectedRoute>
+          }
+        />
+
+        {/* Panel de administración (Super Admin) — uso de la plataforma */}
+        <Route
+          path="/admin"
+          element={
+            <ProtectedRoute allowedRoles={["instructor", "admin"]}>
+              <ErrorBoundary sectionName="Panel de Administración">
+                <AdminPanel />
               </ErrorBoundary>
             </ProtectedRoute>
           }

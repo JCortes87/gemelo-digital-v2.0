@@ -51,6 +51,17 @@ app = FastAPI(title="Gemelo Digital - Backend")
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
+
+@app.on_event("startup")
+async def _startup_usage_tables():
+    """Crea (si no existen) las tablas de tracking de uso: known_users y
+    login_events. Idempotente y best-effort — un fallo aquí no tumba la app."""
+    try:
+        from app.services.usage_tracking import ensure_tables
+        await asyncio.to_thread(ensure_tables)
+    except Exception as e:
+        logger.warning("startup usage tables falló: %s", str(e)[:200])
+
 app.include_router(lti.router)
 app.include_router(gemelo_router)
 app.include_router(admin_api.router)

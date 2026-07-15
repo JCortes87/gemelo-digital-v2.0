@@ -4,7 +4,7 @@ import {
   Search, GraduationCap, Presentation, Eye, LayoutGrid, LogOut,
   Sparkles, ArrowRight, Users, BookOpen, TrendingUp, ShieldCheck, X, Loader2,
   Ban, ExternalLink, Crown, Clock, ChevronDown, ChevronUp, Filter, Megaphone, Send,
-  Target, ListChecks,
+  Target, ListChecks, Activity,
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { apiGet, apiPost } from "../utils/api";
@@ -914,6 +914,47 @@ export default function RoleHome() {
                   onMouseLeave={(e) => { e.currentTarget.style.transform = "translateY(0)"; }}
                 >
                   <Target size={16} strokeWidth={2.4} /> Abrir resultados de aprendizaje
+                  <ArrowRight size={16} strokeWidth={2.4} />
+                </button>
+              </section>
+            )}
+
+            {/* 3.b Panel de administración — uso de la plataforma */}
+            {isSuperAdmin && (
+              <section className="home-panel superadmin-brand" style={{ animationDelay: "0.26s" }}>
+                <div className="section-header-v2">
+                  <div className="section-header-icon-wrap">
+                    <Activity size={22} strokeWidth={2.2} />
+                  </div>
+                  <div>
+                    <div className="section-header-title">Uso de la plataforma</div>
+                    <div className="section-header-count">Super Admin · Página dedicada</div>
+                  </div>
+                </div>
+                <div style={{
+                  fontSize: 12, color: "var(--muted)", marginBottom: 14,
+                  padding: "10px 14px", background: "var(--brand-light)",
+                  borderRadius: 10, borderLeft: "3px solid var(--brand)",
+                  display: "flex", alignItems: "flex-start", gap: 8, lineHeight: 1.5,
+                }}>
+                  <Users size={16} strokeWidth={2.2} style={{ color: "var(--brand)", flexShrink: 0, marginTop: 1 }} />
+                  <span>Quiénes han usado G.D y cuándo: historial de ingresos persistente, usuarios activos por período, gráfica diaria y exportación a CSV.</span>
+                </div>
+                <button
+                  onClick={() => navigate("/admin")}
+                  style={{
+                    width: "100%", padding: "12px 16px", borderRadius: 12,
+                    border: "none", cursor: "pointer",
+                    background: "linear-gradient(135deg, var(--brand) 0%, #1e40af 100%)",
+                    color: "#fff", fontSize: 14, fontWeight: 800, fontFamily: "var(--font)",
+                    display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 8,
+                    transition: "transform 0.15s, box-shadow 0.2s",
+                    boxShadow: "0 6px 16px -6px rgba(11, 95, 255, 0.5)",
+                  }}
+                  onMouseEnter={(e) => { e.currentTarget.style.transform = "translateY(-1px)"; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.transform = "translateY(0)"; }}
+                >
+                  <Activity size={16} strokeWidth={2.4} /> Abrir panel de administración
                   <ArrowRight size={16} strokeWidth={2.4} />
                 </button>
               </section>

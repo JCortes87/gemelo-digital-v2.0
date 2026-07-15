@@ -2035,6 +2035,29 @@ async def admin_known_users(request: Request):
     return {"total": len(users), "withEmail": len(emails), "users": users}
 
 
+@router.get("/admin/usage/summary")
+async def admin_usage_summary(
+    request: Request,
+    days: int = Query(default=30, ge=1, le=365),
+):
+    """
+    Métricas de uso de la plataforma para el Panel de Administración:
+    quiénes han ingresado, cuándo, serie diaria de logins y últimos accesos.
+    Fuente: Postgres (login_events / known_users). Solo super-admin.
+    """
+    _require_super_admin(request)
+    import asyncio as _asyncio
+    from app.services.usage_tracking import usage_summary as _usage_summary
+    try:
+        return await _asyncio.to_thread(_usage_summary, days)
+    except Exception as e:
+        logger.warning("admin_usage_summary falló: %s", str(e)[:200])
+        raise HTTPException(
+            status_code=503,
+            detail="No se pudo consultar el historial de uso (BD no disponible).",
+        )
+
+
 @router.post("/admin/announcement")
 @limiter.limit("5/minute")
 async def create_announcement(payload: AnnouncementIn, request: Request):
@@ -2131,6 +2154,13 @@ async def set_audience(payload: AudienceIn, request: Request):
             sess.get("role"),
             audience=aud,
         )
+        # También en Postgres (persistente entre redeploys). Best-effort.
+        try:
+            import asyncio as _asyncio
+            from app.services.usage_tracking import set_audience as _set_audience_db
+            await _asyncio.to_thread(_set_audience_db, uid, aud)
+        except Exception:
+            pass
         return {"ok": True, "audience": aud}
     except Exception as e:
         logger.warning("set_audience falló: %s", str(e)[:120])

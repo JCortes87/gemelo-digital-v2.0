@@ -151,6 +151,38 @@ class CourseMetricHistory(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 
+class KnownUser(Base):
+    """Usuario que ha iniciado sesión en G.D (persistente en Postgres).
+
+    Reemplaza (con fallback) el JSON efímero known_users.json: el filesystem
+    del contenedor ECS se borra en cada redeploy, esta tabla no.
+    """
+    __tablename__ = "known_users"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[str] = mapped_column(String(50), unique=True, index=True)
+    name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    email: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    role: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    # "student" (solo in-app) | "staff" (recibe correo) — mismo criterio que user_registry
+    audience: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    first_seen: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    last_seen: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+    login_count: Mapped[int] = mapped_column(Integer, default=0)
+
+
+class LoginEvent(Base):
+    """Un registro por cada ingreso (login OAuth) a G.D — historial de uso."""
+    __tablename__ = "login_events"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[str] = mapped_column(String(50), index=True)
+    name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    email: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    role: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    logged_in_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+
+
 class StudentCourseMetricSnapshot(Base):
     __tablename__ = "student_course_metric_snapshots"
     __table_args__ = (

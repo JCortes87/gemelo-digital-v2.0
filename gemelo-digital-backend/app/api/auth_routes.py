@@ -203,6 +203,16 @@ async def brightspace_callback(request: Request):
     except Exception as _e:
         logger.warning("record_user falló: %s", str(_e)[:120])
 
+    # Persistir el login en Postgres (historial de uso — sobrevive redeploys).
+    try:
+        import asyncio as _asyncio
+        from app.services.usage_tracking import record_login
+        await _asyncio.to_thread(
+            record_login, uid, (user_name or "").strip(), user_email, system_role
+        )
+    except Exception as _e:
+        logger.warning("record_login (db) falló: %s", str(_e)[:120])
+
     # Construir redirect al frontend
     front = FRONTEND_BASE or ""
 
