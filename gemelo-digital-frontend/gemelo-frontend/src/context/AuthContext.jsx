@@ -117,12 +117,20 @@ export function AuthProvider({ children }) {
           const appRoles = mapAllRoles(allRolesRaw);
           const primaryRole = mapSingleRole(data.role) || appRoles[0];
 
-          // SuperAdmin detection: env var list, backend role, or enrolled roles
+          // SuperAdmin detection: env var list, backend role, or enrolled roles.
+          // El backend detecta el rol de sistema por RoleId numérico y trata
+          // igual a "Super Administrator" (105) y "Administrator" (116) —
+          // _ADMIN_ROLES en gemelo.py autoriza ambos. Aquí replicamos eso:
+          // match exacto de "administrator" (exacto para NO capturar roles de
+          // curso como "Coordinador Administrativo").
           const superAdminIds = (import.meta.env?.VITE_SUPERADMIN_IDS || "").split(",").map(s => s.trim()).filter(Boolean);
+          const _sysRole = String(data.role || "").trim().toLowerCase();
           const isSuperAdmin =
             superAdminIds.includes(String(data.user_id)) ||
             allRolesRaw.some((r) => String(r).toLowerCase().includes("super admin")) ||
-            String(data.role || "").toLowerCase().includes("super admin");
+            allRolesRaw.some((r) => String(r).trim().toLowerCase() === "administrator") ||
+            _sysRole.includes("super admin") ||
+            _sysRole === "administrator";
           const user = {
             ...data,
             all_roles: allRolesRaw,
