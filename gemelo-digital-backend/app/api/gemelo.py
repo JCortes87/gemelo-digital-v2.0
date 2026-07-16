@@ -1212,7 +1212,7 @@ async def outcomes_course_sets(
 
 
 @router.post("/outcomes/import")
-@limiter.limit("10/minute")
+@limiter.limit("60/minute")  # import masivo a varios cursos (1 request/curso, concurrencia 3)
 async def outcomes_import(
     payload: OutcomeImportIn,
     request: Request,
