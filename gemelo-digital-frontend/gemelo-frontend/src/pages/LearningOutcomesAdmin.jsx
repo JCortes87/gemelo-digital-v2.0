@@ -1289,7 +1289,10 @@ export default function LearningOutcomesAdmin() {
     setCourseSetsLoading(true);
     try {
       const res = await apiGet(`/gemelo/outcomes/course/${ou}/sets`);
-      setCourseSets(Array.isArray(res?.sets) ? res.sets : []);
+      // Un conjunto "desvinculado" queda vacío (0 RA) en Brightspace — no lo
+      // mostramos como vinculado.
+      const sets = Array.isArray(res?.sets) ? res.sets : [];
+      setCourseSets(sets.filter(s => Number(s?.outcomeCount || 0) > 0));
     } catch {
       setCourseSets(null);
     } finally {
@@ -1311,8 +1314,9 @@ export default function LearningOutcomesAdmin() {
     const label = set?.name ? `“${set.name}”` : `#${set?.setId}`;
     const sure = window.confirm(
       `¿Desvincular el conjunto de RA ${label} del curso #${ou}?\n\n` +
-      "Se elimina del registro del curso en Brightspace (el catálogo global de la " +
-      "organización NO se toca). Las alineaciones de actividades con esos RA pueden perderse."
+      "Se quitan sus RA del registro del curso en Brightspace (el catálogo global de la " +
+      "organización NO se toca y el conjunto puede reimportarse). " +
+      "Las alineaciones de actividades con esos RA pueden perderse."
     );
     if (!sure) return;
     setDeletingSetId(set.setId); setDeleteMsg(null);

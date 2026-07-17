@@ -785,19 +785,28 @@ class BrightspaceClient:
         dry_run: bool = True,
     ) -> Dict[str, Any]:
         """
-        Elimina (desvincula) un conjunto de RA del REGISTRO de un curso.
+        Elimina (desvincula) los RA de un conjunto del REGISTRO de un curso.
 
-        DELETE /d2l/api/le/{lo}/{orgUnitId}/lo/outcomeSets/{setId}
-        scope outcomes:sets:manage
+        NOTA: la API de Brightspace NO expone DELETE a nivel org-unit
+        (probado: responde "No scopes defined for specified requests" porque
+        la ruta no existe en su tabla de ruteo — DELETE solo existe a nivel
+        organización, y ese borraría el catálogo global). El mecanismo
+        soportado es VACIAR el conjunto del curso:
+
+            PUT /d2l/api/le/{lo}/{orgUnitId}/lo/outcomeSets/{setId}
+            body {"Outcomes": []}       (scope outcomes:sets:manage)
+
+        Documentado: "To remove all outcomes from an outcome set, use an
+        empty array". Se omite Name para no renombrar.
 
         IMPORTANTE: la URL está SIEMPRE scoped al curso (org_unit_id
         obligatorio > 0), así que NUNCA toca el catálogo global de la
-        organización — solo quita el conjunto del curso.
+        organización — solo quita los RA del curso.
 
-        Con dry_run=True no borra nada: solo confirma que el set existe en el
-        curso y devuelve el preview. Tras un borrado real, re-lee los sets del
-        curso para VERIFICAR que el conjunto ya no está (un 2xx de Brightspace
-        no siempre garantiza persistencia).
+        Con dry_run=True no escribe nada: solo confirma que el set existe en
+        el curso y devuelve el preview. Tras un vaciado real, re-lee los sets
+        del curso para VERIFICAR que quedó sin RA (un 2xx de Brightspace no
+        siempre garantiza persistencia).
 
         NO lanza: devuelve {ok, status, detail, verifiedRemoved, ...} para que
         la UI muestre exactamente qué respondió Brightspace.
@@ -839,33 +848,49 @@ class BrightspaceClient:
             out["verifiedRemoved"] = True
             out["ok"] = True
             return out
+        if target_summary is not None and int(target_summary.get("outcomeCount") or 0) == 0:
+            # Ya está vacío → idempotente.
+            out["status"] = None
+            out["detail"] = (
+                f"El conjunto #{set_id} ya no tiene RA en el curso #{ou} "
+                "(ya fue desvinculado)."
+            )
+            out["verifiedRemoved"] = True
+            out["ok"] = True
+            return out
         if dry_run:
             out["ok"] = True
             out["status"] = None
             out["detail"] = "Vista previa: no se eliminó nada (dry-run)."
             return out
-        res = await self._raw_request("DELETE", url)
+        # Vaciar el conjunto en el curso: PUT con Outcomes=[] (sin Name para
+        # no renombrar). Es la única vía soportada por la API a nivel curso.
+        res = await self._raw_request("PUT", url, json_body={"Outcomes": []})
         out["status"] = res.get("status")
         out["detail"] = (
             res.get("json") if res.get("json") is not None
             else (res.get("text") or res.get("error"))
         )
-        # Verificación: re-leer los sets del curso y confirmar que ya no está.
+        # Verificación: re-leer los sets del curso y confirmar que el conjunto
+        # ya no está o quedó sin RA.
         try:
             after = await self.list_outcome_sets(ou)
             sets_after = self._summarize_course_sets(after)
             out["courseSetsAfter"] = sets_after
-            still_there = any(str(s.get("setId")) == str(set_id) for s in sets_after)
-            out["verifiedRemoved"] = not still_there
+            match = next(
+                (s for s in sets_after if str(s.get("setId")) == str(set_id)), None
+            )
+            out["verifiedRemoved"] = (
+                match is None or int(match.get("outcomeCount") or 0) == 0
+            )
         except Exception as e:  # noqa: BLE001
             out["courseSetsAfter"] = {"error": str(e)[:300]}
             out["verifiedRemoved"] = None
         out["ok"] = bool(res.get("ok")) and out.get("verifiedRemoved") is True
         if bool(res.get("ok")) and out.get("verifiedRemoved") is False:
             out["warning"] = (
-                "Brightspace respondió 2xx pero el conjunto sigue apareciendo en "
-                "el curso al releer. Puede que este tenant no permita borrar via "
-                "/lo/outcomeSets/ o que el set esté protegido."
+                "Brightspace respondió 2xx pero el conjunto sigue teniendo RA en "
+                "el curso al releer. Puede que el set esté protegido en este tenant."
             )
         return out
 
