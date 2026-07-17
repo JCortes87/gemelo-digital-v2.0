@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import {
   Search, LayoutGrid, Loader2, Target, ListChecks, CheckCircle2,
   AlertTriangle, RefreshCw, Pencil, Save, Plus, ChevronDown, ChevronUp,
-  TrendingUp, BookOpen, ArrowLeft, Upload, Download,
+  TrendingUp, BookOpen, ArrowLeft, Upload, Download, Trash2, Unlink,
 } from "lucide-react";
 import { apiGet, apiPost, apiPut, mapLimit } from "../utils/api";
 import { injectStyles } from "../styles/global";
@@ -1278,6 +1278,65 @@ export default function LearningOutcomesAdmin() {
     }
   }, [orgId, semCourses]);
 
+  // ── Conjuntos de RA vinculados al curso (desvincular/eliminar) ──
+  const [courseSets, setCourseSets] = useState(null);      // [{setId, name, importId, outcomeCount}] | null
+  const [courseSetsLoading, setCourseSetsLoading] = useState(false);
+  const [deletingSetId, setDeletingSetId] = useState(null);
+  const [deleteMsg, setDeleteMsg] = useState(null);        // { type: "ok"|"err", text }
+
+  const fetchCourseSets = useCallback(async (ou) => {
+    if (!ou || ou <= 0) { setCourseSets(null); return; }
+    setCourseSetsLoading(true);
+    try {
+      const res = await apiGet(`/gemelo/outcomes/course/${ou}/sets`);
+      setCourseSets(Array.isArray(res?.sets) ? res.sets : []);
+    } catch {
+      setCourseSets(null);
+    } finally {
+      setCourseSetsLoading(false);
+    }
+  }, []);
+
+  // Al cargar los RA de un curso, cargar también sus conjuntos (sets) para
+  // poder desvincularlos. Se refresca solo cuando cambia el curso/data.
+  useEffect(() => {
+    setDeleteMsg(null);
+    if (loadedOrg && data) fetchCourseSets(loadedOrg);
+    else setCourseSets(null);
+  }, [loadedOrg, data, fetchCourseSets]);
+
+  const unlinkSet = useCallback(async (set) => {
+    const ou = loadedOrg;
+    if (!ou || deletingSetId != null) return;
+    const label = set?.name ? `“${set.name}”` : `#${set?.setId}`;
+    const sure = window.confirm(
+      `¿Desvincular el conjunto de RA ${label} del curso #${ou}?\n\n` +
+      "Se elimina del registro del curso en Brightspace (el catálogo global de la " +
+      "organización NO se toca). Las alineaciones de actividades con esos RA pueden perderse."
+    );
+    if (!sure) return;
+    setDeletingSetId(set.setId); setDeleteMsg(null);
+    try {
+      const res = await apiPost("/gemelo/outcomes/course/delete-sets", {
+        orgUnitId: ou, setIds: [set.setId], dryRun: false,
+      });
+      const r0 = (res?.results || [])[0] || {};
+      if (res?.ok || r0.verifiedRemoved === true) {
+        setDeleteMsg({ type: "ok", text: `Conjunto ${label} desvinculado del curso #${ou}.` });
+        fetchLO(ou); // refresca RA + (via effect) los sets del curso
+      } else {
+        const det = typeof r0.detail === "string"
+          ? r0.detail
+          : (r0.warning || JSON.stringify(r0.detail || res || {}));
+        setDeleteMsg({ type: "err", text: `No se pudo desvincular ${label}: ${String(det).slice(0, 240)}` });
+      }
+    } catch (e) {
+      setDeleteMsg({ type: "err", text: `Error al desvincular ${label}: ${String(e?.message || e).slice(0, 240)}` });
+    } finally {
+      setDeletingSetId(null);
+    }
+  }, [loadedOrg, deletingSetId, fetchLO]);
+
   const outcomes = useMemo(() => {
     const map = data?.outcomeCodeMap || {};
     let list = Object.entries(map).map(([id, info]) => ({ id, ...(info || {}) }));
@@ -2439,6 +2498,74 @@ export default function LearningOutcomesAdmin() {
                     </div>
                     );
                   })}
+                </div>
+              )}
+
+              {/* Conjuntos de RA vinculados al curso: desvincular / eliminar */}
+              {(courseSetsLoading || (Array.isArray(courseSets) && courseSets.length > 0)) && (
+                <div style={{ marginTop: 16 }}>
+                  <div style={{ fontSize: 12, fontWeight: 800, color: "var(--text)", marginBottom: 8, textTransform: "uppercase", letterSpacing: 0.4, display: "flex", alignItems: "center", gap: 6 }}>
+                    <Unlink size={13} strokeWidth={2.4} />
+                    Conjuntos de RA vinculados a este curso
+                    {Array.isArray(courseSets) && <span style={{ color: "var(--muted)", fontWeight: 700 }}>({courseSets.length})</span>}
+                  </div>
+
+                  {deleteMsg && (
+                    <div style={{
+                      fontSize: 12.5, borderRadius: 8, padding: "8px 12px", marginBottom: 8,
+                      display: "flex", alignItems: "center", gap: 6,
+                      color: deleteMsg.type === "ok" ? "#059669" : "#dc2626",
+                      background: deleteMsg.type === "ok" ? "rgba(16,185,129,0.1)" : "rgba(220,38,38,0.08)",
+                    }}>
+                      {deleteMsg.type === "ok" ? <CheckCircle2 size={14} strokeWidth={2.4} /> : <AlertTriangle size={14} strokeWidth={2.4} />}
+                      {deleteMsg.text}
+                    </div>
+                  )}
+
+                  {courseSetsLoading ? (
+                    <div style={{ fontSize: 12.5, color: "var(--muted)", display: "flex", alignItems: "center", gap: 8, padding: "10px 12px", background: "var(--bg)", border: "1px dashed var(--border)", borderRadius: 10 }}>
+                      <Loader2 size={14} strokeWidth={2.4} style={{ animation: "rotateGlow 1s linear infinite" }} />
+                      Cargando conjuntos del curso…
+                    </div>
+                  ) : (
+                    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                      {courseSets.map(s => (
+                        <div key={String(s.setId)} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", background: "var(--bg)", border: "1px solid var(--border)", borderRadius: 10, flexWrap: "wrap" }}>
+                          <div style={{ flex: "1 1 220px", minWidth: 0 }}>
+                            <div style={{ fontSize: 12.5, fontWeight: 700, color: "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                              {s.name || "(sin nombre)"}
+                            </div>
+                            <div style={{ fontSize: 11, color: "var(--muted)", fontFamily: "var(--font-mono)" }}>
+                              set #{String(s.setId)} · {s.outcomeCount ?? 0} RA
+                            </div>
+                          </div>
+                          <button
+                            onClick={() => unlinkSet(s)}
+                            disabled={deletingSetId != null}
+                            title="Eliminar este conjunto del registro del curso (el catálogo global no se toca)"
+                            style={{
+                              flex: "0 0 auto", display: "inline-flex", alignItems: "center", gap: 6,
+                              padding: "7px 13px", borderRadius: 9,
+                              border: "1.5px solid rgba(220,38,38,0.45)",
+                              cursor: deletingSetId != null ? "not-allowed" : "pointer",
+                              background: deletingSetId === s.setId ? "rgba(220,38,38,0.12)" : "transparent",
+                              color: "#dc2626", fontSize: 12.5, fontWeight: 800, fontFamily: "var(--font)",
+                            }}
+                          >
+                            {deletingSetId === s.setId
+                              ? <Loader2 size={13} strokeWidth={2.6} style={{ animation: "rotateGlow 1s linear infinite" }} />
+                              : <Trash2 size={13} strokeWidth={2.6} />}
+                            {deletingSetId === s.setId ? "Desvinculando…" : "Desvincular del curso"}
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  <div style={{ fontSize: 11.5, color: "var(--muted)", marginTop: 8, lineHeight: 1.5 }}>
+                    Desvincular elimina el conjunto solo del registro de este curso en Brightspace.
+                    El catálogo global de la organización no se modifica y el conjunto puede volver a importarse.
+                  </div>
                 </div>
               )}
             </div>

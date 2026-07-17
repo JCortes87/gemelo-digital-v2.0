@@ -1018,6 +1018,17 @@ class OutcomeImportIn(BaseModel):
     dryRun: bool = True                           # True = solo preview (no escribe)
 
 
+class OutcomeDeleteIn(BaseModel):
+    """Desvincular/eliminar conjuntos de RA del registro de UN curso.
+
+    Solo toca el registro del curso (DELETE course-scoped); el catálogo
+    global de la organización NUNCA se modifica desde aquí.
+    """
+    orgUnitId: int                # curso del que se desvinculan los sets
+    setIds: List[Any]             # OutcomeSetIds (course-scoped) a eliminar
+    dryRun: bool = True           # True = solo preview (no escribe)
+
+
 class OutcomeBulkRowIn(BaseModel):
     """Una fila de la plantilla masiva: código + título del RA."""
     code: str
@@ -1288,6 +1299,62 @@ async def outcomes_import(
             pass
 
     return result
+
+
+@router.post("/outcomes/course/delete-sets")
+@limiter.limit("30/minute")
+async def outcomes_course_delete_sets(
+    payload: OutcomeDeleteIn,
+    request: Request,
+    svc: GemeloService = Depends(get_service),
+):
+    """
+    Desvincula (elimina) conjuntos de RA del REGISTRO de un curso.
+
+    DELETE course-scoped: /d2l/api/le/{lo}/{orgUnitId}/lo/outcomeSets/{setId}.
+    El catálogo global de la organización no se toca. Con dryRun=True (default)
+    solo muestra qué se eliminaría. Cada set se verifica releyendo el registro
+    del curso después del DELETE (verifiedRemoved). Solo admin.
+    Requiere scope outcomes:sets:manage.
+    """
+    _require_super_admin(request)
+    ou = int(payload.orgUnitId)
+    if ou <= 0:
+        raise HTTPException(
+            status_code=400,
+            detail="orgUnitId inválido: el borrado debe ir scoped a un curso.",
+        )
+    set_ids = [str(s).strip() for s in (payload.setIds or []) if str(s).strip()]
+    if not set_ids:
+        raise HTTPException(
+            status_code=400,
+            detail="No se indicó ningún conjunto de RA (setIds vacío).",
+        )
+    dry = bool(payload.dryRun)
+    results: List[Dict[str, Any]] = []
+    for sid in set_ids:
+        try:
+            res = await svc.bs.delete_course_outcome_set(ou, sid, dry_run=dry)
+        except HTTPException:
+            raise
+        except Exception as e:
+            res = {"ok": False, "setId": sid, "orgUnitId": ou,
+                   "dryRun": dry, "detail": str(e)[:400]}
+        results.append(res)
+
+    all_ok = all(bool(r.get("ok")) for r in results)
+
+    # Tras un borrado REAL, invalidar la caché de auto_lo_config del curso:
+    # si no, el índice cacheado seguiría mostrando los RA eliminados.
+    if not dry:
+        try:
+            from app.services.auto_lo_config import invalidate_cache
+            invalidate_cache(ou)
+        except Exception:
+            pass
+
+    return {"ok": all_ok, "dryRun": dry, "orgUnitId": ou,
+            "requested": len(set_ids), "results": results}
 
 
 # Código de RA válido: letras/dígitos/._- (mismo criterio que el parser de

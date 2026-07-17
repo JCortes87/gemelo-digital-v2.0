@@ -777,6 +777,98 @@ class BrightspaceClient:
                 out["courseSetsAfter"] = {"error": str(e)[:300]}
         return out
 
+    async def delete_course_outcome_set(
+        self,
+        org_unit_id: int,
+        set_id: Any,
+        *,
+        dry_run: bool = True,
+    ) -> Dict[str, Any]:
+        """
+        Elimina (desvincula) un conjunto de RA del REGISTRO de un curso.
+
+        DELETE /d2l/api/le/{lo}/{orgUnitId}/lo/outcomeSets/{setId}
+        scope outcomes:sets:manage
+
+        IMPORTANTE: la URL está SIEMPRE scoped al curso (org_unit_id
+        obligatorio > 0), así que NUNCA toca el catálogo global de la
+        organización — solo quita el conjunto del curso.
+
+        Con dry_run=True no borra nada: solo confirma que el set existe en el
+        curso y devuelve el preview. Tras un borrado real, re-lee los sets del
+        curso para VERIFICAR que el conjunto ya no está (un 2xx de Brightspace
+        no siempre garantiza persistencia).
+
+        NO lanza: devuelve {ok, status, detail, verifiedRemoved, ...} para que
+        la UI muestre exactamente qué respondió Brightspace.
+        """
+        ou = int(org_unit_id)
+        if ou <= 0:
+            return {
+                "ok": False, "dryRun": bool(dry_run), "orgUnitId": org_unit_id,
+                "setId": str(set_id), "status": None,
+                "detail": "orgUnitId inválido: el borrado debe ir scoped a un curso.",
+            }
+        url = (
+            f"{self.base_url}/d2l/api/le/{self.lo_version}/{ou}"
+            f"/lo/outcomeSets/{set_id}"
+        )
+        out: Dict[str, Any] = {
+            "ok": False, "dryRun": bool(dry_run), "orgUnitId": ou,
+            "setId": str(set_id), "url": url,
+        }
+        # Estado ANTES: confirmar que el set existe en el curso.
+        target_summary = None
+        try:
+            before = await self.list_outcome_sets(ou)
+            sets_before = self._summarize_course_sets(before)
+            out["courseSetsBefore"] = sets_before
+            target_summary = next(
+                (s for s in sets_before if str(s.get("setId")) == str(set_id)), None
+            )
+        except Exception as e:  # noqa: BLE001
+            out["courseSetsBefore"] = {"error": str(e)[:300]}
+        out["target"] = target_summary
+        if target_summary is None and isinstance(out.get("courseSetsBefore"), list):
+            out["status"] = None
+            out["detail"] = (
+                f"El conjunto #{set_id} no está en el registro del curso #{ou} "
+                "(quizá ya fue eliminado)."
+            )
+            # Ya no está → objetivo cumplido para efectos de idempotencia.
+            out["verifiedRemoved"] = True
+            out["ok"] = True
+            return out
+        if dry_run:
+            out["ok"] = True
+            out["status"] = None
+            out["detail"] = "Vista previa: no se eliminó nada (dry-run)."
+            return out
+        res = await self._raw_request("DELETE", url)
+        out["status"] = res.get("status")
+        out["detail"] = (
+            res.get("json") if res.get("json") is not None
+            else (res.get("text") or res.get("error"))
+        )
+        # Verificación: re-leer los sets del curso y confirmar que ya no está.
+        try:
+            after = await self.list_outcome_sets(ou)
+            sets_after = self._summarize_course_sets(after)
+            out["courseSetsAfter"] = sets_after
+            still_there = any(str(s.get("setId")) == str(set_id) for s in sets_after)
+            out["verifiedRemoved"] = not still_there
+        except Exception as e:  # noqa: BLE001
+            out["courseSetsAfter"] = {"error": str(e)[:300]}
+            out["verifiedRemoved"] = None
+        out["ok"] = bool(res.get("ok")) and out.get("verifiedRemoved") is True
+        if bool(res.get("ok")) and out.get("verifiedRemoved") is False:
+            out["warning"] = (
+                "Brightspace respondió 2xx pero el conjunto sigue apareciendo en "
+                "el curso al releer. Puede que este tenant no permita borrar via "
+                "/lo/outcomeSets/ o que el set esté protegido."
+            )
+        return out
+
     async def _paged_orgunits(
         self,
         url: str,
