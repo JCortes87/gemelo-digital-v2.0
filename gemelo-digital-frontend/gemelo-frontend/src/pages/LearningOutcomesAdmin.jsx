@@ -1175,12 +1175,32 @@ export default function LearningOutcomesAdmin() {
     const byId = new Map((semCourses?.items || []).map(c => [Number(c.id), c]));
     const results = [];
     let done = 0;
+    // Import con reintento ante 429 (rate limit del backend). La ventana del
+    // limiter es de 1 min, así que esperamos escalonado y reintentamos en lugar
+    // de dar el curso por fallido: con lotes grandes esto evita "N fallidos".
+    const importWithRetry = async (ou, maxRetries = 4) => {
+      let attempt = 0;
+      while (true) {
+        try {
+          return await apiPost("/gemelo/outcomes/import", {
+            targetOrgUnitId: ou, importIds: setIds, dryRun: !!dryRun,
+          });
+        } catch (e) {
+          const is429 = String(e?.message || "").includes("429");
+          if (is429 && attempt < maxRetries) {
+            attempt += 1;
+            const waitMs = Math.min(60000, 8000 * attempt) + Math.floor(Math.random() * 1500);
+            await new Promise(r => setTimeout(r, waitMs));
+            continue;
+          }
+          throw e;
+        }
+      }
+    };
     await mapLimit(courses, 3, async (ou) => {
       const name = byId.get(ou)?.name || `Curso ${ou}`;
       try {
-        const res = await apiPost("/gemelo/outcomes/import", {
-          targetOrgUnitId: ou, importIds: setIds, dryRun: !!dryRun,
-        });
+        const res = await importWithRetry(ou);
         if (res?.ok) {
           let afterTotal = null;
           if (!dryRun) {

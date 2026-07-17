@@ -165,22 +165,88 @@ async def brightspace_callback(request: Request):
     except Exception as e:
         logger.warning("whoami falló al crear sesión: %s", e)
 
-    # Detect system-level role (e.g. Super Administrator) from /users/{uid}
+    # Detect system-level role (Super Administrator / Administrator).
+    #
+    # La fuente FIABLE del rol de sistema NO es UserData de /users/{uid} (ese
+    # bloque no expone RoleId de forma consistente), sino la MATRÍCULA del
+    # usuario en la unidad organizativa RAÍZ:
+    #   GET /enrollments/orgUnits/{orgId}/users/{uid} -> { RoleId, ... }
+    # Los RoleId son específicos del tenant, así que combinamos:
+    #   1) Fast-path por IDs conocidos (105 Super Administrator, 116 Administrator).
+    #   2) Fallback por nombre de rol vía /roles/{roleId} (tenant-agnostic) —
+    #      cubre roles Administrator personalizados con otro RoleId.
     system_role = None
     if uid:
         try:
             async with httpx.AsyncClient(timeout=10) as client:
-                r = await client.get(
-                    f"{BRIGHTSPACE_BASE_URL}/d2l/api/lp/{LP_VERSION}/users/{uid}",
-                    headers=headers,
-                )
-                if r.status_code == 200:
-                    u = r.json()
-                    role_id = str(u.get("RoleId") or "")
-                    if role_id == "105":
+                # a) Resolver la unidad organizativa raíz (org id) dinámicamente.
+                org_id = ""
+                try:
+                    ro = await client.get(
+                        f"{BRIGHTSPACE_BASE_URL}/d2l/api/lp/{LP_VERSION}/organization/info",
+                        headers=headers,
+                    )
+                    if ro.status_code == 200:
+                        org_id = str((ro.json() or {}).get("Identifier") or "")
+                except Exception as _oe:
+                    logger.warning("organization/info failed: %s", _oe)
+                if not org_id:
+                    org_id = "6606"  # fallback: raíz conocida del tenant CESA
+
+                # b) RoleId del usuario a nivel de organización (fuente fiable).
+                role_id = ""
+                try:
+                    er = await client.get(
+                        f"{BRIGHTSPACE_BASE_URL}/d2l/api/lp/{LP_VERSION}"
+                        f"/enrollments/orgUnits/{org_id}/users/{uid}",
+                        headers=headers,
+                    )
+                    if er.status_code == 200:
+                        role_id = str((er.json() or {}).get("RoleId") or "")
+                except Exception as _ee:
+                    logger.warning("org enrollment lookup failed: %s", _ee)
+
+                # c) Fallback: UserData /users/{uid} (por si expone RoleId aquí).
+                if not role_id:
+                    try:
+                        ur = await client.get(
+                            f"{BRIGHTSPACE_BASE_URL}/d2l/api/lp/{LP_VERSION}/users/{uid}",
+                            headers=headers,
+                        )
+                        if ur.status_code == 200:
+                            role_id = str((ur.json() or {}).get("RoleId") or "")
+                    except Exception:
+                        pass
+
+                # d) Fast-path por IDs conocidos.
+                if role_id == "105":
+                    system_role = "Super Administrator"
+                elif role_id == "116":
+                    system_role = "Administrator"
+
+                # e) Fallback por nombre de rol (tenant-agnostic).
+                role_name = ""
+                if system_role is None and role_id:
+                    try:
+                        rr = await client.get(
+                            f"{BRIGHTSPACE_BASE_URL}/d2l/api/lp/{LP_VERSION}/roles/{role_id}",
+                            headers=headers,
+                        )
+                        if rr.status_code == 200:
+                            role_name = str((rr.json() or {}).get("DisplayName") or "").strip()
+                    except Exception as _re:
+                        logger.warning("role name lookup failed (roleId=%s): %s", role_id, _re)
+
+                    rn = role_name.lower()
+                    if "super administrator" in rn or "super admin" in rn:
                         system_role = "Super Administrator"
-                    elif role_id == "116":
+                    elif "administrator" in rn or rn == "admin":
                         system_role = "Administrator"
+
+                logger.info(
+                    "role detection: uid=%s orgId=%s roleId=%s roleName=%r -> system_role=%s",
+                    uid, org_id, role_id, role_name, system_role,
+                )
         except Exception as e:
             logger.warning("user role detection failed: %s", e)
 
