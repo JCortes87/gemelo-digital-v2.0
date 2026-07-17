@@ -106,6 +106,11 @@ def save_session(session_id: str, token_data: Dict[str, Any]) -> None:
         "user_id":       token_data.get("user_id"),
         "user_name":     token_data.get("user_name"),
         "user_email":    token_data.get("user_email"),
+        # Rol de sistema detectado en el callback OAuth (Super Administrator /
+        # Administrator). CRÍTICO: sin esto _require_super_admin nunca ve el rol
+        # y los Administrator (no super) reciben 403 aunque el rol se detecte.
+        "role":          token_data.get("role"),
+        "all_roles":     token_data.get("all_roles") or [],
         "iat":           now,
     }
     with _STORE_LOCK:
