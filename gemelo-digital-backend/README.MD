@@ -97,3 +97,40 @@ Variables de ambiente ECS
   },
   "systemControls": []
 }
+
+# Registro de cambios
+
+## 2026-07-21
+
+### Resultados de aprendizaje (RA)
+- **Desvincular RA de un curso** desde la consola de RA (flujo semestre → cursos → "Ver RA").
+  Se agregó la sección "Conjuntos de RA vinculados a este curso" con un botón
+  "Desvincular del curso" por conjunto. Solo actúa a nivel del curso; el catálogo
+  global de la organización nunca se modifica y el conjunto puede reimportarse.
+  - Backend: método `delete_course_outcome_set` en `brightspace_client.py` y
+    endpoint `POST /gemelo/outcomes/course/delete-sets` (solo admin).
+  - Brightspace **no rutea** `DELETE` de outcome sets a nivel curso (responde
+    "No scopes defined for specified requests"); la vía soportada es **vaciar** el
+    conjunto con `PUT /d2l/api/le/{v}/{orgUnitId}/lo/outcomeSets/{setId}` y body
+    `{"Outcomes": []}` (scope `outcomes:sets:manage`). El backend verifica el
+    resultado releyendo el registro del curso.
+- **Descargar CSV** de los cursos seleccionados por semestre (ID, Nombre, Código,
+  Tipo, Estado RA y # RA). Archivo Excel-friendly (BOM UTF-8).
+
+### Autenticación / roles
+- Se detecta el rol de sistema **Administrator (RoleId 116)**, además de Super
+  Administrator, consultando la matrícula del usuario en la unidad organizativa
+  raíz (`/enrollments/orgUnits/{orgRoot}/users/{uid}` → `RoleId`), con respaldo por
+  nombre de rol. Los Administrator ya pueden usar la consola de RA.
+- Fix crítico en `app/state.py`: `save_session` ahora **conserva `role` y
+  `all_roles`**; antes los descartaba y `_require_super_admin` respondía 403 a los
+  Administrator no listados en `SUPERADMIN_IDS`.
+- Nota Brightspace: para que un Administrator liste semestres/cursos, su rol
+  necesita permiso de **ver/buscar la estructura organizativa por API**
+  (Org Unit Editor, solo lectura). Esto se configura en Brightspace (Roles and
+  Permissions), no en código.
+
+> Despliegue manual (sin CI): frontend con `npm run build` + `aws s3 sync` +
+> invalidación de CloudFront; backend con `docker buildx build --push` a ECR +
+> `aws ecs update-service --force-new-deployment`. Cada redeploy del backend
+> reinicia las sesiones en memoria: los usuarios deben volver a iniciar sesión.
