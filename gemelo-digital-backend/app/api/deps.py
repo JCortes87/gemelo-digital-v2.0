@@ -64,7 +64,10 @@ def _require_token_from_request(request: Request) -> tuple[str, JSONResponse | N
     Acepta sesión via:
     1. Authorization: Bearer <session_id> header
     2. Cookie gemelo_session_id
-    3. Query param ?sid= (útil para <img> / <a download> que no pueden setear headers)
+
+    NOTA seguridad: ya NO se acepta ?sid= en query string — un token en la URL
+    queda expuesto en historial del navegador, logs y headers Referer. Las
+    descargas del frontend usan fetch + Authorization (apiDownload en api.js).
     """
     # 1. Header Authorization: Bearer <session_id>
     auth_header = request.headers.get("Authorization", "")
@@ -79,13 +82,6 @@ def _require_token_from_request(request: Request) -> tuple[str, JSONResponse | N
     sid = _get_session_id(request)
     if sid:
         token = get_access_token(sid)
-        if token:
-            return token, None
-
-    # 3. Query param (for <img> src, downloads, etc.)
-    sid_query = request.query_params.get("sid")
-    if sid_query:
-        token = get_access_token(sid_query.strip())
         if token:
             return token, None
 

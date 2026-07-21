@@ -79,8 +79,9 @@ app.add_middleware(
     CORSMiddleware,
     allow_origin_regex=ALLOWED_ORIGIN_REGEX,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    # Solo lo que la API realmente usa (GET/POST/PUT + preflight); antes era "*".
+    allow_methods=["GET", "POST", "PUT", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "Accept"],
 )
 
 from starlette.middleware.base import BaseHTTPMiddleware

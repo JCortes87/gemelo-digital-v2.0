@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect } from "react";
-import { apiGet, apiGetCached, apiDownloadUrl } from "../../utils/api";
+import { apiGet, apiGetCached, apiDownload, apiUrl } from "../../utils/api";
 import { exportInstitutionalFeedbackPdf } from "../../utils/export";
 import { COLORS, colorForPct } from "../../utils/colors";
 import { fmtPct, fmtGrade10FromPct, computeRiskFromPct } from "../../utils/helpers";
@@ -29,14 +29,15 @@ export default function EvidenceReports({
 
   const openFeedback = async (student, evidence) => {
     if (!evidence.linkedDropboxId) return;
-    const downloadUrl = apiDownloadUrl(
-      `/brightspace/course/${orgUnitId}/dropbox/folder/${evidence.linkedDropboxId}/student/${student.userId}/download`
-    );
+    // Solo la ruta (sin token): la descarga real usa apiDownload con header
+    // Authorization, y el PDF/print muestra la URL limpia, sin sid.
+    const downloadPath =
+      `/brightspace/course/${orgUnitId}/dropbox/folder/${evidence.linkedDropboxId}/student/${student.userId}/download`;
     setFeedbackModal({
       studentName: student.displayName,
       studentId: student.userId,
       evidenceName: evidence.name || `Ítem ${evidence.gradeObjectId}`,
-      downloadUrl,
+      downloadPath,
       loading: true,
       data: null,
       error: null,
@@ -214,8 +215,8 @@ export default function EvidenceReports({
                 const isGraded = e.scorePct != null;
                 const evColor = isGraded ? colorForPct(e.scorePct, null) : "var(--muted)";
                 const hasDropbox = e.linkedDropboxId != null;
-                const downloadHref = hasDropbox
-                  ? apiDownloadUrl(`/brightspace/course/${orgUnitId}/dropbox/folder/${e.linkedDropboxId}/student/${student.userId}/download`)
+                const downloadPath = hasDropbox
+                  ? `/brightspace/course/${orgUnitId}/dropbox/folder/${e.linkedDropboxId}/student/${student.userId}/download`
                   : null;
                 return (
                   <div key={i} style={{
@@ -244,10 +245,8 @@ export default function EvidenceReports({
                     </span>
                     {hasDropbox && (
                       <>
-                        <a
-                          href={downloadHref}
-                          target="_blank"
-                          rel="noopener noreferrer"
+                        <button
+                          type="button"
                           title="Descargar entrega del estudiante (ZIP)"
                           style={{
                             fontSize: 10, fontWeight: 700,
@@ -256,12 +255,16 @@ export default function EvidenceReports({
                             color: "var(--brand)",
                             textDecoration: "none",
                             border: "1px solid rgba(52, 120, 246, 0.25)",
-                            flexShrink: 0,
+                            flexShrink: 0, cursor: "pointer",
                           }}
-                          onClick={(ev) => ev.stopPropagation()}
+                          onClick={(ev) => {
+                            ev.stopPropagation();
+                            apiDownload(downloadPath, `entrega-${student.userId}.zip`)
+                              .catch((err) => window.alert(`No se pudo descargar la entrega: ${err?.message || err}`));
+                          }}
                         >
                           ⬇
-                        </a>
+                        </button>
                         <button
                           type="button"
                           title="Ver retroalimentación del docente"
@@ -417,11 +420,14 @@ export default function EvidenceReports({
                 </div>
               </div>
               <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
-                {feedbackModal.downloadUrl && (
-                  <a
-                    href={feedbackModal.downloadUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
+                {feedbackModal.downloadPath && (
+                  <button
+                    onClick={() => {
+                      apiDownload(
+                        feedbackModal.downloadPath,
+                        `entrega-${feedbackModal.studentId || "estudiante"}.zip`
+                      ).catch((err) => window.alert(`No se pudo descargar la entrega: ${err?.message || err}`));
+                    }}
                     title="Descargar entrega del estudiante"
                     style={{
                       background: "rgba(52,120,246,0.08)", border: "1px solid rgba(52,120,246,0.25)",
@@ -431,7 +437,7 @@ export default function EvidenceReports({
                       fontFamily: "var(--font)", textDecoration: "none",
                       display: "flex", alignItems: "center", gap: 4,
                     }}
-                  >⬇ Entrega</a>
+                  >⬇ Entrega</button>
                 )}
                 <button
                   onClick={() => {
@@ -442,7 +448,9 @@ export default function EvidenceReports({
                       studentName: feedbackModal.studentName,
                       studentId: feedbackModal.studentId,
                       courseInfo,
-                      downloadUrl: feedbackModal.downloadUrl,
+                      // URL informativa SIN token (el sid nunca debe quedar
+                      // incrustado en un PDF que se comparte/archiva).
+                      downloadUrl: apiUrl(feedbackModal.downloadPath),
                     });
                   }}
                   disabled={feedbackModal.loading || !feedbackModal.data}
@@ -475,9 +483,9 @@ export default function EvidenceReports({
               <div style={{ fontSize: 12, color: "#555" }}>
                 Estudiante: {feedbackModal.studentName} · Fecha: {new Date().toLocaleDateString("es-CO", { year: "numeric", month: "long", day: "numeric" })}
               </div>
-              {feedbackModal.downloadUrl && (
+              {feedbackModal.downloadPath && (
                 <div style={{ fontSize: 10, color: "#555", marginTop: 4 }}>
-                  Entrega disponible en: {feedbackModal.downloadUrl}
+                  Entrega disponible en: {apiUrl(feedbackModal.downloadPath)}
                 </div>
               )}
             </div>

@@ -2100,6 +2100,7 @@ def _resolve_recipients(payload: "AnnouncementIn") -> List[str]:
 
 
 @router.get("/admin/known-users")
+@limiter.limit("30/minute")
 async def admin_known_users(request: Request):
     """Usuarios que han iniciado sesión en G.D (para elegir destinatarios). Solo super-admin."""
     _require_super_admin(request)
@@ -2109,6 +2110,7 @@ async def admin_known_users(request: Request):
 
 
 @router.get("/admin/usage/summary")
+@limiter.limit("30/minute")
 async def admin_usage_summary(
     request: Request,
     days: int = Query(default=30, ge=1, le=365),

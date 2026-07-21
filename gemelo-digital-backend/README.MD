@@ -68,7 +68,7 @@ Variables de ambiente ECS
     },
     {
       "name": "BRIGHTSPACE_CLIENT_SECRET",
-      "value": "gkiUceOuC7QU81qGSDSiYeh_R6bEhytvFz7kWYjUG5o"
+      "value": "<NUNCA-COMMITEAR-EL-SECRET — usar SSM Parameter Store, ver seccion 'Secretos'>"
     },
     {
       "name": "TOOL_BASE_URL",
@@ -98,7 +98,41 @@ Variables de ambiente ECS
   "systemControls": []
 }
 
+# Secretos
+
+**Nunca commitear secretos** (client secrets, SMTP, API keys) en este repo — ni en el
+README ni en `.env` (el `.gitignore` ya excluye `.env`).
+
+- Los secretos de produccion viven en **AWS Secrets Manager** y el taskdef de ECS
+  los inyecta via el bloque `secrets` (`valueFrom`), no via `environment`:
+  `gemelo/brightspace-client-secret`, `gemelo/database-url`,
+  `gemelo/session-secret`, `gemelo/lti-state-secret`, `gemelo/elevenlabs-api-key`.
+- Si un secret se filtra (p. ej. quedo en el historial de git), **rotarlo** en
+  Brightspace (Admin Tools → Manage Extensibility → OAuth 2.0 → la app → generar
+  nuevo secret) y actualizar el valor en Secrets Manager:
+  `aws secretsmanager put-secret-value --secret-id gemelo/brightspace-client-secret --secret-string '<NUEVO>'`
+  y luego `aws ecs update-service --cluster default --service gemelo-digital-api --force-new-deployment`.
+- El bloque `environment` del taskdef documentado abajo es de referencia: el
+  secret NO va ahi.
+
 # Registro de cambios
+
+## 2026-07-21 (2) — Mejoras críticas de seguridad
+
+- **Secret fuera del repo**: se eliminó el `BRIGHTSPACE_CLIENT_SECRET` en texto
+  plano del README (quedó en el historial de git → **debe rotarse** siguiendo la
+  sección "Secretos"). Producción ya lo inyecta desde Secrets Manager.
+- **Token de sesión fuera de las URLs**: se eliminó el soporte de `?sid=` en
+  query string (backend `deps.py`) y el frontend ahora descarga entregas y fotos
+  de perfil con `fetch` + header `Authorization` (blob) — `apiDownload()` en
+  `api.js`, `EvidenceReports.jsx` y `StudentAvatar.jsx`. El PDF institucional ya
+  no incrusta el token en el enlace de descarga.
+- **Rate limiting**: `GET /gemelo/admin/known-users` y
+  `GET /gemelo/admin/usage/summary` ahora tienen límite 30/min.
+- **CORS restringido**: solo `GET/POST/PUT/OPTIONS` y headers
+  `Authorization/Content-Type/Accept` (antes `*`).
+- **DX local**: `connect_timeout=5` en el engine de SQLAlchemy — si la BD no es
+  alcanzable en dev, el startup falla en ~5s en vez de colgarse minutos.
 
 ## 2026-07-21
 

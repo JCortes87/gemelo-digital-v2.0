@@ -15,14 +15,37 @@ export function apiUrl(path) {
 export { API_BASE_URL };
 
 /**
- * Build a URL for a binary download endpoint, appending the sid as query param
- * so the browser can open it in a new tab without needing Authorization header.
+ * Descarga un endpoint binario autenticando con el header Authorization.
+ * El sid NUNCA viaja en la URL (antes iba como ?sid= y quedaba expuesto en
+ * historial del navegador, logs del servidor y headers Referer).
+ * Dispara la descarga en el navegador vía Blob + <a download>.
  */
-export function apiDownloadUrl(path) {
-  const sid = localStorage.getItem("gemelo_sid") || "";
-  const sep = path.includes("?") ? "&" : "?";
-  const base = apiUrl(path);
-  return sid ? `${base}${sep}sid=${encodeURIComponent(sid)}` : base;
+export async function apiDownload(path, fallbackFilename = "descarga") {
+  const sid = localStorage.getItem("gemelo_sid");
+  const res = await fetch(apiUrl(path), {
+    method: "GET",
+    credentials: "include",
+    headers: sid ? { Authorization: `Bearer ${sid}` } : {},
+  });
+  if (!res.ok) {
+    const txt = await res.text().catch(() => "");
+    throw new Error(`HTTP ${res.status} - ${String(txt).slice(0, 300)}`);
+  }
+  // Nombre de archivo desde Content-Disposition, si el backend lo envía
+  const cd = res.headers.get("content-disposition") || "";
+  const match = /filename\*?=(?:UTF-8''|")?([^";]+)/i.exec(cd);
+  const filename = match
+    ? decodeURIComponent(match[1].replace(/"/g, "").trim())
+    : fallbackFilename;
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 4000);
 }
 
 export async function apiGet(path, opts = {}) {
