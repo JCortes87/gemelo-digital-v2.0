@@ -117,6 +117,34 @@ README ni en `.env` (el `.gitignore` ya excluye `.env`).
 
 # Registro de cambios
 
+## 2026-07-21 (3) — Mejoras de alto impacto (UX y confiabilidad)
+
+- **Sesiones persistentes entre redeploys** (`app_sessions` en Postgres):
+  `app/services/session_store_db.py` + write-through en `app/state.py`. La
+  memoria sigue siendo el fast-path; la BD es respaldo best-effort con circuit
+  breaker (60s) para que una RDS inalcanzable jamás bloquee el login. Un
+  redeploy del backend ya NO desloguea a los usuarios.
+- **Announcements y bug reports en Postgres** (tablas `announcements` /
+  `bug_reports`, servicio `app/services/content_store.py`): sobreviven a los
+  redeploys de ECS. El filesystem del contenedor queda solo como fallback si la
+  BD falla. Mismo shape de respuesta — el frontend no cambia.
+- **Retry con backoff en el frontend** (`src/utils/api.js`): los GET reintentan
+  hasta 2 veces (500ms/1500ms) ante 502/503/504 o fallo de red; nunca ante 4xx
+  ni aborts. Nuevo componente reutilizable `LoadError.jsx` con botón
+  "Reintentar".
+- **Sentry opcional (backend y frontend)**: se activa solo si existe
+  `SENTRY_DSN` (backend, `sentry-sdk[fastapi]`) o `VITE_SENTRY_DSN` (frontend,
+  `@sentry/react` con import dinámico — no infla el bundle si no hay DSN).
+  `ErrorBoundary` reporta crashes de render vía `window.__gemeloSentry`.
+  Sin DSN, todo funciona exactamente igual que antes. `send_default_pii=False`.
+- **CI/CD diagnosticado**: los workflows de `.github/workflows/` están bien; el
+  fallo es el trust policy del rol `GemeloDigitalDeployerRole`, que confía en el
+  repo viejo (`JCortes87/proyecto-gemelos-digitales-JC`) en vez de
+  `juandavid639/Proyecto-Gemelos-Digitales`. Fix (requiere permisos IAM):
+  `aws iam update-assume-role-policy --role-name GemeloDigitalDeployerRole --policy-document file://trust.json`
+  con el `sub` = `repo:juandavid639/Proyecto-Gemelos-Digitales:ref:refs/heads/main`.
+  **Ojo**: al arreglarlo, cada push a `main` desplegará automáticamente.
+
 ## 2026-07-21 (2) — Mejoras críticas de seguridad
 
 - **Secret fuera del repo**: se eliminó el `BRIGHTSPACE_CLIENT_SECRET` en texto

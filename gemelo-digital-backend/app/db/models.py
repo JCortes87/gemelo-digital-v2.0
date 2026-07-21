@@ -183,6 +183,56 @@ class LoginEvent(Base):
     logged_in_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
 
 
+class AppSession(Base):
+    """Sesión OAuth persistida en Postgres (write-through desde app/state.py).
+
+    La memoria del proceso sigue siendo el fast-path; esta tabla es el
+    respaldo que permite que las sesiones sobrevivan redeploys/reinicios
+    del backend (antes cada deploy deslogueaba a todos los usuarios).
+    `data` guarda el dict completo de la sesión como JSON (tokens incluidos;
+    la BD es privada — RDS en la VPC — y DATABASE_URL vive en Secrets Manager).
+    """
+    __tablename__ = "app_sessions"
+
+    session_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    data: Mapped[str] = mapped_column(Text)
+    # Vencimiento del access_token (mismo criterio que la memoria: la sesión
+    # deja de ser válida cuando expira el token, salvo refresh).
+    expires_at: Mapped[datetime] = mapped_column(DateTime, index=True)
+    # Techo absoluto de vida de la fila (iat + SESSION_TTL) para el purge.
+    purge_after: Mapped[datetime] = mapped_column(DateTime, index=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class Announcement(Base):
+    """Anuncio del administrador (persistente — antes JSON en fs efímero)."""
+    __tablename__ = "announcements"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    ts: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+    subject: Mapped[str] = mapped_column(String(255))
+    message: Mapped[str] = mapped_column(Text)
+    tag: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    author: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    email_sent: Mapped[bool] = mapped_column(Boolean, default=False)
+    recipient_count: Mapped[int] = mapped_column(Integer, default=0)
+
+
+class BugReport(Base):
+    """Reporte de error de un usuario (persistente — antes JSONL en fs efímero)."""
+    __tablename__ = "bug_reports"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    ts: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+    title: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    severity: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    description: Mapped[str] = mapped_column(Text)
+    user_id: Mapped[str | None] = mapped_column(String(50), nullable=True, index=True)
+    user_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    user_email: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    context: Mapped[str | None] = mapped_column(Text, nullable=True)  # JSON
+
+
 class StudentCourseMetricSnapshot(Base):
     __tablename__ = "student_course_metric_snapshots"
     __table_args__ = (

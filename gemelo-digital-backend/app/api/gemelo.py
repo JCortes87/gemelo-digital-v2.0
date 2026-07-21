@@ -1993,15 +1993,29 @@ async def submit_bug_report(payload: BugReportIn, request: Request):
     severity = (payload.severity or "media").strip().lower()
     title = (payload.title or "").strip() or "Reporte de error"
 
-    record = {
-        "ts": now_iso,
-        "title": title,
-        "severity": severity,
-        "description": desc,
-        "reporter": reporter,
-        "context": ctx,
-    }
-    _append_jsonl(_BUG_REPORTS_FILE, record)
+    # Persistir en Postgres (sobrevive redeploys); fallback a JSONL si BD falla
+    import asyncio as _asyncio
+    from app.services import content_store as _content_store
+    saved_db = False
+    try:
+        saved_db = await _asyncio.to_thread(
+            _content_store.save_bug_report,
+            title, severity, desc,
+            reporter.get("user_id"), reporter.get("user_name"), reporter.get("user_email"),
+            ctx,
+        )
+    except Exception:
+        saved_db = False
+    if not saved_db:
+        record = {
+            "ts": now_iso,
+            "title": title,
+            "severity": severity,
+            "description": desc,
+            "reporter": reporter,
+            "context": ctx,
+        }
+        _append_jsonl(_BUG_REPORTS_FILE, record)
 
     # Cuerpo del correo
     ctx_lines = "\n".join(f"  {k}: {v}" for k, v in ctx.items()) or "  (sin contexto)"
@@ -2179,28 +2193,53 @@ async def create_announcement(payload: AnnouncementIn, request: Request):
             )
             sent = {"ok": bool(res.get("ok")), "recipients": res.get("recipients", 0), "error": res.get("error")}
 
-    # Persistir el anuncio para mostrarlo in-app
-    items = _load_announcements()
-    ann = {
-        "id": int(_time_mod.time() * 1000),
-        "ts": datetime.now(timezone.utc).isoformat(),
-        "subject": subject,
-        "message": message,
-        "tag": (payload.tag or "Anuncio").strip(),
-        "author": sess.get("user_name") or "Administrador",
-        "emailSent": sent["ok"],
-        "recipientCount": sent["recipients"],
-    }
-    items.insert(0, ann)
-    _save_announcements(items[:100])  # conservar los 100 más recientes
+    # Persistir el anuncio en Postgres (sobrevive redeploys);
+    # fallback al JSON en filesystem solo si la BD falla.
+    import asyncio as _asyncio
+    from app.services import content_store as _content_store
+    ann = None
+    try:
+        ann = await _asyncio.to_thread(
+            _content_store.save_announcement,
+            subject, message,
+            (payload.tag or "Anuncio").strip(),
+            sess.get("user_name") or "Administrador",
+            sent["ok"], sent["recipients"],
+        )
+    except Exception:
+        ann = None
+    if ann is None:
+        ann = {
+            "id": int(_time_mod.time() * 1000),
+            "ts": datetime.now(timezone.utc).isoformat(),
+            "subject": subject,
+            "message": message,
+            "tag": (payload.tag or "Anuncio").strip(),
+            "author": sess.get("user_name") or "Administrador",
+            "emailSent": sent["ok"],
+            "recipientCount": sent["recipients"],
+        }
+        items = _load_announcements()
+        items.insert(0, ann)
+        _save_announcements(items[:100])  # conservar los 100 más recientes
 
     return {"ok": True, "announcement": ann, "email": sent}
 
 
 @router.get("/announcements")
 async def list_announcements(limit: int = Query(default=20, ge=1, le=100)):
-    """Anuncios recientes del administrador para mostrar dentro de la app."""
-    return {"items": _load_announcements()[:limit]}
+    """Anuncios recientes del administrador para mostrar dentro de la app.
+    Fuente: Postgres; fallback al JSON local si la BD no responde."""
+    import asyncio as _asyncio
+    from app.services import content_store as _content_store
+    items = None
+    try:
+        items = await _asyncio.to_thread(_content_store.list_announcements, limit)
+    except Exception:
+        items = None
+    if items is None:
+        items = _load_announcements()[:limit]
+    return {"items": items}
 
 
 class AudienceIn(BaseModel):

@@ -25,16 +25,27 @@ logger = logging.getLogger("uvicorn.error")
 
 
 def ensure_tables() -> None:
-    """Crea known_users / login_events si no existen (idempotente, no toca
-    las demás tablas). Se llama en el startup de la app."""
+    """Crea known_users / login_events / app_sessions / announcements /
+    bug_reports si no existen (idempotente, no toca las demás tablas).
+    Se llama en el startup de la app."""
     try:
         from app.db.base import Base
+        from app.db.models import Announcement, AppSession, BugReport
         Base.metadata.create_all(
             bind=engine,
-            tables=[KnownUser.__table__, LoginEvent.__table__],
+            tables=[
+                KnownUser.__table__,
+                LoginEvent.__table__,
+                AppSession.__table__,
+                Announcement.__table__,
+                BugReport.__table__,
+            ],
             checkfirst=True,
         )
-        logger.info("usage_tracking: tablas known_users/login_events verificadas")
+        logger.info(
+            "usage_tracking: tablas known_users/login_events/app_sessions/"
+            "announcements/bug_reports verificadas"
+        )
     except Exception as e:
         logger.warning("usage_tracking.ensure_tables falló: %s", str(e)[:200])
 

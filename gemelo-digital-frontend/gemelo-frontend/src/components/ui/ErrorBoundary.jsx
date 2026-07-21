@@ -36,7 +36,17 @@ export default class ErrorBoundary extends React.Component {
         at: new Date().toISOString(),
       };
       sessionStorage.setItem(CRASH_KEY, JSON.stringify(snapshot));
-    } catch (_e) { /* storage lleno o bloqueado — silencioso */ }
+    } catch { /* storage lleno o bloqueado — silencioso */ }
+    // Reportar a Sentry si está activo (window.__gemeloSentry lo setea main.jsx
+    // solo cuando VITE_SENTRY_DSN está definido). Best-effort.
+    try {
+      window.__gemeloSentry?.captureException(error, {
+        contexts: {
+          react: { componentStack: String(errorInfo?.componentStack || "") },
+        },
+        tags: { section: this.props.sectionName || "app" },
+      });
+    } catch { /* Sentry no disponible — silencioso */ }
   }
 
   handleRetry = () => {
@@ -44,7 +54,7 @@ export default class ErrorBoundary extends React.Component {
   };
 
   handleGoHome = () => {
-    try { sessionStorage.removeItem(CRASH_KEY); } catch (_e) { /* noop */ }
+    try { sessionStorage.removeItem(CRASH_KEY); } catch { /* noop */ }
     window.location.href = "/";
   };
 
@@ -57,7 +67,7 @@ export default class ErrorBoundary extends React.Component {
       await navigator.clipboard.writeText(raw);
       this.setState({ copied: true });
       setTimeout(() => this.setState({ copied: false }), 2000);
-    } catch (_e) { /* noop */ }
+    } catch { /* noop */ }
   };
 
   render() {

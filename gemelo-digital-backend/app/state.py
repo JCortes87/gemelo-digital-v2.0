@@ -87,6 +87,21 @@ def _maybe_cleanup() -> None:
                 if now - float(s.get("iat", 0)) > SESSION_TTL]
         for sid in dead:
             SESSION_STORE.pop(sid, None)
+    # Purge de filas viejas en Postgres (best-effort, hilo de fondo)
+    try:
+        from app.services import session_store_db
+        session_store_db.purge_expired_async()
+    except Exception:
+        pass
+
+
+def _db_upsert(session_id: str, entry: Dict[str, Any]) -> None:
+    """Write-through a Postgres (best-effort, no bloquea ni lanza)."""
+    try:
+        from app.services import session_store_db
+        session_store_db.upsert_async(session_id, entry, SESSION_TTL)
+    except Exception:
+        pass
  
  
 def save_session(session_id: str, token_data: Dict[str, Any]) -> None:
@@ -116,26 +131,46 @@ def save_session(session_id: str, token_data: Dict[str, Any]) -> None:
     with _STORE_LOCK:
         SESSION_STORE[session_id] = entry
         _persist_locked()
+    _db_upsert(session_id, entry)
 
 
 def get_session(session_id: str) -> Optional[Dict[str, Any]]:
-    """Retorna la sesión si existe y no expiró, o None."""
+    """Retorna la sesión si existe y no expiró, o None.
+
+    Fast-path: memoria. Si no está (p. ej. el backend se reinició/redesplegó),
+    fallback a Postgres (app_sessions) y rehidratación en memoria — así los
+    usuarios no pierden la sesión con cada deploy.
+    """
     _maybe_cleanup()
     with _STORE_LOCK:
         s = SESSION_STORE.get(session_id)
     if not s:
-        return None
+        # Fallback: ¿sobrevivió en Postgres a un reinicio?
+        try:
+            from app.services import session_store_db
+            s = session_store_db.fetch(session_id)
+        except Exception:
+            s = None
+        if not s:
+            return None
+        with _STORE_LOCK:
+            SESSION_STORE[session_id] = s
     if time.time() > float(s.get("expires_at", 0)):
         with _STORE_LOCK:
             SESSION_STORE.pop(session_id, None)
         return None
     return s
- 
- 
+
+
 def delete_session(session_id: str) -> None:
     with _STORE_LOCK:
         SESSION_STORE.pop(session_id, None)
         _persist_locked()
+    try:
+        from app.services import session_store_db
+        session_store_db.delete_async(session_id)
+    except Exception:
+        pass
  
  
 def get_access_token(session_id: str) -> Optional[str]:
@@ -206,7 +241,9 @@ def update_session_tokens(
 
         SESSION_STORE[session_id] = s
         _persist_locked()
-        return True
+        updated = dict(s)
+    _db_upsert(session_id, updated)
+    return True
 
 
 # ── Compatibilidad hacia atrás ────────────────────────────────────────────────

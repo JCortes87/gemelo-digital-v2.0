@@ -48,10 +48,47 @@ export async function apiDownload(path, fallbackFilename = "descarga") {
   setTimeout(() => URL.revokeObjectURL(url), 4000);
 }
 
+// ── Retry con backoff para GETs ──────────────────────────────────────────────
+// Un fallo transitorio de red (WiFi parpadeando, cold start del backend, 502
+// del balanceador) no debe romper la vista: se reintenta hasta 2 veces con
+// espera creciente. Solo GET (idempotente); nunca se reintentan aborts ni 4xx.
+const RETRY_STATUS = new Set([502, 503, 504]);
+const RETRY_DELAYS_MS = [500, 1500];
+
+function _sleep(ms, signal) {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) { reject(new DOMException("Aborted", "AbortError")); return; }
+    const t = setTimeout(resolve, ms);
+    signal?.addEventListener("abort", () => { clearTimeout(t); reject(new DOMException("Aborted", "AbortError")); }, { once: true });
+  });
+}
+
+async function _fetchGetWithRetry(url, init) {
+  let lastErr = null;
+  for (let attempt = 0; attempt <= RETRY_DELAYS_MS.length; attempt++) {
+    if (attempt > 0) await _sleep(RETRY_DELAYS_MS[attempt - 1], init.signal);
+    try {
+      const res = await fetch(url, init);
+      if (RETRY_STATUS.has(res.status) && attempt < RETRY_DELAYS_MS.length) {
+        lastErr = new Error(`HTTP ${res.status}`);
+        continue; // transitorio: reintentar
+      }
+      return res;
+    } catch (err) {
+      // AbortError: respetar la cancelación del llamador, no reintentar
+      if (err?.name === "AbortError") throw err;
+      // TypeError de fetch = fallo de red (DNS, conexión caída, CORS…)
+      lastErr = err;
+      if (attempt >= RETRY_DELAYS_MS.length) throw err;
+    }
+  }
+  throw lastErr || new Error("Fallo de red");
+}
+
 export async function apiGet(path, opts = {}) {
   const _sid = localStorage.getItem("gemelo_sid");
   const _authHeader = _sid ? { "Authorization": `Bearer ${_sid}` } : {};
-  const res = await fetch(apiUrl(path), {
+  const res = await _fetchGetWithRetry(apiUrl(path), {
     method: "GET",
     credentials: "include",
     headers: { Accept: "application/json", ..._authHeader, ...(opts.headers || {}) },

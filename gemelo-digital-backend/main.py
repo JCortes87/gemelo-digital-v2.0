@@ -44,6 +44,31 @@ from app.services.gemelo_db_service import build_course_overview_from_db
 logger = logging.getLogger("uvicorn.error")
 
 # ──────────────────────────────────────────────────────────────────────────────
+# Sentry (error tracking) — opcional: solo se activa si SENTRY_DSN está definido
+# en el entorno. Sin DSN la app funciona exactamente igual que antes.
+# ──────────────────────────────────────────────────────────────────────────────
+_SENTRY_DSN = os.getenv("SENTRY_DSN", "").strip()
+if _SENTRY_DSN:
+    try:
+        import sentry_sdk
+
+        sentry_sdk.init(
+            dsn=_SENTRY_DSN,
+            environment=os.getenv("SENTRY_ENVIRONMENT", "production"),
+            release=os.getenv("SENTRY_RELEASE") or None,
+            # Muestreo bajo de performance para no inflar la cuota gratuita
+            traces_sample_rate=float(os.getenv("SENTRY_TRACES_SAMPLE_RATE", "0.1")),
+            # Nunca enviar PII (emails, cookies, headers de auth) a Sentry
+            send_default_pii=False,
+        )
+        logger.info(
+            "Sentry inicializado (environment=%s)",
+            os.getenv("SENTRY_ENVIRONMENT", "production"),
+        )
+    except Exception as _sentry_err:  # sdk no instalado o DSN inválido
+        logger.warning("Sentry no pudo inicializarse: %s", str(_sentry_err)[:200])
+
+# ──────────────────────────────────────────────────────────────────────────────
 # App
 # ──────────────────────────────────────────────────────────────────────────────
 app = FastAPI(title="Gemelo Digital - Backend")
