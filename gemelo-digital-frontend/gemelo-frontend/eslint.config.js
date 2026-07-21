@@ -5,7 +5,9 @@ import reactRefresh from 'eslint-plugin-react-refresh'
 import { defineConfig, globalIgnores } from 'eslint/config'
 
 export default defineConfig([
-  globalIgnores(['dist']),
+  // 'dist*' cubre también copias viejas de builds ("dist - copia", "dist 1 Marzo"):
+  // son JS minificado que generaba ~400 falsos errores de lint.
+  globalIgnores(['dist', 'dist*/**']),
   {
     files: ['**/*.{js,jsx}'],
     extends: [
@@ -23,7 +25,20 @@ export default defineConfig([
       },
     },
     rules: {
-      'no-unused-vars': ['error', { varsIgnorePattern: '^[A-Z_]' }],
+      // caughtErrorsIgnorePattern: el patrón `catch (_e)` es intencional en el código
+      'no-unused-vars': ['error', { varsIgnorePattern: '^[A-Z_]', caughtErrorsIgnorePattern: '^_' }],
+      // react-hooks/exhaustive-deps ya viene activo (warn) via reactHooks.configs.flat.recommended;
+      // lo dejamos explícito para que no se pierda si cambia el preset.
+      'react-hooks/exhaustive-deps': 'warn',
+      // Reglas de bajo ruido que evitan bugs comunes:
+      'no-var': 'error',
+      'prefer-const': ['warn', { destructuring: 'all' }],
+      eqeqeq: ['warn', 'smart'],
     },
+  },
+  {
+    // Archivos de configuración corren en Node, no en el navegador
+    files: ['vite.config.js', 'eslint.config.js'],
+    languageOptions: { globals: globals.node },
   },
 ])

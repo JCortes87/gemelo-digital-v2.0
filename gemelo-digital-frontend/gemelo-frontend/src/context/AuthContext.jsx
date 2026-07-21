@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect } from "react";
+import React, { createContext, useContext, useState, useEffect, useMemo, useCallback } from "react";
 import { apiUrl } from "../utils/api";
 
 const AuthContext = createContext(null);
@@ -60,7 +60,7 @@ export function AuthProvider({ children }) {
                 { type: "gemelo-auth", sid: _sid, orgUnitId: _hashOu, firstLogin: parts[3] === "1" },
                 window.location.origin,
               );
-            } catch {}
+            } catch { /* noop */ }
             // Dar 300ms para que el mensaje llegue antes de cerrar
             setTimeout(() => window.close(), 300);
             return; // No seguir inicializando el contexto en la ventana popup
@@ -176,35 +176,37 @@ export function AuthProvider({ children }) {
     })();
   }, []);
 
-  const logout = async () => {
+  const logout = useCallback(async () => {
     try {
       const sid = localStorage.getItem("gemelo_sid");
       const hdrs = sid ? { Authorization: `Bearer ${sid}` } : {};
       await fetch(apiUrl("/auth/logout"), { method: "POST", credentials: "include", headers: hdrs });
-    } catch {}
+    } catch { /* noop */ }
     localStorage.removeItem("gemelo_sid");
     sessionStorage.clear();
     // Redirect to root (login) instead of reload to avoid 403 on SPA routes
     window.location.href = window.location.origin + "/";
-  };
+  }, []);
 
-  const role = authUser?.appRole || "instructor";
+  // Memoizado: sin esto el objeto value se recrea en cada render del provider
+  // y TODOS los consumidores de useAuth() re-renderizan en cascada.
+  const value = useMemo(() => ({
+    authUser,
+    authChecked,
+    role: authUser?.appRole || "instructor",
+    allRoles: authUser?.appRoles || ["instructor"],
+    isDualRole: authUser?.isDualRole || false,
+    isInstructor: authUser?.isInstructor ?? true,
+    isStudent: authUser?.isStudent ?? false,
+    isSuperAdmin: authUser?.isSuperAdmin ?? false,
+    logout,
+    showTutorial,
+    setShowTutorial,
+    initialOrgUnitId,
+  }), [authUser, authChecked, logout, showTutorial, initialOrgUnitId]);
 
   return (
-    <AuthContext.Provider value={{
-      authUser,
-      authChecked,
-      role,
-      allRoles: authUser?.appRoles || ["instructor"],
-      isDualRole: authUser?.isDualRole || false,
-      isInstructor: authUser?.isInstructor ?? true,
-      isStudent: authUser?.isStudent ?? false,
-      isSuperAdmin: authUser?.isSuperAdmin ?? false,
-      logout,
-      showTutorial,
-      setShowTutorial,
-      initialOrgUnitId,
-    }}>
+    <AuthContext.Provider value={value}>
       {children}
     </AuthContext.Provider>
   );

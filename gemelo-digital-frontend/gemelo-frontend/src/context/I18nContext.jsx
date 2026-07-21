@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useCallback } from "react";
+import React, { createContext, useContext, useState, useEffect, useCallback, useMemo } from "react";
 
 /**
  * Lightweight i18n context — no external library.
@@ -118,7 +118,7 @@ export function I18nProvider({ children }) {
   });
 
   useEffect(() => {
-    try { localStorage.setItem("gemelo_locale", locale); } catch {}
+    try { localStorage.setItem("gemelo_locale", locale); } catch { /* noop */ }
     if (typeof document !== "undefined") document.documentElement.lang = locale;
   }, [locale]);
 
@@ -135,8 +135,14 @@ export function I18nProvider({ children }) {
     setLocaleState((l) => (l === "es" ? "en" : "es"));
   }, []);
 
+  // Memoizado: evita re-renders en cascada de todos los consumidores de useI18n()
+  const value = useMemo(
+    () => ({ locale, t, setLocale, toggleLocale }),
+    [locale, t, setLocale, toggleLocale],
+  );
+
   return (
-    <I18nContext.Provider value={{ locale, t, setLocale, toggleLocale }}>
+    <I18nContext.Provider value={value}>
       {children}
     </I18nContext.Provider>
   );

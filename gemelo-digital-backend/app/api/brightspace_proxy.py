@@ -19,7 +19,8 @@ from app.state import get_session, get_access_token
 from app.api.deps import (
     BRIGHTSPACE_BASE_URL, LP_VERSION, LE_VERSION,
     SESSION_COOKIE, _get_session_id, _require_session,
-    _require_token_from_request, _auth_headers, _bs_get, _get_whoami_id,
+    _require_token_from_request, _auth_headers, _bs_get, _bs_get_cached,
+    _get_whoami_id,
 )
 
 logger = logging.getLogger("uvicorn.error")
@@ -35,7 +36,7 @@ async def brightspace_whoami(request: Request):
     if err:
         return err
     url = f"{BRIGHTSPACE_BASE_URL}/d2l/api/lp/{LP_VERSION}/users/whoami"
-    status, data = await _bs_get(url, _auth_headers(token))
+    status, data = await _bs_get_cached(url, _auth_headers(token))
     return JSONResponse(status_code=status, content=data)
 
 
@@ -61,7 +62,8 @@ async def brightspace_semesters(
             params: dict = {"orgUnitType": "5"}
             if bookmark:
                 params["bookmark"] = bookmark
-            status, data = await _bs_get(url, headers, params)
+            # Estructura organizativa: casi estática → caché 5 min (#11)
+            status, data = await _bs_get_cached(url, headers, params)
             if status != 200:
                 break
             items = data if isinstance(data, list) else (data.get("Items") or data.get("items") or [])
@@ -118,7 +120,8 @@ async def _fetch_all_enrollments(
             f"{BRIGHTSPACE_BASE_URL}/d2l/api/lp/{LP_VERSION}"
             f"/enrollments/users/{user_id}/orgUnits/"
         )
-        status, data = await _bs_get(url, headers, params)
+        # Enrollments: cambian poco durante una sesión → caché 5 min (#11)
+        status, data = await _bs_get_cached(url, headers, params)
         if status != 200:
             break
 
@@ -156,7 +159,8 @@ async def _fetch_my_enrollments(
             params["bookmark"] = bookmark
 
         url = f"{BRIGHTSPACE_BASE_URL}/d2l/api/lp/{LP_VERSION}/enrollments/myenrollments/"
-        status, data = await _bs_get(url, headers, params)
+        # Enrollments propios: cambian poco durante una sesión → caché 5 min (#11)
+        status, data = await _bs_get_cached(url, headers, params)
         if status != 200:
             logger.warning("myenrollments failed status=%s data=%s", status, str(data)[:200])
             break
@@ -251,7 +255,8 @@ async def brightspace_all_courses_search(
             p = dict(params)
             if bookmark:
                 p["bookmark"] = bookmark
-            last_status, data = await _bs_get(base_url, headers, p)
+            # orgstructure: casi estático → caché 5 min (#11)
+            last_status, data = await _bs_get_cached(base_url, headers, p)
             if last_status != 200:
                 return last_status
             if isinstance(data, list):
@@ -279,7 +284,7 @@ async def brightspace_all_courses_search(
             st_code = await _collect({"orgUnitType": "3", "orgUnitCode": q})
         # 3) ID exacto de org unit
         if q.isdigit() and q not in seen_ids:
-            st_id, data_id = await _bs_get(base_url + q, headers, {})
+            st_id, data_id = await _bs_get_cached(base_url + q, headers, {})
             if st_id == 200 and isinstance(data_id, dict):
                 _add_items([data_id])
         if not items_raw and st_name != 200 and st_code != 200:
@@ -350,7 +355,8 @@ async def brightspace_my_courses(
     params: dict = {}
     if bookmark:
         params["bookmark"] = bookmark
-    status, data = await _bs_get(url, headers, params)
+    # Enrollments: cambian poco durante una sesión → caché 5 min (#11)
+    status, data = await _bs_get_cached(url, headers, params)
     return JSONResponse(status_code=status, content=data)
 
 
@@ -500,7 +506,7 @@ async def brightspace_courses_enrolled(
                 params: dict = {"orgUnitType": "5"}
                 if bookmark:
                     params["bookmark"] = bookmark
-                _status, _data = await _bs_get(sem_url, headers, params)
+                _status, _data = await _bs_get_cached(sem_url, headers, params)
                 if _status != 200:
                     break
                 _items = _data if isinstance(_data, list) else (_data.get("Items") or _data.get("items") or [])
@@ -553,7 +559,8 @@ async def brightspace_courses_enrolled(
                     p: dict = {"ouTypeId": "3"}
                     if bm:
                         p["bookmark"] = bm
-                    st, dt = await _bs_get(url, headers, p)
+                    # Descendientes de un semestre: casi estático → caché 5 min (#11)
+                    st, dt = await _bs_get_cached(url, headers, p)
                     if st != 200:
                         break
                     items = dt if isinstance(dt, list) else (dt.get("Items") or dt.get("items") or [])
@@ -621,7 +628,9 @@ async def brightspace_courses_enrolled(
                     f"/enrollments/orgUnits/{org_id}/users/{target_user_id}"
                 )
                 try:
-                    status, data = await _bs_get(url, headers)
+                    # Membresía usuario↔curso: estable en el corto plazo →
+                    # caché 5 min. Ahorra cientos de llamadas por búsqueda (#11)
+                    status, data = await _bs_get_cached(url, headers)
                     if status == 200 and isinstance(data, dict):
                         role_id = data.get("RoleId")
                         ou_info = data.get("OrgUnit") or {}

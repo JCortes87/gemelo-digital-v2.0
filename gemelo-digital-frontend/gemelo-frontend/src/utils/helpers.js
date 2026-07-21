@@ -88,7 +88,11 @@ export function isVisibleContentItem(item) {
 }
 
 export function safeAvg(list) {
+  // Nota (#16): se filtran null/undefined/"" ANTES de Number() porque
+  // Number(null) === 0 — sin este filtro, un dato faltante contaba como 0
+  // y arrastraba el promedio hacia abajo.
   const nums = (Array.isArray(list) ? list : [])
+    .filter((x) => x !== null && x !== undefined && x !== "")
     .map((x) => Number(x))
     .filter((x) => Number.isFinite(x));
   if (!nums.length) return null;

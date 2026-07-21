@@ -117,6 +117,38 @@ README ni en `.env` (el `.gitignore` ya excluye `.env`).
 
 # Registro de cambios
 
+## 2026-07-21 (4) — Rendimiento, calidad y base de tests
+
+- **`useMemo`/`useCallback` en los 5 context providers** (Auth, Course, Theme,
+  I18n, Toast): el `value` del provider ya no se recrea en cada render, así los
+  consumidores no re-renderizan sin necesidad.
+- **Caché en memoria de 5 min para GETs estables a Brightspace** (`_bs_get_cached`
+  en `app/api/deps.py`): whoami, enrollments, estructura organizativa, semestres
+  y checks de membresía. Clave por hash del token (aislamiento por usuario),
+  solo cachea respuestas 200, deep-copy en lectura/escritura. Notas, entregas y
+  datos vivos siguen sin caché.
+- **Bundle partido en vendor chunks** (`vite.config.js`, forma función de
+  `manualChunks` requerida por Vite 8/Rolldown): `vendor-react` 232 KB y
+  `vendor-recharts` 376 KB se cachean entre deploys; el entry `index` bajó de
+  315 KB a 83 KB. `ANALYZE=1 npm run build` genera `dist/stats.html` (treemap).
+- **Keys estables en listas** (antes `Math.random()` en TeacherDashboard y
+  SmartAlerts): ya no se desmonta/remonta cada fila en cada render.
+- **ESLint saneado y más estricto** (`eslint.config.js`): se ignoran las copias
+  viejas de builds (`dist*/`) que generaban ~410 falsos errores; nuevas reglas
+  `no-var`, `prefer-const`, `eqeqeq` y `caughtErrorsIgnorePattern` para el
+  patrón `catch (_e)`. Baseline real: 104 problemas (antes reportaba 517).
+- **Migraciones Alembic reconciliadas**: existían TRES `add_sync_control_tables`;
+  se eliminaron las dos vacías (87095c55fccf, ef7efb89bf39) y `712ebad8e3d1` se
+  re-conectó a `0001_initial_schema`. Cadena lineal verificada con
+  `alembic history`. Si una BD quedara marcada en una revisión borrada (muy
+  improbable, eran no-ops): `alembic stamp head`.
+- **Primera base de tests (75 en total)**: frontend `vitest` (43 tests para
+  `utils/helpers.js` y `utils/colors.js` — riesgo, cortes, fórmulas, colores;
+  `npm test`) y backend `pytest` (32 tests para sesiones en `app/state.py`,
+  auth en `app/api/deps.py` incl. aislamiento de caché por usuario, y roles
+  `_require_super_admin`; `pip install -r requirements-dev.txt && pytest`).
+  Bonus: los tests destaparon que `safeAvg` contaba `null` como 0 (corregido).
+
 ## 2026-07-21 (3) — Mejoras de alto impacto (UX y confiabilidad)
 
 - **Sesiones persistentes entre redeploys** (`app_sessions` en Postgres):

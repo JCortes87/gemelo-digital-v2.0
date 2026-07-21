@@ -1,9 +1,15 @@
 """add sync control tables
 
 Revision ID: 712ebad8e3d1
-Revises: ef7efb89bf39
+Revises: 0001_initial_schema
 Create Date: 2026-03-24 11:15:55.252070
 
+Nota (#20): existían tres migraciones "add_sync_control_tables". Las otras dos
+(87095c55fccf y ef7efb89bf39) eran esqueletos vacíos autogenerados (upgrade y
+downgrade con `pass`) y se eliminaron; esta se re-conectó a 0001_initial_schema.
+Si alguna BD quedó marcada exactamente en una de las revisiones borradas
+(prácticamente imposible: eran no-ops instantáneos), se corrige con
+`alembic stamp head`.
 """
 from typing import Sequence, Union
 
@@ -13,7 +19,7 @@ import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision: str = '712ebad8e3d1'
-down_revision: Union[str, Sequence[str], None] = 'ef7efb89bf39'
+down_revision: Union[str, Sequence[str], None] = '0001_initial_schema'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

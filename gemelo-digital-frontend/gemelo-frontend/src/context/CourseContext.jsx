@@ -1,6 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useMemo, useCallback } from "react";
 import { apiGetCached } from "../utils/api";
-import { computeRiskFromPct, suggestRouteForStudent, flattenOutcomeDescriptions } from "../utils/helpers";
 
 const CourseContext = createContext(null);
 
@@ -15,7 +14,7 @@ export function CourseProvider({ children, orgUnitId: externalOrgUnitId }) {
       setOrgUnitId(externalOrgUnitId);
       setOrgUnitInput(String(externalOrgUnitId));
     }
-  }, [externalOrgUnitId]);
+  }, [externalOrgUnitId, orgUnitId]);
 
   // Course data state
   const [overview, setOverview] = useState(null);
@@ -51,9 +50,11 @@ export function CourseProvider({ children, orgUnitId: externalOrgUnitId }) {
     } catch { /* ignore */ }
   }, [orgUnitId]);
 
-  const baseThresholds = overview?.thresholds || { critical: 50, watch: 70 };
   const override = thresholdOverrides[orgUnitId];
-  const thresholds = override ? { ...baseThresholds, ...override } : baseThresholds;
+  const thresholds = useMemo(() => {
+    const base = overview?.thresholds || { critical: 50, watch: 70 };
+    return override ? { ...base, ...override } : base;
+  }, [overview, override]);
 
   const setCourseThresholds = useCallback((next) => {
     if (!orgUnitId) return;
@@ -137,49 +138,61 @@ export function CourseProvider({ children, orgUnitId: externalOrgUnitId }) {
     setOverview(null);
   }, []);
 
+  // Memoizado: el objeto value solo cambia cuando cambia algún dato real.
+  // Los setters de useState son estables, por eso no van en las dependencias.
+  const value = useMemo(() => ({
+    orgUnitId,
+    orgUnitInput,
+    setOrgUnitId: selectCourse,
+    setOrgUnitInput,
+    clearCourse,
+
+    overview,
+    setOverview,
+    studentsList,
+    setStudentsList,
+    studentRows,
+    setStudentRows,
+    raDashboard,
+    setRaDashboard,
+    learningOutcomesPayload,
+    setLearningOutcomesPayload,
+    outcomesMap,
+    setOutcomesMap,
+    contentRoot,
+    setContentRoot,
+    courseInfo,
+    setCourseInfo,
+
+    loading,
+    setLoading,
+    error,
+    setError,
+
+    thresholds,
+    isThresholdOverridden: !!override,
+    setCourseThresholds,
+    resetCourseThresholds,
+
+    courseList,
+    loadingCourses,
+    courseListLoaded,
+    courseListError,
+    setCourseListLoaded,
+    searchCourses,
+    loadCourseList,
+  }), [
+    orgUnitId, orgUnitInput, selectCourse, clearCourse,
+    overview, studentsList, studentRows, raDashboard,
+    learningOutcomesPayload, outcomesMap, contentRoot, courseInfo,
+    loading, error,
+    thresholds, override, setCourseThresholds, resetCourseThresholds,
+    courseList, loadingCourses, courseListLoaded, courseListError,
+    searchCourses, loadCourseList,
+  ]);
+
   return (
-    <CourseContext.Provider value={{
-      orgUnitId,
-      orgUnitInput,
-      setOrgUnitId: selectCourse,
-      setOrgUnitInput,
-      clearCourse,
-
-      overview,
-      setOverview,
-      studentsList,
-      setStudentsList,
-      studentRows,
-      setStudentRows,
-      raDashboard,
-      setRaDashboard,
-      learningOutcomesPayload,
-      setLearningOutcomesPayload,
-      outcomesMap,
-      setOutcomesMap,
-      contentRoot,
-      setContentRoot,
-      courseInfo,
-      setCourseInfo,
-
-      loading,
-      setLoading,
-      error,
-      setError,
-
-      thresholds,
-      isThresholdOverridden: !!override,
-      setCourseThresholds,
-      resetCourseThresholds,
-
-      courseList,
-      loadingCourses,
-      courseListLoaded,
-      courseListError,
-      setCourseListLoaded,
-      searchCourses,
-      loadCourseList,
-    }}>
+    <CourseContext.Provider value={value}>
       {children}
     </CourseContext.Provider>
   );

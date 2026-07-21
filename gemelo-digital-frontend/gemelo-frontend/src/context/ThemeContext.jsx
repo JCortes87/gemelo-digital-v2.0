@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect } from "react";
+import React, { createContext, useContext, useState, useEffect, useMemo, useCallback } from "react";
 
 const ThemeContext = createContext(null);
 
@@ -13,10 +13,16 @@ export function ThemeProvider({ children }) {
     localStorage.setItem("gemelo_dark", darkMode ? "1" : "0");
   }, [darkMode]);
 
-  const toggleDark = () => setDarkMode((v) => !v);
+  const toggleDark = useCallback(() => setDarkMode((v) => !v), []);
+
+  // Memoizado: evita re-renders en cascada de todos los consumidores de useTheme()
+  const value = useMemo(
+    () => ({ darkMode, setDarkMode, toggleDark }),
+    [darkMode, toggleDark],
+  );
 
   return (
-    <ThemeContext.Provider value={{ darkMode, setDarkMode, toggleDark }}>
+    <ThemeContext.Provider value={value}>
       {children}
     </ThemeContext.Provider>
   );

@@ -27,7 +27,7 @@ function normalizeBackendSeverity(s) {
 
 // Convert a backend "Radar docente" alert (from overview.alerts) into the
 // same shape SmartAlerts uses internally.
-function normalizeBackendAlert(a) {
+function normalizeBackendAlert(a, index = 0) {
   if (!a || typeof a !== "object") return null;
   const severity = normalizeBackendSeverity(a.severity);
   // Icons by content type (Lucide component references)
@@ -48,7 +48,9 @@ function normalizeBackendAlert(a) {
   else if (t.includes("ra") || t.includes("resultado") || t.includes("aprendiz")) icon = icons.ra;
 
   return {
-    id: a.id || `backend-${a.title || Math.random()}`,
+    // Key estable: nunca Math.random() (rompe la reconciliación de React y
+    // re-monta el nodo en cada render). El índice es estable dentro del render.
+    id: a.id || `backend-${a.title || `alert-${index}`}`,
     severity,
     icon,
     title: a.title || "Observación del curso",
@@ -78,10 +80,10 @@ function SmartAlerts({
     const backendList = Array.isArray(backendAlerts)
       ? backendAlerts
       : (Array.isArray(overview?.alerts) ? overview.alerts : []);
-    for (const b of backendList) {
-      const norm = normalizeBackendAlert(b);
+    backendList.forEach((b, i) => {
+      const norm = normalizeBackendAlert(b, i);
       if (norm) out.push(norm);
-    }
+    });
 
     if (loaded.length === 0) return out;
 

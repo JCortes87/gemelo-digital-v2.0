@@ -2000,9 +2000,9 @@ function AlertsPanel({ alerts }) {
 
       {open && (
         <div style={{ marginTop: 14, display: "flex", flexDirection: "column", gap: 10 }}>
-          {sorted.map((a) => (
+          {sorted.map((a, i) => (
             <div
-              key={a.id || `${a.title}-${Math.random()}`}
+              key={a.id || `${a.title || "alerta"}-${i}`}
               style={{
                 border: "1px solid var(--border)",
                 borderRadius: 12,

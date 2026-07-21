@@ -1,7 +1,11 @@
 """Config compartida y helpers de sesion/proxy Brightspace (extraidos de main.py)."""
 from __future__ import annotations
 
+import copy
+import hashlib
+import json
 import os
+import time
 
 import httpx
 from fastapi import HTTPException, Request
@@ -116,9 +120,62 @@ async def _bs_get(
     return r.status_code, body
 
 
+# ──────────────────────────────────────────────────────────────────────────────
+# Caché TTL corta para GETs repetidos a Brightspace (#11)
+#
+# Cada refresh del dashboard repetía llamadas idénticas (whoami, enrollments,
+# orgstructure/semestres). Estos datos cambian muy poco → una caché en memoria
+# de 5 minutos elimina la mayoría de round-trips a Brightspace.
+#
+# - La clave incluye un hash del token: cada usuario tiene su propia entrada
+#   (nunca se filtra la respuesta de un usuario a otro).
+# - Solo se cachean respuestas 200. Los errores siempre se re-consultan.
+# - Se devuelve una copia profunda para que los handlers puedan mutar el
+#   resultado sin corromper la entrada cacheada.
+# - Uso EXPLÍCITO (opt-in): solo los endpoints estables llaman _bs_get_cached;
+#   notas, entregas y datos "vivos" siguen usando _bs_get directo.
+# ──────────────────────────────────────────────────────────────────────────────
+_BS_CACHE: dict[str, tuple[float, int, object]] = {}
+_BS_CACHE_MAX = 1000
+BS_CACHE_TTL_S = 300.0  # 5 minutos
+
+
+def _bs_cache_key(url: str, headers: dict, params: dict | None) -> str:
+    tok = str(headers.get("Authorization", ""))
+    tok_hash = hashlib.sha256(tok.encode("utf-8")).hexdigest()[:16]
+    return f"{tok_hash}|{url}|{json.dumps(params or {}, sort_keys=True, default=str)}"
+
+
+async def _bs_get_cached(
+    url: str,
+    headers: dict,
+    params: dict | None = None,
+    ttl: float = BS_CACHE_TTL_S,
+    timeout: int = 30,
+) -> tuple[int, dict | list]:
+    key = _bs_cache_key(url, headers, params)
+    now = time.monotonic()
+    hit = _BS_CACHE.get(key)
+    if hit and (now - hit[0]) < ttl:
+        return hit[1], copy.deepcopy(hit[2])
+
+    status, body = await _bs_get(url, headers, params, timeout)
+    if status == 200:
+        if len(_BS_CACHE) >= _BS_CACHE_MAX:
+            # Purga de expirados; si sigue llena (tráfico inusual), se vacía.
+            expired = [k for k, v in _BS_CACHE.items() if (now - v[0]) >= ttl]
+            for k in expired:
+                _BS_CACHE.pop(k, None)
+            if len(_BS_CACHE) >= _BS_CACHE_MAX:
+                _BS_CACHE.clear()
+        _BS_CACHE[key] = (now, status, copy.deepcopy(body))
+    return status, body
+
+
 async def _get_whoami_id(headers: dict) -> tuple[str | None, JSONResponse | None]:
     url = f"{BRIGHTSPACE_BASE_URL}/d2l/api/lp/{LP_VERSION}/users/whoami"
-    status, data = await _bs_get(url, headers)
+    # whoami es estable durante la vida del token → cacheable 5 min
+    status, data = await _bs_get_cached(url, headers)
     if status != 200:
         return None, JSONResponse(
             status_code=502,

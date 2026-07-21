@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useCallback, useEffect } from "react";
+import React, { createContext, useContext, useState, useCallback, useEffect, useMemo } from "react";
 import { X } from "lucide-react";
 import { getSeverityTokens, normalizeSeverity } from "../components/ui/StatusBadge";
 
@@ -31,12 +31,14 @@ export function ToastProvider({ children }) {
     setToasts((prev) => prev.filter((t) => t.id !== id));
   }, []);
 
-  const toast = {
+  // Memoizado: antes se recreaba en cada render (cada toast nuevo) y todos
+  // los consumidores de useToast() re-renderizaban aunque no mostraran nada.
+  const toast = useMemo(() => ({
     info: (msg, opts) => addToast(msg, { ...opts, type: "info" }),
     success: (msg, opts) => addToast(msg, { ...opts, type: "success" }),
     warning: (msg, opts) => addToast(msg, { ...opts, type: "warning" }),
     error: (msg, opts) => addToast(msg, { ...opts, type: "error", duration: opts?.duration || 8000 }),
-  };
+  }), [addToast]);
 
   return (
     <ToastContext.Provider value={toast}>
