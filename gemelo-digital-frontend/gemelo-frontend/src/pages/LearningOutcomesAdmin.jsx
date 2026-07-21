@@ -6,6 +6,7 @@ import {
   TrendingUp, BookOpen, ArrowLeft, Upload, Download, Trash2, Unlink,
 } from "lucide-react";
 import { apiGet, apiPost, apiPut, mapLimit } from "../utils/api";
+import { downloadCsv } from "../utils/export";
 import { injectStyles } from "../styles/global";
 
 // ────────────────────────────────────────────────────────────────
@@ -1106,6 +1107,24 @@ export default function LearningOutcomesAdmin() {
     setBulkSel(prev => ({ ...prev, [id]: !prev[id] }));
   }, []);
 
+  // Descarga CSV (Excel-friendly, con BOM) de los cursos marcados: id, nombre,
+  // código, tipo, estado RA y # de RA (si ya se corrió "Analizar estado").
+  const exportSelectedCsv = useCallback(() => {
+    if (bulkIds.length === 0) return;
+    const byId = new Map((semCourses?.items || []).map(c => [Number(c.id), c]));
+    const headers = ["ID", "Nombre", "Código", "Tipo", "Estado RA", "# RA"];
+    const rows = bulkIds.map(id => {
+      const c = byId.get(Number(id)) || {};
+      const st = analysis[id];
+      const statusLabel = st ? (STATUS_META[st.status]?.label || st.status || "") : "Sin analizar";
+      const raCount = st && typeof st.raCount === "number" ? st.raCount : "";
+      return [id, c.name || "", c.code || "", c.typeName || "", statusLabel, raCount];
+    });
+    const stamp = new Date().toISOString().slice(0, 10);
+    const sem = semCourses?.orgUnitId ? `-sem${semCourses.orgUnitId}` : "";
+    downloadCsv(`cursos-seleccionados${sem}-${stamp}.csv`, headers, rows);
+  }, [bulkIds, semCourses, analysis]);
+
   // Marca/desmarca todas las ofertas VISIBLES (respeta filtro de texto/estado).
   const toggleBulkVisible = useCallback(() => {
     const allOn = coursesFiltered.length > 0 && coursesFiltered.every(c => bulkSel[c.id]);
@@ -2141,6 +2160,14 @@ export default function LearningOutcomesAdmin() {
                             style={{ padding: "6px 10px", borderRadius: 8, border: "1.5px solid var(--border)", cursor: "pointer", background: "transparent", color: "var(--muted)", fontSize: 11.5, fontWeight: 700, fontFamily: "var(--font)" }}
                           >
                             Limpiar
+                          </button>
+                          <button
+                            onClick={exportSelectedCsv}
+                            title="Descargar los cursos marcados en CSV (se abre en Excel)"
+                            style={{ padding: "6px 12px", borderRadius: 8, border: "1.5px solid var(--border)", cursor: "pointer", background: "var(--card)", color: "var(--text)", fontSize: 11.5, fontWeight: 800, fontFamily: "var(--font)", display: "inline-flex", alignItems: "center", gap: 6 }}
+                          >
+                            <Download size={13} strokeWidth={2.4} />
+                            Descargar CSV
                           </button>
                           <button
                             onClick={openBulkPanel}
