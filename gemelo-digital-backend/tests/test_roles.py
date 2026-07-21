@@ -1,4 +1,4 @@
-"""Tests de autorización por rol (_require_super_admin en app/api/gemelo.py) — #16.
+"""Tests de autorización por rol (_require_super_admin en app/api/gemelo_admin.py) — #16.
 
 Autoriza si: user_id ∈ SUPERADMIN_IDS, o rol de sistema es
 Administrator / Super Administrator. Cualquier otro → 403.
@@ -8,7 +8,7 @@ from types import SimpleNamespace
 import pytest
 from fastapi import HTTPException
 
-from app.api import gemelo
+from app.api import gemelo_admin as gemelo
 
 
 def _patch_session(monkeypatch, session):

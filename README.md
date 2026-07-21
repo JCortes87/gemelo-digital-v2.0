@@ -8,6 +8,17 @@ Plataforma de analítica académica para CESA (Colegio de Estudios Superiores de
 
 ---
 
+## Mantenimiento — 2026.7.21 (refactor interno, sin cambios funcionales)
+
+Dos tandas de mantenimiento sin impacto en la API ni en la UI:
+
+- **Refactor #15 — modularización de los dos archivos más grandes del repo:**
+  - `TeacherDashboard.jsx` (8.050 → 4.184 líneas): componentes extraídos a `src/pages/teacher/` — `dashboardStyles` (CSS del dashboard), `primitives` (10 átomos de UI), `panels` (13 bloques), `layout` (sidebar/topbar), `modals`, `onboarding` y `RaLinker`. Bundle idéntico (misma huella de bytes) y smoke test en jsdom que valida imports, exports y render de los módulos extraídos.
+  - `gemelo.py` (2.281 → 945 líneas): partido en sub-routers FastAPI — `gemelo_outcomes.py` (RAs: registry, alignments, export/import, bulk-create), `gemelo_debug.py` (endpoints de debug), `gemelo_admin.py` (bug reports, anuncios, usage) y `gemelo_shared.py` (helpers comunes). Verificado con diff de rutas: las **86 rutas** registradas son idénticas antes y después.
+- **Tanda previa (misma versión):** caché Brightspace de 5 min por usuario en backend, vendor chunks del bundle (react/recharts separados), keys estables en listas, providers memoizados, ESLint más estricto (no-var, prefer-const, eqeqeq), migraciones Alembic reconciliadas en cadena lineal y **primera base de tests**: 32 en backend (pytest: sesiones, deps de cache, roles) y 52 en frontend (vitest: helpers, colores, smoke del refactor). Se corrigió un bug real detectado por los tests: `safeAvg` contaba `null` como 0 y arrastraba los promedios hacia abajo.
+
+---
+
 ## Novedades — 2026.7.10 (Resultados de Aprendizaje)
 
 Actualización centrada en la administración de **Resultados de Aprendizaje (RA)** desde la consola super-admin (`/outcomes`):
