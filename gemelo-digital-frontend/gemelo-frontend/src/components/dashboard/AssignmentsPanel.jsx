@@ -141,15 +141,15 @@ function AssignmentsPanel({ orgUnitId }) {
   }
 
   const miniStats = [
-    { label: "Creadas", value: stats.created, color: "var(--brand)", icon: "📝" },
-    { label: "Con entregas", value: stats.withSubmissions, color: COLORS.ok, icon: "📥" },
-    { label: "Calificadas", value: stats.graded, color: COLORS.brand, icon: "✅" },
-    { label: "Vencidas", value: stats.overdue, color: stats.overdue > 0 ? COLORS.critical : "var(--muted)", icon: "⏰" },
+    { label: "Creadas", value: stats.created, color: "var(--brand)", bg: "var(--brand-light)", icon: "📝" },
+    { label: "Con entregas", value: stats.withSubmissions, color: COLORS.ok, bg: "var(--ok-bg)", icon: "📥" },
+    { label: "Calificadas", value: stats.graded, color: COLORS.brand, bg: "var(--brand-light)", icon: "✅" },
+    { label: "Vencidas", value: stats.overdue, color: stats.overdue > 0 ? COLORS.critical : "var(--muted)", bg: stats.overdue > 0 ? "var(--critical-bg)" : "var(--bg)", icon: "⏰" },
   ];
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-      {/* Mini KPIs */}
+      {/* Mini KPIs — fichas centradas con icono */}
       <div
         style={{
           display: "grid",
@@ -161,39 +161,53 @@ function AssignmentsPanel({ orgUnitId }) {
           <div
             key={s.label}
             style={{
-              padding: "10px 12px",
+              padding: "14px 12px",
               border: "1px solid var(--border)",
               borderRadius: 12,
               background: "var(--card)",
               display: "flex",
+              flexDirection: "column",
               alignItems: "center",
-              gap: 10,
+              gap: 6,
+              textAlign: "center",
             }}
           >
-            <span style={{ fontSize: 18 }} aria-hidden="true">{s.icon}</span>
-            <div>
-              <div
-                style={{
-                  fontSize: 20,
-                  fontWeight: 900,
-                  fontFamily: "var(--font-mono)",
-                  color: s.color,
-                  lineHeight: 1.1,
-                }}
-              >
-                {s.value}
-              </div>
-              <div
-                style={{
-                  fontSize: 10,
-                  color: "var(--muted)",
-                  fontWeight: 700,
-                  textTransform: "uppercase",
-                  letterSpacing: "0.05em",
-                }}
-              >
-                {s.label}
-              </div>
+            <div
+              style={{
+                width: 38,
+                height: 38,
+                borderRadius: 10,
+                background: s.bg,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                fontSize: 18,
+              }}
+              aria-hidden="true"
+            >
+              {s.icon}
+            </div>
+            <div
+              style={{
+                fontSize: 24,
+                fontWeight: 900,
+                fontFamily: "var(--font-mono)",
+                color: s.color,
+                lineHeight: 1.1,
+              }}
+            >
+              {s.value}
+            </div>
+            <div
+              style={{
+                fontSize: 10,
+                color: "var(--muted)",
+                fontWeight: 700,
+                textTransform: "uppercase",
+                letterSpacing: "0.05em",
+              }}
+            >
+              {s.label}
             </div>
           </div>
         ))}
