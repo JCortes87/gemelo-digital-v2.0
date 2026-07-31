@@ -2134,69 +2134,69 @@ const contentKpis = useMemo(() => {
           </div>
         </div>
 
-        {/* ── KPIs principales del curso (estilo tarjetas centradas) ── */}
+        {/* ── KPIs principales del curso (estilo tarjetas centradas, compacto) ── */}
         <div
           className="fade-up fade-up-1"
           style={{
             display: "grid",
             gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(4, 1fr)",
-            gap: 16,
-            marginBottom: 16,
+            gap: 12,
+            marginBottom: 12,
             alignItems: "stretch",
           }}
         >
-          {/* Nota promedio — donut grande */}
-          <div className="kpi-card" style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 10, padding: isMobile ? 14 : 18, textAlign: "center" }}>
-            <div style={{ fontSize: 13, fontWeight: 800, color: "var(--text)", letterSpacing: "0.01em" }}>
+          {/* Nota promedio — donut */}
+          <div className="kpi-card" style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 8, padding: isMobile ? 12 : 14, textAlign: "center" }}>
+            <div style={{ fontSize: 12, fontWeight: 800, color: "var(--text)", letterSpacing: "0.01em" }}>
               Nota promedio
             </div>
             <CircularRing
               pct={avgPerfPct != null && Number(avgPerfPct) > 0 ? avgPerfPct : 0}
-              size={isMobile ? 92 : 118}
-              stroke={12}
+              size={isMobile ? 84 : 96}
+              stroke={10}
               color={avgPerfPct != null && Number(avgPerfPct) > 0 ? colorForPct(avgPerfPct, thresholds) : "var(--border)"}
               label={avgPerfPct == null || Number(avgPerfPct) === 0 ? "—" : fmtGrade10FromPct(avgPerfPct)}
-              fontSize={isMobile ? 16 : 21}
+              fontSize={isMobile ? 15 : 18}
             />
-            <div style={{ fontSize: 11, color: "var(--muted)" }}>Escala 0–10 · gradebook</div>
+            <div style={{ fontSize: 10, color: "var(--muted)" }}>Escala 0–10 · gradebook</div>
           </div>
 
           {/* Estudiantes — número grande */}
-          <div className="kpi-card" style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 8, padding: isMobile ? 14 : 18, textAlign: "center" }}>
-            <div style={{ fontSize: 13, fontWeight: 800, color: "var(--text)", letterSpacing: "0.01em" }}>
+          <div className="kpi-card" style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 6, padding: isMobile ? 12 : 14, textAlign: "center" }}>
+            <div style={{ fontSize: 12, fontWeight: 800, color: "var(--text)", letterSpacing: "0.01em" }}>
               Estudiantes
             </div>
-            <div style={{ fontSize: isMobile ? 34 : 46, fontWeight: 900, color: "var(--text)", fontFamily: "var(--font-mono)", lineHeight: 1 }}>
+            <div style={{ fontSize: isMobile ? 30 : 38, fontWeight: 900, color: "var(--text)", fontFamily: "var(--font-mono)", lineHeight: 1 }}>
               {studentsCount || "—"}
             </div>
-            <div style={{ fontSize: 11, color: "var(--muted)" }}>Inscritos en el curso</div>
+            <div style={{ fontSize: 10, color: "var(--muted)" }}>Inscritos en el curso</div>
           </div>
 
           {/* En riesgo — número grande coloreado */}
-          <div className="kpi-card" style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 8, padding: isMobile ? 14 : 18, textAlign: "center" }}>
-            <div style={{ fontSize: 13, fontWeight: 800, color: "var(--text)", letterSpacing: "0.01em" }}>
+          <div className="kpi-card" style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 6, padding: isMobile ? 12 : 14, textAlign: "center" }}>
+            <div style={{ fontSize: 12, fontWeight: 800, color: "var(--text)", letterSpacing: "0.01em" }}>
               En riesgo
             </div>
             <div style={{
-              fontSize: isMobile ? 34 : 46, fontWeight: 900, fontFamily: "var(--font-mono)", lineHeight: 1,
+              fontSize: isMobile ? 30 : 38, fontWeight: 900, fontFamily: "var(--font-mono)", lineHeight: 1,
               color: atRiskPct == null ? "var(--muted)" : atRiskPct > 40 ? COLORS.critical : atRiskPct > 20 ? COLORS.watch : COLORS.ok,
             }}>
               {atRiskPct == null ? "—" : atRiskCount}
             </div>
-            <div style={{ fontSize: 11, color: "var(--muted)" }}>
+            <div style={{ fontSize: 10, color: "var(--muted)" }}>
               {atRiskPct == null ? "Sin datos aún" : `${fmtPct(atRiskPct)} del curso (alto + medio)`}
             </div>
           </div>
 
           {/* Contenidos creados — número grande + ritmo */}
-          <div className="kpi-card" style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 8, padding: isMobile ? 14 : 18, textAlign: "center" }}>
-            <div style={{ fontSize: 13, fontWeight: 800, color: "var(--text)", letterSpacing: "0.01em" }}>
+          <div className="kpi-card" style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 6, padding: isMobile ? 12 : 14, textAlign: "center" }}>
+            <div style={{ fontSize: 12, fontWeight: 800, color: "var(--text)", letterSpacing: "0.01em" }}>
               Contenidos creados
             </div>
-            <div style={{ fontSize: isMobile ? 34 : 46, fontWeight: 900, color: contentKpis?.createdCount != null ? contentRhythmMeta.color : "var(--muted)", fontFamily: "var(--font-mono)", lineHeight: 1 }}>
+            <div style={{ fontSize: isMobile ? 30 : 38, fontWeight: 900, color: contentKpis?.createdCount != null ? contentRhythmMeta.color : "var(--muted)", fontFamily: "var(--font-mono)", lineHeight: 1 }}>
               {contentKpis?.createdCount ?? "—"}
             </div>
-            <div style={{ fontSize: 11, color: "var(--muted)" }}>
+            <div style={{ fontSize: 10, color: "var(--muted)" }}>
               {contentKpis?.minExpected != null ? `Mínimo esperado: ${contentKpis.minExpected}` : "Desde inicio del curso"}
             </div>
             {contentKpis?.createdCount != null && (
@@ -2207,42 +2207,8 @@ const contentKpis = useMemo(() => {
           </div>
         </div>
 
-        {/* ── Alertas inteligentes (fusiona Radar docente + heurísticas locales) ── */}
-        <div className="fade-up fade-up-1" style={{ marginBottom: 16 }}>
-          <ErrorBoundary sectionName="Alertas inteligentes">
-            <SmartAlerts
-              studentRows={studentRows}
-              overview={overview}
-              courseInfo={courseInfo}
-              contentKpis={contentKpis}
-              backendAlerts={overview?.alerts}
-              onStudentClick={selectStudentById}
-            />
-          </ErrorBoundary>
-        </div>
-
-        {/* ── Resumen semanal IA (narrativa) ── */}
-        <div className="fade-up fade-up-1" style={{ marginBottom: 16 }}>
-          <ContextualTip
-            id="batch4_intro_v3"
-            title="✨ Nuevas funciones disponibles"
-            description="Tu dashboard ahora tiene resumen narrativo con IA, predicción de notas finales (menú lateral), alertas inteligentes, tendencias históricas y más. Haz Ctrl+K para la paleta de comandos, o presiona ? para ver todos los atajos."
-          />
-          <Card title={<span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>🤖 Resumen semanal <InfoTooltip text="Resumen narrativo en lenguaje natural del estado del curso. Se genera automáticamente a partir de los datos actuales. Puedes escucharlo con TTS." /></span>} accent="brand">
-            <ErrorBoundary sectionName="Resumen semanal">
-              <AINarrativeSummary
-                studentRows={studentRows}
-                overview={overview}
-                courseInfo={courseInfo}
-                raDashboard={raDashboard}
-                contentKpis={contentKpis}
-              />
-            </ErrorBoundary>
-          </Card>
-        </div>
-
         {/* ── Estado de asignaciones ── */}
-        <div className="fade-up fade-up-2" style={{ marginBottom: 16 }}>
+        <div className="fade-up fade-up-1" style={{ marginBottom: 12 }}>
           <Card
             title={<span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>📝 Asignaciones del curso <InfoTooltip text="Estado de las asignaciones (dropbox) que has creado en Brightspace: cuántas tienen entregas de estudiantes (con % de entrega), cuántas ya están completamente calificadas y cuántas vencieron. Ordenadas por fecha de entrega." /></span>}
             accent="brand"
@@ -2258,8 +2224,8 @@ const contentKpis = useMemo(() => {
           style={{
             display: "grid",
             gridTemplateColumns: isMobile ? "1fr" : isNarrow ? "1fr 1fr" : "minmax(260px,2fr) minmax(180px,1fr) minmax(200px,1.4fr) minmax(180px,1.2fr)",
-            gap: 16,
-            marginBottom: 16,
+            gap: 12,
+            marginBottom: 12,
             alignItems: "start",
           }}
         >
@@ -2709,6 +2675,40 @@ const contentKpis = useMemo(() => {
           </Card>
         </div>
 
+        </div>
+
+        {/* ── Alertas inteligentes (fusiona Radar docente + heurísticas locales) ── */}
+        <div className="fade-up fade-up-3" style={{ marginBottom: 12 }}>
+          <ErrorBoundary sectionName="Alertas inteligentes">
+            <SmartAlerts
+              studentRows={studentRows}
+              overview={overview}
+              courseInfo={courseInfo}
+              contentKpis={contentKpis}
+              backendAlerts={overview?.alerts}
+              onStudentClick={selectStudentById}
+            />
+          </ErrorBoundary>
+        </div>
+
+        {/* ── Resumen semanal IA (narrativa) ── */}
+        <div className="fade-up fade-up-3" style={{ marginBottom: 12 }}>
+          <ContextualTip
+            id="batch4_intro_v3"
+            title="✨ Nuevas funciones disponibles"
+            description="Tu dashboard ahora tiene resumen narrativo con IA, predicción de notas finales (menú lateral), alertas inteligentes, tendencias históricas y más. Haz Ctrl+K para la paleta de comandos, o presiona ? para ver todos los atajos."
+          />
+          <Card title={<span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>🤖 Resumen semanal <InfoTooltip text="Resumen narrativo en lenguaje natural del estado del curso. Se genera automáticamente a partir de los datos actuales. Puedes escucharlo con TTS." /></span>} accent="brand">
+            <ErrorBoundary sectionName="Resumen semanal">
+              <AINarrativeSummary
+                studentRows={studentRows}
+                overview={overview}
+                courseInfo={courseInfo}
+                raDashboard={raDashboard}
+                contentKpis={contentKpis}
+              />
+            </ErrorBoundary>
+          </Card>
         </div>
 
         </>}
