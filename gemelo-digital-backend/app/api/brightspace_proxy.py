@@ -844,7 +844,10 @@ async def brightspace_content_consumption(request: Request, org_unit_id: int):
     user_ids = [str(u.get("Identifier")) for u in users if isinstance(u, dict) and u.get("Identifier")]
 
     sem = asyncio.Semaphore(8)
+    per_user: dict = {}
+    method = None
 
+    # ── Estrategia 1: user progress por estudiante ──────────────────────
     async def _progress_for(uid: str):
         url = (
             f"{BRIGHTSPACE_BASE_URL}/d2l/api/le/{LE_VERSION}"
@@ -859,11 +862,71 @@ async def brightspace_content_consumption(request: Request, org_unit_id: int):
             return uid, None
         return uid, len(items)
 
-    results = await asyncio.gather(*[_progress_for(u) for u in user_ids[:100]])
-    per_user = {uid: n for uid, n in results if n is not None}
+    if user_ids:
+        probe_uid, probe_val = await _progress_for(user_ids[0])
+        if probe_val is not None:
+            method = "userprogress"
+            per_user[probe_uid] = probe_val
+            rest = await asyncio.gather(*[_progress_for(u) for u in user_ids[1:100]])
+            per_user.update({uid: n for uid, n in rest if n is not None})
+
+    # ── Estrategia 2 (fallback): completions por tema ───────────────────
+    # Una llamada por tema devuelve los registros de TODOS los usuarios.
+    if method is None:
+        root_url = f"{BRIGHTSPACE_BASE_URL}/d2l/api/le/{LE_VERSION}/{org_unit_id}/content/root/"
+        root_status, root_data = await _bs_get_cached(root_url, headers)
+        topic_ids = []
+        if root_status == 200 and isinstance(root_data, list):
+            for mod in root_data:
+                if not isinstance(mod, dict) or mod.get("IsHidden") is True:
+                    continue
+                for it in (mod.get("Structure") or []):
+                    if (
+                        isinstance(it, dict)
+                        and it.get("IsHidden") is not True
+                        and it.get("Type") == 1
+                        and it.get("Id") is not None
+                    ):
+                        topic_ids.append(it["Id"])
+
+        async def _completions_for_topic(tid):
+            url = (
+                f"{BRIGHTSPACE_BASE_URL}/d2l/api/le/{LE_VERSION}"
+                f"/{org_unit_id}/content/topics/{tid}/completions/"
+            )
+            async with sem:
+                status, data = await _bs_get_cached(url, headers)
+            if status != 200:
+                return []
+            items = data if isinstance(data, list) else (data.get("Objects") or data.get("Items") or [])
+            return items if isinstance(items, list) else []
+
+        if topic_ids:
+            all_completions = await asyncio.gather(
+                *[_completions_for_topic(t) for t in topic_ids[:200]]
+            )
+            found_any = False
+            for records in all_completions:
+                for rec in records:
+                    if not isinstance(rec, dict):
+                        continue
+                    uid = rec.get("UserId") or rec.get("userId")
+                    if uid is None:
+                        continue
+                    found_any = True
+                    key = str(uid)
+                    per_user[key] = per_user.get(key, 0) + 1
+            if found_any:
+                method = "topic_completions"
+                # Los estudiantes sin registros quedan en 0 explícito para
+                # que el frontend los cuente en el promedio.
+                for uid in user_ids:
+                    per_user.setdefault(uid, 0)
+
     return {
         "orgUnitId": org_unit_id,
         "perUser": per_user,
+        "method": method,
         "usersQueried": len(user_ids),
         "usersWithData": len(per_user),
     }

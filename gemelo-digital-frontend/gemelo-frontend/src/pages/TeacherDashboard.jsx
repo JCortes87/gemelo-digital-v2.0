@@ -1606,30 +1606,40 @@ const contentKpis = useMemo(() => {
     return { available: true, opened, total: vals.length, avgPct };
   }, [consumption, studentRows, totalContentTopics]);
 
-  // Accesos al curso por recencia (a partir de LastAccessed del classlist)
+  // Accesos al curso por recencia (a partir de LastAccessed del classlist).
+  // staleList y neverList son listas completas: se despliegan al hacer clic.
   const accessStats = useMemo(() => {
     if (!studentRows.length || !Object.keys(lastAccessMap).length) return null;
     const now = Date.now();
-    let today = 0, week = 0, stale = 0, never = 0;
+    let today = 0, week = 0;
     const staleList = [];
+    const neverList = [];
     for (const r of studentRows) {
       const iso = lastAccessMap[String(r.userId)];
       if (!iso) {
-        never += 1;
-        staleList.push({ userId: r.userId, name: r.displayName, days: null });
+        neverList.push({ userId: r.userId, name: r.displayName });
         continue;
       }
       const days = (now - new Date(iso).getTime()) / 86400000;
       if (days <= 1) today += 1;
       if (days <= 7) week += 1;
       else if (days > 14) {
-        stale += 1;
         staleList.push({ userId: r.userId, name: r.displayName, days: Math.floor(days) });
       }
     }
-    staleList.sort((a, b) => (b.days ?? 99999) - (a.days ?? 99999));
-    return { today, week, stale, never, total: studentRows.length, staleList: staleList.slice(0, 4) };
+    staleList.sort((a, b) => b.days - a.days);
+    neverList.sort((a, b) => String(a.name).localeCompare(String(b.name), "es"));
+    return {
+      today, week,
+      stale: staleList.length,
+      never: neverList.length,
+      total: studentRows.length,
+      staleList, neverList,
+    };
   }, [studentRows, lastAccessMap]);
+
+  // Qué lista de accesos está desplegada: "stale" | "never" | null
+  const [accessListOpen, setAccessListOpen] = useState(null);
   const performanceBands = useMemo(() => {
   const bands = [
     { name: "Excelente", key: "excellent", value: 0, color: COLORS.ok },
@@ -2325,63 +2335,8 @@ const contentKpis = useMemo(() => {
           }}
         >
           <div ref={overviewRef} style={{ order: 3, display: "flex" }}>
-          <Card style={{ flex: 1 }} title={<span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>📚 Contenidos y cobertura</span>} right={<StatusBadge status={courseStatus} />} accent="brand">
-            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
-              <div
-                style={{
-                  fontSize: 11,
-                  color: "var(--muted)",
-                  fontWeight: 700,
-                  textTransform: "uppercase",
-                  letterSpacing: "0.05em",
-                }}
-              >
-                Contenidos del profesor
-              </div>
-              <InfoTooltip text="Se mide el contenido o módulo actualizados/creados desde el inicio del curso." />
-              <div style={{ marginLeft: "auto" }}>
-                <span
-                  className="badge"
-                  style={{ background: contentRhythmMeta.bg, color: contentRhythmMeta.color }}
-                >
-                  <span
-                    className="pulse-dot"
-                    style={{ background: contentRhythmMeta.color, width: 6, height: 6 }}
-                  />
-                  {contentRhythmMeta.label}
-                </span>
-              </div>
-            </div>
-
-
-            {contentKpis?.progressRatio != null && (
-              <div style={{ marginTop: 10 }}>
-                <ProgressBar
-                  value={Math.min(100, contentKpis.progressRatio * 100)}
-                  color={contentRhythmMeta.color}
-                  animate={false}
-                  showLabel={false}
-                />
-                <div
-                  style={{
-                    fontSize: 11,
-                    color: "var(--muted)",
-                    marginTop: 6,
-                    display: "flex",
-                    justifyContent: "space-between",
-                  }}
-                >
-                  <span>Cumplimiento vs mínimo</span>
-                  <span style={{ fontFamily: "var(--font-mono)", fontWeight: 800 }}>
-                    {Math.round(contentKpis.progressRatio * 100)}%
-                  </span>
-                </div>
-              </div>
-            )}
-
-            <Divider />
-
-            <div style={{ marginTop: 14 }}>
+          <Card style={{ flex: 1 }} title={<span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>📋 Cumplimiento evaluativo <InfoTooltip text="Índice de cumplimiento evaluativo del curso: % del peso calificado, pendiente de calificación y vencido sin registro." /></span>} right={<StatusBadge status={courseStatus} />} accent="brand">
+            <div style={{ marginTop: 4 }}>
               {avgCov == null || Number(avgCov) === 0 ? (
                 <div style={{ fontSize: 12, color: "var(--muted)" }}>
                   Cobertura no disponible (sin evidencias calificadas)
@@ -2395,40 +2350,6 @@ const contentKpis = useMemo(() => {
                 />
               )}
             </div>
-
-            <Divider />
-
-            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
-              <div style={{ fontSize: 11, color: "var(--muted)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em" }}>
-                Contenidos consumidos por estudiantes
-              </div>
-              <InfoTooltip text="Temas de contenido (PDF, Word, páginas, etc.) que los estudiantes han abierto en Brightspace, según su progreso de contenido del curso." />
-            </div>
-            {consumptionStats == null ? (
-              <div style={{ fontSize: 11, color: "var(--muted)" }}>Cargando consumo de contenidos…</div>
-            ) : !consumptionStats.available ? (
-              <div style={{ fontSize: 11, color: "var(--muted)" }}>Dato no disponible para este curso.</div>
-            ) : (
-              <div>
-                {consumptionStats.avgPct != null && (
-                  <>
-                    <ProgressBar
-                      value={Math.min(100, consumptionStats.avgPct)}
-                      color={colorForPct(consumptionStats.avgPct, thresholds)}
-                      animate={false}
-                      showLabel={false}
-                    />
-                    <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 6, display: "flex", justifyContent: "space-between" }}>
-                      <span>Promedio de temas abiertos por estudiante</span>
-                      <span style={{ fontFamily: "var(--font-mono)", fontWeight: 800 }}>{fmtPct(consumptionStats.avgPct)}</span>
-                    </div>
-                  </>
-                )}
-                <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 4 }}>
-                  {consumptionStats.opened} de {consumptionStats.total} estudiantes han abierto contenidos
-                </div>
-              </div>
-            )}
           </Card>
           </div>
 
@@ -2828,36 +2749,117 @@ const contentKpis = useMemo(() => {
             ) : (
               <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
                 {[
-                  { label: "Entraron hoy", value: accessStats.today, color: COLORS.ok },
-                  { label: "Últimos 7 días", value: accessStats.week, color: COLORS.brand },
-                  { label: "+14 días sin entrar", value: accessStats.stale, color: accessStats.stale > 0 ? COLORS.watch : "var(--muted)" },
-                  { label: "Nunca han entrado", value: accessStats.never, color: accessStats.never > 0 ? COLORS.critical : "var(--muted)" },
-                ].map((row) => (
-                  <div key={row.label} style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                    <div style={{ width: 8, height: 8, borderRadius: "50%", background: row.color, flexShrink: 0 }} />
-                    <div style={{ flex: 1, fontSize: 12, color: "var(--text)", fontWeight: 600 }}>{row.label}</div>
-                    <div style={{ fontSize: 13, fontWeight: 900, fontFamily: "var(--font-mono)", color: row.color }}>{row.value}</div>
-                    <div style={{ fontSize: 10, color: "var(--muted)", width: 40, textAlign: "right" }}>
-                      {accessStats.total > 0 ? `${((row.value / accessStats.total) * 100).toFixed(0)}%` : ""}
+                  { key: "today", label: "Entraron hoy", value: accessStats.today, color: COLORS.ok },
+                  { key: "week", label: "Últimos 7 días", value: accessStats.week, color: COLORS.brand },
+                  { key: "stale", label: "+14 días sin entrar", value: accessStats.stale, color: accessStats.stale > 0 ? COLORS.watch : "var(--muted)", expandable: true },
+                  { key: "never", label: "Nunca han entrado", value: accessStats.never, color: accessStats.never > 0 ? COLORS.critical : "var(--muted)", expandable: true },
+                ].map((row) => {
+                  const canExpand = row.expandable && row.value > 0;
+                  const isOpen = accessListOpen === row.key;
+                  const rowInner = (
+                    <>
+                      <div style={{ width: 8, height: 8, borderRadius: "50%", background: row.color, flexShrink: 0 }} />
+                      <div style={{ flex: 1, fontSize: 12, color: "var(--text)", fontWeight: 600, textAlign: "left" }}>{row.label}</div>
+                      <div style={{ fontSize: 13, fontWeight: 900, fontFamily: "var(--font-mono)", color: row.color }}>{row.value}</div>
+                      <div style={{ fontSize: 10, color: "var(--muted)", width: 40, textAlign: "right" }}>
+                        {accessStats.total > 0 ? `${((row.value / accessStats.total) * 100).toFixed(0)}%` : ""}
+                      </div>
+                      {canExpand && (
+                        <span style={{ fontSize: 10, color: "var(--muted)", flexShrink: 0 }}>{isOpen ? "▴" : "▾"}</span>
+                      )}
+                    </>
+                  );
+                  return canExpand ? (
+                    <button
+                      key={row.key}
+                      onClick={() => setAccessListOpen((v) => (v === row.key ? null : row.key))}
+                      aria-expanded={isOpen}
+                      title="Clic para ver quiénes son"
+                      style={{
+                        display: "flex", alignItems: "center", gap: 8,
+                        background: isOpen ? "var(--bg)" : "transparent",
+                        border: "none", borderRadius: 8, padding: "3px 4px",
+                        cursor: "pointer", fontFamily: "var(--font)", width: "100%",
+                      }}
+                    >
+                      {rowInner}
+                    </button>
+                  ) : (
+                    <div key={row.key} style={{ display: "flex", alignItems: "center", gap: 8, padding: "3px 4px" }}>
+                      {rowInner}
+                    </div>
+                  );
+                })}
+
+                {accessListOpen && (() => {
+                  const list = accessListOpen === "stale" ? accessStats.staleList : accessStats.neverList;
+                  if (!list.length) return null;
+                  return (
+                    <div style={{
+                      maxHeight: 170, overflowY: "auto",
+                      border: "1px solid var(--border)", borderRadius: 10,
+                      background: "var(--bg)", padding: "4px 2px",
+                      display: "flex", flexDirection: "column", gap: 2,
+                    }}>
+                      {list.map((s) => (
+                        <button
+                          key={s.userId}
+                          onClick={() => {
+                            const row = studentRows.find((r) => r.userId === s.userId);
+                            if (row) setSelectedStudent(row);
+                          }}
+                          title="Ver el gemelo de este estudiante"
+                          style={{
+                            display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8,
+                            border: "none", background: "transparent", cursor: "pointer",
+                            padding: "4px 8px", borderRadius: 6, fontSize: 11,
+                            fontFamily: "var(--font)", color: "var(--text)", textAlign: "left", width: "100%",
+                          }}
+                          onMouseEnter={(e) => { e.currentTarget.style.background = "var(--brand-light)"; }}
+                          onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}
+                        >
+                          <span style={{ fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.name}</span>
+                          <span style={{ color: accessListOpen === "never" ? COLORS.critical : COLORS.watch, fontWeight: 800, fontFamily: "var(--font-mono)", flexShrink: 0 }}>
+                            {accessListOpen === "never" ? "Nunca" : `${s.days} días`}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  );
+                })()}
+
+                <Divider />
+
+                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                  <div style={{ fontSize: 10, color: "var(--muted)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                    Contenidos consumidos
+                  </div>
+                  <InfoTooltip text="Temas de contenido (PDF, Word, páginas, etc.) que los estudiantes han abierto en Brightspace, según su progreso de contenido del curso." />
+                </div>
+                {consumptionStats == null ? (
+                  <div style={{ fontSize: 11, color: "var(--muted)" }}>Cargando…</div>
+                ) : !consumptionStats.available ? (
+                  <div style={{ fontSize: 11, color: "var(--muted)" }}>Dato no disponible para este curso.</div>
+                ) : (
+                  <div>
+                    {consumptionStats.avgPct != null && (
+                      <>
+                        <ProgressBar
+                          value={Math.min(100, consumptionStats.avgPct)}
+                          color={colorForPct(consumptionStats.avgPct, thresholds)}
+                          animate={false}
+                          showLabel={false}
+                        />
+                        <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 6, display: "flex", justifyContent: "space-between" }}>
+                          <span>Promedio de temas abiertos</span>
+                          <span style={{ fontFamily: "var(--font-mono)", fontWeight: 800 }}>{fmtPct(consumptionStats.avgPct)}</span>
+                        </div>
+                      </>
+                    )}
+                    <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 4 }}>
+                      {consumptionStats.opened} de {consumptionStats.total} estudiantes han abierto contenidos
                     </div>
                   </div>
-                ))}
-
-                {accessStats.staleList.length > 0 && (
-                  <>
-                    <Divider />
-                    <div style={{ fontSize: 10, color: "var(--muted)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em" }}>
-                      Más tiempo sin entrar
-                    </div>
-                    {accessStats.staleList.map((s) => (
-                      <div key={s.userId} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, fontSize: 11 }}>
-                        <span style={{ color: "var(--text)", fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.name}</span>
-                        <span style={{ color: s.days == null ? COLORS.critical : COLORS.watch, fontWeight: 800, fontFamily: "var(--font-mono)", flexShrink: 0 }}>
-                          {s.days == null ? "Nunca" : `${s.days} días`}
-                        </span>
-                      </div>
-                    ))}
-                  </>
                 )}
               </div>
             )}
