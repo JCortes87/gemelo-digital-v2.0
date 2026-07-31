@@ -220,6 +220,63 @@ export function Card({ title, right, children, className = "", style = {}, accen
   );
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// GaugeMeter — medidor semicircular tipo velocímetro (0–100%).
+// Zonas de color configurables; aguja apunta al valor.
+// ─────────────────────────────────────────────────────────────────────────────
+export function GaugeMeter({ pct = 0, size = 180, zones, centerLabel, centerColor, sublabel }) {
+  const clamped = Math.max(0, Math.min(100, Number(pct) || 0));
+  const stroke = 14;
+  const w = size;
+  const h = Math.round(size * 0.60);
+  const cx = w / 2;
+  const cy = h - 8;
+  const r = w / 2 - stroke / 2 - 4;
+
+  // 0% apunta a la izquierda, 100% a la derecha (barrido horario de 180°)
+  const polar = (angleDeg, radius) => {
+    const rad = (Math.PI * angleDeg) / 180;
+    return [cx - radius * Math.cos(rad), cy - radius * Math.sin(rad)];
+  };
+  const arcPath = (fromPct, toPct) => {
+    const [x1, y1] = polar((fromPct / 100) * 180, r);
+    const [x2, y2] = polar((toPct / 100) * 180, r);
+    return `M ${x1.toFixed(2)} ${y1.toFixed(2)} A ${r} ${r} 0 0 1 ${x2.toFixed(2)} ${y2.toFixed(2)}`;
+  };
+  const zs = Array.isArray(zones) && zones.length
+    ? zones
+    : [
+        { to: 20, color: "var(--ok)" },
+        { to: 40, color: "var(--watch)" },
+        { to: 100, color: "var(--critical)" },
+      ];
+  const needleAngle = (clamped / 100) * 180;
+  const [nx, ny] = polar(needleAngle, r - stroke / 2 - 3);
+
+  const bounds = [0, ...zs.map((z) => z.to)];
+  const segments = zs.map((z, i) => ({ from: bounds[i], to: z.to, color: z.color }));
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
+      <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} role="img" aria-label={`Medidor: ${clamped.toFixed(0)}%`}>
+        {segments.map((s) => (
+          <path key={`${s.from}-${s.to}`} d={arcPath(s.from, s.to)} fill="none" stroke={s.color} strokeWidth={stroke} opacity={0.85} />
+        ))}
+        <line x1={cx} y1={cy} x2={nx} y2={ny} stroke="var(--text)" strokeWidth={3} strokeLinecap="round" />
+        <circle cx={cx} cy={cy} r={5} fill="var(--text)" />
+      </svg>
+      {centerLabel != null && (
+        <div style={{ fontSize: 22, fontWeight: 900, fontFamily: "var(--font-mono)", lineHeight: 1.1, color: centerColor || "var(--text)", marginTop: 2 }}>
+          {centerLabel}
+        </div>
+      )}
+      {sublabel && (
+        <div style={{ fontSize: 10, color: "var(--muted)", marginTop: 2, textAlign: "center" }}>{sublabel}</div>
+      )}
+    </div>
+  );
+}
+
 export function Stat({ label, value, sub, valueColor }) {
   return (
     <div>
