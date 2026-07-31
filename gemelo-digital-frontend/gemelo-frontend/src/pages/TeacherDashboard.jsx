@@ -279,6 +279,8 @@ export default function TeacherDashboard() {
   const [contentRoot, setContentRoot] = useState([]);
   // Accesos al curso (userId -> LastAccessed ISO o null) y consumo de contenidos
   const [lastAccessMap, setLastAccessMap] = useState({});
+  // Accesos del equipo docente (roles no-estudiante del classlist)
+  const [teacherAccessList, setTeacherAccessList] = useState([]);
   const [consumption, setConsumption] = useState(null);
   const [overview, setOverview] = useState(null);
   const [studentsList, setStudentsList] = useState(null);
@@ -1002,6 +1004,7 @@ export default function TeacherDashboard() {
     if (!orgUnitId) return;
     let alive = true;
     setLastAccessMap({});
+    setTeacherAccessList([]);
     setConsumption(null);
 
     (async () => {
@@ -1009,10 +1012,22 @@ export default function TeacherDashboard() {
         const cl = await apiGetCached(`/brightspace/course/${orgUnitId}/classlist`, { ttl: 300_000 });
         if (!alive) return;
         const map = {};
+        const teachers = [];
         for (const u of (Array.isArray(cl?.items) ? cl.items : [])) {
-          if (u?.Identifier != null) map[String(u.Identifier)] = u.LastAccessed || null;
+          if (u?.Identifier == null) continue;
+          map[String(u.Identifier)] = u.LastAccessed || null;
+          const role = u.RoleName || u.roleName || "";
+          if (role && !isStudentRole(role)) {
+            teachers.push({
+              userId: String(u.Identifier),
+              name: u.DisplayName || `Usuario ${u.Identifier}`,
+              role,
+              iso: u.LastAccessed || null,
+            });
+          }
         }
         setLastAccessMap(map);
+        setTeacherAccessList(teachers);
       } catch { /* opcional */ }
     })();
 
@@ -1607,34 +1622,37 @@ const contentKpis = useMemo(() => {
   }, [consumption, studentRows, totalContentTopics]);
 
   // Accesos al curso por recencia (a partir de LastAccessed del classlist).
-  // staleList y neverList son listas completas: se despliegan al hacer clic.
+  // Cada bucket lleva su lista completa: se despliega al hacer clic.
   const accessStats = useMemo(() => {
     if (!studentRows.length || !Object.keys(lastAccessMap).length) return null;
     const now = Date.now();
-    let today = 0, week = 0;
-    const staleList = [];
-    const neverList = [];
+    const todayList = [];   // entraron en las últimas 24 h
+    const weekList = [];    // entraron en los últimos 7 días (incluye hoy)
+    const staleList = [];   // llevan más de 14 días SIN entrar
+    const neverList = [];   // nunca han entrado al curso
     for (const r of studentRows) {
       const iso = lastAccessMap[String(r.userId)];
       if (!iso) {
-        neverList.push({ userId: r.userId, name: r.displayName });
+        neverList.push({ userId: r.userId, name: r.displayName, days: null });
         continue;
       }
       const days = (now - new Date(iso).getTime()) / 86400000;
-      if (days <= 1) today += 1;
-      if (days <= 7) week += 1;
-      else if (days > 14) {
-        staleList.push({ userId: r.userId, name: r.displayName, days: Math.floor(days) });
-      }
+      const entry = { userId: r.userId, name: r.displayName, days: Math.floor(days) };
+      if (days <= 1) todayList.push(entry);
+      if (days <= 7) weekList.push(entry);
+      else if (days > 14) staleList.push(entry);
     }
+    todayList.sort((a, b) => a.days - b.days);
+    weekList.sort((a, b) => a.days - b.days);
     staleList.sort((a, b) => b.days - a.days);
     neverList.sort((a, b) => String(a.name).localeCompare(String(b.name), "es"));
     return {
-      today, week,
+      today: todayList.length,
+      week: weekList.length,
       stale: staleList.length,
       never: neverList.length,
       total: studentRows.length,
-      staleList, neverList,
+      todayList, weekList, staleList, neverList,
     };
   }, [studentRows, lastAccessMap]);
 
@@ -2750,11 +2768,11 @@ const contentKpis = useMemo(() => {
               <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
                 {[
                   { key: "today", label: "Entraron hoy", value: accessStats.today, color: COLORS.ok },
-                  { key: "week", label: "Últimos 7 días", value: accessStats.week, color: COLORS.brand },
-                  { key: "stale", label: "+14 días sin entrar", value: accessStats.stale, color: accessStats.stale > 0 ? COLORS.watch : "var(--muted)", expandable: true },
-                  { key: "never", label: "Nunca han entrado", value: accessStats.never, color: accessStats.never > 0 ? COLORS.critical : "var(--muted)", expandable: true },
+                  { key: "week", label: "Entraron en los últimos 7 días", value: accessStats.week, color: COLORS.brand },
+                  { key: "stale", label: "Sin entrar hace +14 días", value: accessStats.stale, color: accessStats.stale > 0 ? COLORS.watch : "var(--muted)" },
+                  { key: "never", label: "Nunca han entrado", value: accessStats.never, color: accessStats.never > 0 ? COLORS.critical : "var(--muted)" },
                 ].map((row) => {
-                  const canExpand = row.expandable && row.value > 0;
+                  const canExpand = row.value > 0;
                   const isOpen = accessListOpen === row.key;
                   const rowInner = (
                     <>
@@ -2792,7 +2810,20 @@ const contentKpis = useMemo(() => {
                 })}
 
                 {accessListOpen && (() => {
-                  const list = accessListOpen === "stale" ? accessStats.staleList : accessStats.neverList;
+                  const lists = {
+                    today: accessStats.todayList,
+                    week: accessStats.weekList,
+                    stale: accessStats.staleList,
+                    never: accessStats.neverList,
+                  };
+                  const colors = { today: COLORS.ok, week: COLORS.brand, stale: COLORS.watch, never: COLORS.critical };
+                  const rightLabel = (s) => {
+                    if (accessListOpen === "never") return "Nunca";
+                    if (s.days === 0) return "Hoy";
+                    if (s.days === 1) return "Ayer";
+                    return `Hace ${s.days} días`;
+                  };
+                  const list = lists[accessListOpen] || [];
                   if (!list.length) return null;
                   return (
                     <div style={{
@@ -2819,14 +2850,38 @@ const contentKpis = useMemo(() => {
                           onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}
                         >
                           <span style={{ fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.name}</span>
-                          <span style={{ color: accessListOpen === "never" ? COLORS.critical : COLORS.watch, fontWeight: 800, fontFamily: "var(--font-mono)", flexShrink: 0 }}>
-                            {accessListOpen === "never" ? "Nunca" : `${s.days} días`}
+                          <span style={{ color: colors[accessListOpen], fontWeight: 800, fontFamily: "var(--font-mono)", flexShrink: 0 }}>
+                            {rightLabel(s)}
                           </span>
                         </button>
                       ))}
                     </div>
                   );
                 })()}
+
+                <Divider />
+
+                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                  <div style={{ fontSize: 10, color: "var(--muted)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                    Accesos del profesor
+                  </div>
+                  <InfoTooltip text="Último ingreso al curso de cada miembro del equipo docente (roles no-estudiante del classlist de Brightspace)." />
+                </div>
+                {teacherAccessList.length === 0 ? (
+                  <div style={{ fontSize: 11, color: "var(--muted)" }}>Dato no disponible.</div>
+                ) : (
+                  teacherAccessList.slice(0, 4).map((t) => (
+                    <div key={t.userId} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, fontSize: 11 }}>
+                      <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        <span style={{ color: "var(--text)", fontWeight: 700 }}>{t.name}</span>
+                        <span style={{ color: "var(--muted)" }}> · {t.role}</span>
+                      </span>
+                      <span style={{ color: t.iso ? "var(--text)" : COLORS.critical, fontWeight: 800, fontFamily: "var(--font-mono)", flexShrink: 0 }}>
+                        {fmtLastAccess(t.iso)}
+                      </span>
+                    </div>
+                  ))
+                )}
 
                 <Divider />
 
