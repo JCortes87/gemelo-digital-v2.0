@@ -821,6 +821,54 @@ async def brightspace_classlist(
     return {"count": len(items), "items": items}
 
 
+@router.get("/brightspace/course/{org_unit_id}/content/consumption")
+async def brightspace_content_consumption(request: Request, org_unit_id: int):
+    """Resumen de consumo de contenidos por estudiante: cuantos temas del
+    curso ha visitado cada uno segun el user progress de Brightspace
+    (scope content:completions:read, ya incluido en el SCOPE por defecto).
+
+    Devuelve {perUser: {userId: temasVisitados}, usersQueried, usersWithData}.
+    Best-effort: si Brightspace no expone el progreso (403/404) devuelve
+    perUser vacio para que el frontend muestre "no disponible".
+    """
+    token, err = _require_token_from_request(request)
+    if err:
+        return err
+    headers = _auth_headers(token)
+
+    cl_url = f"{BRIGHTSPACE_BASE_URL}/d2l/api/le/{LE_VERSION}/{org_unit_id}/classlist/"
+    cl_status, cl_data = await _bs_get_cached(cl_url, headers)
+    if cl_status != 200:
+        return JSONResponse(status_code=cl_status, content=cl_data)
+    users = cl_data if isinstance(cl_data, list) else (cl_data.get("Items") or [])
+    user_ids = [str(u.get("Identifier")) for u in users if isinstance(u, dict) and u.get("Identifier")]
+
+    sem = asyncio.Semaphore(8)
+
+    async def _progress_for(uid: str):
+        url = (
+            f"{BRIGHTSPACE_BASE_URL}/d2l/api/le/{LE_VERSION}"
+            f"/{org_unit_id}/content/userprogress/{uid}"
+        )
+        async with sem:
+            status, data = await _bs_get_cached(url, headers)
+        if status != 200:
+            return uid, None
+        items = data if isinstance(data, list) else (data.get("Objects") or data.get("Items") or [])
+        if not isinstance(items, list):
+            return uid, None
+        return uid, len(items)
+
+    results = await asyncio.gather(*[_progress_for(u) for u in user_ids[:100]])
+    per_user = {uid: n for uid, n in results if n is not None}
+    return {
+        "orgUnitId": org_unit_id,
+        "perUser": per_user,
+        "usersQueried": len(user_ids),
+        "usersWithData": len(per_user),
+    }
+
+
 @router.get("/brightspace/users/{user_id}")
 async def brightspace_user(request: Request, user_id: int):
     token, err = _require_token_from_request(request)

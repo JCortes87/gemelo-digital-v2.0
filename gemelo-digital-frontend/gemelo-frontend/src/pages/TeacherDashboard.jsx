@@ -53,6 +53,18 @@ import {
   StatusBadge, CircularRing, ThresholdsModal, Card, Stat, Divider,
   ProgressBar, InfoTooltip, SortTh, CoverageBars, GaugeMeter,
 } from "./teacher/primitives";
+
+// Formatea el último acceso de un estudiante como texto relativo corto.
+function fmtLastAccess(iso) {
+  if (!iso) return "Nunca";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "—";
+  const days = (Date.now() - d.getTime()) / 86400000;
+  if (days < 1) return "Hoy";
+  if (days < 2) return "Ayer";
+  if (days < 30) return `Hace ${Math.floor(days)} días`;
+  return d.toLocaleDateString("es-CO", { day: "2-digit", month: "short", year: "numeric" });
+}
 import { AnnouncementsModal, OnboardingTutorial } from "./teacher/onboarding";
 import {
   LoginScreen, CesaLoader, UnlinkedItemsList, AlertsPanel, Drawer,
@@ -265,6 +277,9 @@ export default function TeacherDashboard() {
   const [outcomesMap, setOutcomesMap] = useState({});
   const [learningOutcomesPayload, setLearningOutcomesPayload] = useState(null);
   const [contentRoot, setContentRoot] = useState([]);
+  // Accesos al curso (userId -> LastAccessed ISO o null) y consumo de contenidos
+  const [lastAccessMap, setLastAccessMap] = useState({});
+  const [consumption, setConsumption] = useState(null);
   const [overview, setOverview] = useState(null);
   const [studentsList, setStudentsList] = useState(null);
   const [studentRows, setStudentRows] = useState([]);
@@ -979,6 +994,41 @@ export default function TeacherDashboard() {
   }, [orgUnitId, refreshKey]);
 
   /**
+   * Accesos al curso (LastAccessed del classlist) y consumo de contenidos
+   * por estudiante (user progress). Best-effort: si fallan, las tarjetas
+   * muestran "no disponible" sin romper el dashboard.
+   */
+  useEffect(() => {
+    if (!orgUnitId) return;
+    let alive = true;
+    setLastAccessMap({});
+    setConsumption(null);
+
+    (async () => {
+      try {
+        const cl = await apiGetCached(`/brightspace/course/${orgUnitId}/classlist`, { ttl: 300_000 });
+        if (!alive) return;
+        const map = {};
+        for (const u of (Array.isArray(cl?.items) ? cl.items : [])) {
+          if (u?.Identifier != null) map[String(u.Identifier)] = u.LastAccessed || null;
+        }
+        setLastAccessMap(map);
+      } catch { /* opcional */ }
+    })();
+
+    (async () => {
+      try {
+        const c = await apiGetCached(`/brightspace/course/${orgUnitId}/content/consumption`, { ttl: 300_000 });
+        if (alive) setConsumption(c && typeof c === "object" ? c : { perUser: {} });
+      } catch {
+        if (alive) setConsumption({ perUser: {} });
+      }
+    })();
+
+    return () => { alive = false; };
+  }, [orgUnitId, refreshKey]);
+
+  /**
    * Load student detail
    */
   useEffect(() => {
@@ -1529,6 +1579,57 @@ const contentKpis = useMemo(() => {
   const contentRhythmMeta = useMemo(() => {
     return contentRhythmStatus(contentKpis?.progressRatio);
   }, [contentKpis]);
+
+  // Total de temas de contenido visibles del curso (para % de consumo)
+  const totalContentTopics = useMemo(() => {
+    let n = 0;
+    for (const mod of (Array.isArray(contentRoot) ? contentRoot : [])) {
+      if (mod?.IsHidden === true) continue;
+      for (const it of (Array.isArray(mod?.Structure) ? mod.Structure : [])) {
+        if (it?.IsHidden !== true && Number(it?.Type) === 1) n += 1;
+      }
+    }
+    return n;
+  }, [contentRoot]);
+
+  // Consumo de contenidos por estudiantes (temas visitados / total temas)
+  const consumptionStats = useMemo(() => {
+    if (consumption == null) return null; // cargando
+    const per = consumption?.perUser || {};
+    const ids = studentRows.map((r) => String(r.userId));
+    const vals = ids.map((id) => per[id]).filter((v) => v != null);
+    if (!vals.length) return { available: false };
+    const opened = vals.filter((v) => v > 0).length;
+    const avgPct = totalContentTopics > 0
+      ? (vals.reduce((a, b) => a + Math.min(Number(b) || 0, totalContentTopics), 0) / (vals.length * totalContentTopics)) * 100
+      : null;
+    return { available: true, opened, total: vals.length, avgPct };
+  }, [consumption, studentRows, totalContentTopics]);
+
+  // Accesos al curso por recencia (a partir de LastAccessed del classlist)
+  const accessStats = useMemo(() => {
+    if (!studentRows.length || !Object.keys(lastAccessMap).length) return null;
+    const now = Date.now();
+    let today = 0, week = 0, stale = 0, never = 0;
+    const staleList = [];
+    for (const r of studentRows) {
+      const iso = lastAccessMap[String(r.userId)];
+      if (!iso) {
+        never += 1;
+        staleList.push({ userId: r.userId, name: r.displayName, days: null });
+        continue;
+      }
+      const days = (now - new Date(iso).getTime()) / 86400000;
+      if (days <= 1) today += 1;
+      if (days <= 7) week += 1;
+      else if (days > 14) {
+        stale += 1;
+        staleList.push({ userId: r.userId, name: r.displayName, days: Math.floor(days) });
+      }
+    }
+    staleList.sort((a, b) => (b.days ?? 99999) - (a.days ?? 99999));
+    return { today, week, stale, never, total: studentRows.length, staleList: staleList.slice(0, 4) };
+  }, [studentRows, lastAccessMap]);
   const performanceBands = useMemo(() => {
   const bands = [
     { name: "Excelente", key: "excellent", value: 0, color: COLORS.ok },
@@ -2196,8 +2297,8 @@ const contentKpis = useMemo(() => {
 
           {/* Contenidos creados — número grande + ritmo */}
           <div className="kpi-card" style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 6, padding: isMobile ? 12 : 14, textAlign: "center" }}>
-            <div style={{ fontSize: 12, fontWeight: 800, color: "var(--text)", letterSpacing: "0.01em" }}>
-              Contenidos creados
+            <div style={{ fontSize: 12, fontWeight: 800, color: "var(--text)", letterSpacing: "0.01em", display: "inline-flex", alignItems: "center", gap: 4 }}>
+              Contenidos publicados <InfoTooltip text="Temas de contenido visibles del curso (PDF, Word, páginas, enlaces…) creados o actualizados desde el inicio del curso. No incluye asignaciones (dropbox) — esas se cuentan aparte en la tarjeta de Asignaciones." />
             </div>
             <div style={{ fontSize: isMobile ? 30 : 38, fontWeight: 900, color: contentKpis?.createdCount != null ? contentRhythmMeta.color : "var(--muted)", fontFamily: "var(--font-mono)", lineHeight: 1 }}>
               {contentKpis?.createdCount ?? "—"}
@@ -2235,7 +2336,7 @@ const contentKpis = useMemo(() => {
                   letterSpacing: "0.05em",
                 }}
               >
-                Ritmo de contenidos del profesor
+                Contenidos del profesor
               </div>
               <InfoTooltip text="Se mide el contenido o módulo actualizados/creados desde el inicio del curso." />
               <div style={{ marginLeft: "auto" }}>
@@ -2252,10 +2353,6 @@ const contentKpis = useMemo(() => {
               </div>
             </div>
 
-            <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 4 }}>
-              <strong style={{ color: "var(--text)", fontFamily: "var(--font-mono)" }}>{contentKpis?.createdCount ?? "—"}</strong> contenidos creados
-              {" · "}mínimo esperado <strong style={{ color: "var(--text)", fontFamily: "var(--font-mono)" }}>{contentKpis?.minExpected ?? "—"}</strong>
-            </div>
 
             {contentKpis?.progressRatio != null && (
               <div style={{ marginTop: 10 }}>
@@ -2298,6 +2395,40 @@ const contentKpis = useMemo(() => {
                 />
               )}
             </div>
+
+            <Divider />
+
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+              <div style={{ fontSize: 11, color: "var(--muted)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                Contenidos consumidos por estudiantes
+              </div>
+              <InfoTooltip text="Temas de contenido (PDF, Word, páginas, etc.) que los estudiantes han abierto en Brightspace, según su progreso de contenido del curso." />
+            </div>
+            {consumptionStats == null ? (
+              <div style={{ fontSize: 11, color: "var(--muted)" }}>Cargando consumo de contenidos…</div>
+            ) : !consumptionStats.available ? (
+              <div style={{ fontSize: 11, color: "var(--muted)" }}>Dato no disponible para este curso.</div>
+            ) : (
+              <div>
+                {consumptionStats.avgPct != null && (
+                  <>
+                    <ProgressBar
+                      value={Math.min(100, consumptionStats.avgPct)}
+                      color={colorForPct(consumptionStats.avgPct, thresholds)}
+                      animate={false}
+                      showLabel={false}
+                    />
+                    <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 6, display: "flex", justifyContent: "space-between" }}>
+                      <span>Promedio de temas abiertos por estudiante</span>
+                      <span style={{ fontFamily: "var(--font-mono)", fontWeight: 800 }}>{fmtPct(consumptionStats.avgPct)}</span>
+                    </div>
+                  </>
+                )}
+                <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 4 }}>
+                  {consumptionStats.opened} de {consumptionStats.total} estudiantes han abierto contenidos
+                </div>
+              </div>
+            )}
           </Card>
           </div>
 
@@ -2494,12 +2625,12 @@ const contentKpis = useMemo(() => {
 
         </div>
 
-        {/* ── Fila: Resultados de aprendizaje + Asignaciones ── */}
+        {/* ── Fila: Resultados de aprendizaje + Asignaciones + Accesos ── */}
         <div
           className="fade-up fade-up-2"
           style={{
             display: "grid",
-            gridTemplateColumns: isMobile || isNarrow ? "1fr" : "1fr 1fr",
+            gridTemplateColumns: isMobile ? "1fr" : isNarrow ? "1fr 1fr" : "1.15fr 1.15fr 0.75fr",
             gap: 12,
             marginBottom: 12,
             alignItems: "stretch",
@@ -2679,6 +2810,57 @@ const contentKpis = useMemo(() => {
             <ErrorBoundary sectionName="Asignaciones del curso">
               <AssignmentsPanel orgUnitId={orgUnitId} />
             </ErrorBoundary>
+          </Card>
+        </div>
+
+        {/* ── Accesos al curso (LastAccessed del classlist) ── */}
+        <div style={{ display: "flex" }}>
+          <Card
+            style={{ flex: 1 }}
+            title={<span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>🔑 Accesos al curso <InfoTooltip text="Último acceso de cada estudiante al curso en Brightspace (dato del classlist). Útil para detectar estudiantes desconectados. En la pestaña Estudiantes ves el último acceso de cada uno." /></span>}
+            accent="brand"
+          >
+            {accessStats == null ? (
+              <div className="empty-state" style={{ minHeight: 90 }}>
+                <span className="pulse-dot" style={{ background: COLORS.brand, width: 8, height: 8 }} />
+                <span style={{ fontSize: 11 }}>Cargando accesos…</span>
+              </div>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
+                {[
+                  { label: "Entraron hoy", value: accessStats.today, color: COLORS.ok },
+                  { label: "Últimos 7 días", value: accessStats.week, color: COLORS.brand },
+                  { label: "+14 días sin entrar", value: accessStats.stale, color: accessStats.stale > 0 ? COLORS.watch : "var(--muted)" },
+                  { label: "Nunca han entrado", value: accessStats.never, color: accessStats.never > 0 ? COLORS.critical : "var(--muted)" },
+                ].map((row) => (
+                  <div key={row.label} style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <div style={{ width: 8, height: 8, borderRadius: "50%", background: row.color, flexShrink: 0 }} />
+                    <div style={{ flex: 1, fontSize: 12, color: "var(--text)", fontWeight: 600 }}>{row.label}</div>
+                    <div style={{ fontSize: 13, fontWeight: 900, fontFamily: "var(--font-mono)", color: row.color }}>{row.value}</div>
+                    <div style={{ fontSize: 10, color: "var(--muted)", width: 40, textAlign: "right" }}>
+                      {accessStats.total > 0 ? `${((row.value / accessStats.total) * 100).toFixed(0)}%` : ""}
+                    </div>
+                  </div>
+                ))}
+
+                {accessStats.staleList.length > 0 && (
+                  <>
+                    <Divider />
+                    <div style={{ fontSize: 10, color: "var(--muted)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                      Más tiempo sin entrar
+                    </div>
+                    {accessStats.staleList.map((s) => (
+                      <div key={s.userId} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, fontSize: 11 }}>
+                        <span style={{ color: "var(--text)", fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.name}</span>
+                        <span style={{ color: s.days == null ? COLORS.critical : COLORS.watch, fontWeight: 800, fontFamily: "var(--font-mono)", flexShrink: 0 }}>
+                          {s.days == null ? "Nunca" : `${s.days} días`}
+                        </span>
+                      </div>
+                    ))}
+                  </>
+                )}
+              </div>
+            )}
           </Card>
         </div>
 
@@ -3166,6 +3348,12 @@ const contentKpis = useMemo(() => {
                       )}
                       <SortTh label="Nota" {...makeSort("grade10")} />
                       <SortTh label="Cobertura" {...makeSort("coverage")} title="% del curso con evidencias calificadas" />
+                      <th
+                        title="Último acceso del estudiante al curso en Brightspace"
+                        style={{ padding: "10px 10px", fontSize: 11, fontWeight: 700, textTransform: "uppercase", color: "var(--muted)", textAlign: "left", whiteSpace: "nowrap" }}
+                      >
+                        Último acceso
+                      </th>
                       <th />
                     </tr>
                   </thead>
@@ -3272,6 +3460,22 @@ const contentKpis = useMemo(() => {
                               <ProgressBar value={s.coveragePct} color={colorForPct(s.coveragePct, thresholds)} animate={false} />
                             )}
                           </td>
+                          <td style={{ padding: "10px 10px", whiteSpace: "nowrap" }}>
+                            {(() => {
+                              const iso = lastAccessMap[String(s.userId)];
+                              const txt = Object.keys(lastAccessMap).length ? fmtLastAccess(iso) : "—";
+                              const days = iso ? (Date.now() - new Date(iso).getTime()) / 86400000 : null;
+                              const color = !Object.keys(lastAccessMap).length ? "var(--muted)"
+                                : iso == null ? COLORS.critical
+                                : days > 14 ? COLORS.watch
+                                : "var(--text)";
+                              return (
+                                <span title={iso ? new Date(iso).toLocaleString("es-CO") : "Sin accesos registrados"} style={{ fontSize: 12, fontWeight: 700, color }}>
+                                  {txt}
+                                </span>
+                              );
+                            })()}
+                          </td>
                           <td style={{ padding: "10px 10px", textAlign: "right" }}>
                             <button
                               className="btn"
@@ -3287,7 +3491,7 @@ const contentKpis = useMemo(() => {
                       if (!sortedStudents.length) {
                         return (
                           <tr>
-                            <td colSpan={10} style={{ padding: 24, textAlign: "center", color: "var(--muted)", fontSize: 13 }}>
+                            <td colSpan={12} style={{ padding: 24, textAlign: "center", color: "var(--muted)", fontSize: 13 }}>
                               Sin resultados para el filtro.
                             </td>
                           </tr>
