@@ -54,6 +54,24 @@ import {
   ProgressBar, InfoTooltip, SortTh, CoverageBars, GaugeMeter,
 } from "./teacher/primitives";
 
+// Tipo de contenido inferido del título del tema (para el desglose por tipo).
+function contentTypeLabel(title) {
+  const t = String(title || "").toLowerCase();
+  if (t.includes(".pdf")) return "PDF";
+  if (/\.(docx?|rtf)/.test(t)) return "Word";
+  if (/\.(xlsx?|csv)/.test(t)) return "Excel";
+  if (/\.pptx?/.test(t)) return "PowerPoint";
+  if (/\.(mp4|mov|avi|webm)|video/.test(t)) return "Video";
+  if (/https?:|www\.|link|enlace|url/.test(t)) return "Enlace";
+  if (/\.html?/.test(t)) return "HTML";
+  return "Otro";
+}
+
+const CONTENT_TYPE_ICONS = {
+  PDF: "📕", Word: "📘", Excel: "📗", PowerPoint: "📙",
+  Video: "🎬", Enlace: "🔗", HTML: "🌐", Otro: "📄",
+};
+
 // Icono según el tipo de contenido inferido del título del tema.
 function topicIcon(title) {
   const t = String(title || "").toLowerCase();
@@ -294,6 +312,8 @@ export default function TeacherDashboard() {
   const [lastAccessMap, setLastAccessMap] = useState({});
   // Classlist crudo (para derivar el equipo docente por diferencia con estudiantes)
   const [classlistItems, setClasslistItems] = useState([]);
+  // Profesores/instructores del curso (LP enrollments trae el nombre del rol)
+  const [instructors, setInstructors] = useState(null); // null = cargando
   const [consumption, setConsumption] = useState(null);
   const [overview, setOverview] = useState(null);
   const [studentsList, setStudentsList] = useState(null);
@@ -1018,7 +1038,17 @@ export default function TeacherDashboard() {
     let alive = true;
     setLastAccessMap({});
     setClasslistItems([]);
+    setInstructors(null);
     setConsumption(null);
+
+    (async () => {
+      try {
+        const ins = await apiGetCached(`/brightspace/course/${orgUnitId}/instructors`, { ttl: 300_000 });
+        if (alive) setInstructors(Array.isArray(ins?.items) ? ins.items : []);
+      } catch {
+        if (alive) setInstructors([]);
+      }
+    })();
 
     (async () => {
       try {
@@ -1591,7 +1621,23 @@ const contentKpis = useMemo(() => {
     const minExpected = Math.max(1, Math.ceil(weeks / 2));
     const progressRatio = minExpected > 0 ? clamp(createdCount / minExpected, 0, 2) : null;
 
-    return { createdCount, minExpected, progressRatio };
+    // Desglose por tipo de los mismos contenidos que cuenta createdCount
+    const typeCounts = {};
+    for (const mod of root) {
+      if (mod?.IsHidden === true) continue;
+      for (const it of (Array.isArray(mod?.Structure) ? mod.Structure : [])) {
+        const itDate = toDate(it?.LastModifiedDate);
+        if (it?.IsHidden !== true && Number(it?.Type) === 1 && itDate && itDate >= start) {
+          const label = contentTypeLabel(it?.Title || it?.ShortTitle);
+          typeCounts[label] = (typeCounts[label] || 0) + 1;
+        }
+      }
+    }
+    const typeBreakdown = Object.entries(typeCounts)
+      .map(([label, count]) => ({ label, count }))
+      .sort((a, b) => b.count - a.count);
+
+    return { createdCount, minExpected, progressRatio, typeBreakdown };
   }, [contentRoot, courseInfo?.StartDate, courseInfo?.EndDate]);
 
   const contentRhythmMeta = useMemo(() => {
@@ -1678,9 +1724,20 @@ const contentKpis = useMemo(() => {
   // Qué lista de accesos está desplegada: "today" | "week" | "stale" | "never" | null
   const [accessListOpen, setAccessListOpen] = useState(null);
 
-  // Equipo docente = usuarios del classlist que NO están en la lista de
-  // estudiantes (el classlist crudo de Brightspace no trae RoleName).
+  // Profesores del curso: preferimos los roles reales de LP enrollments
+  // (Instructor/Profesor/Docente). Si el endpoint no devuelve nada, caemos
+  // al equipo no-estudiante del classlist como antes.
   const teacherAccessList = useMemo(() => {
+    if (Array.isArray(instructors) && instructors.length > 0) {
+      return instructors
+        .filter((u) => u?.Identifier != null)
+        .map((u) => ({
+          userId: String(u.Identifier),
+          name: u.DisplayName || `Usuario ${u.Identifier}`,
+          role: u.RoleName || "Instructor",
+          iso: lastAccessMap[String(u.Identifier)] ?? null,
+        }));
+    }
     if (!classlistItems.length || !studentRows.length) return [];
     const studentIds = new Set(studentRows.map((r) => String(r.userId)));
     return classlistItems
@@ -1691,7 +1748,7 @@ const contentKpis = useMemo(() => {
         role: u.RoleName || u.roleName || "Equipo del curso",
         iso: u.LastAccessed || null,
       }));
-  }, [classlistItems, studentRows]);
+  }, [instructors, lastAccessMap, classlistItems, studentRows]);
 
   // Metadatos de los temas de contenido (id -> título) para el detalle de consumo
   const contentTopicMeta = useMemo(() => {
@@ -1710,6 +1767,8 @@ const contentKpis = useMemo(() => {
   // Detalle de consumo desplegable
   const [consumptionDetailOpen, setConsumptionDetailOpen] = useState(false);
   const [consumptionStudentOpen, setConsumptionStudentOpen] = useState(null);
+  // Desglose por tipo en el KPI de contenidos publicados
+  const [contentTypesOpen, setContentTypesOpen] = useState(false);
   const performanceBands = useMemo(() => {
   const bands = [
     { name: "Excelente", key: "excellent", value: 0, color: COLORS.ok },
@@ -2391,6 +2450,34 @@ const contentKpis = useMemo(() => {
                 {contentRhythmMeta.label}
               </span>
             )}
+            {(contentKpis?.typeBreakdown?.length ?? 0) > 0 && (
+              <>
+                <button
+                  onClick={() => setContentTypesOpen((v) => !v)}
+                  aria-expanded={contentTypesOpen}
+                  style={{
+                    border: "none", background: "transparent", cursor: "pointer",
+                    fontSize: 10, fontWeight: 700, color: "var(--brand)",
+                    fontFamily: "var(--font)", padding: "2px 6px",
+                  }}
+                >
+                  Tipos de contenido {contentTypesOpen ? "▴" : "▾"}
+                </button>
+                {contentTypesOpen && (
+                  <div style={{ display: "flex", flexDirection: "column", gap: 3, width: "100%", maxHeight: 110, overflowY: "auto" }}>
+                    {contentKpis.typeBreakdown.map((t) => (
+                      <div key={t.label} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, fontSize: 11, padding: "1px 8px" }}>
+                        <span style={{ color: "var(--text)", fontWeight: 600 }}>
+                          <span aria-hidden="true" style={{ marginRight: 4 }}>{CONTENT_TYPE_ICONS[t.label] || "📄"}</span>
+                          {t.label}
+                        </span>
+                        <span style={{ fontFamily: "var(--font-mono)", fontWeight: 800, color: "var(--brand)" }}>{t.count}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </>
+            )}
           </div>
         </div>
 
@@ -2984,7 +3071,7 @@ const contentKpis = useMemo(() => {
                       aria-expanded={consumptionDetailOpen}
                       style={{ alignSelf: "center", fontSize: 11, padding: "5px 12px", borderRadius: 8 }}
                     >
-                      👥 {consumptionDetailOpen ? "Ocultar detalle" : "Ver quiénes y qué consumieron"} {consumptionDetailOpen ? "▴" : "▾"}
+                      👥 {consumptionDetailOpen ? "Ocultar detalle" : "Acceso a contenidos"} {consumptionDetailOpen ? "▴" : "▾"}
                     </button>
 
                     {consumptionDetailOpen && (

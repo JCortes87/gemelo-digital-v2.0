@@ -92,6 +92,7 @@ function AssignmentsPanel({ orgUnitId }) {
 
     const stats = {
       created: rows.length,
+      hidden: (folders || []).length - visible.length,
       withSubmissions: rows.filter((r) => r.withSub > 0).length,
       graded: rows.filter((r) => r.isGraded).length,
       overdue: rows.filter((r) => r.isOverdue).length,
@@ -145,6 +146,7 @@ function AssignmentsPanel({ orgUnitId }) {
 
   const miniStats = [
     { label: "Activas", value: stats.created, color: "var(--brand)", bg: "var(--brand-light)", icon: "📝" },
+    { label: "No publicadas", value: stats.hidden, color: "var(--muted)", bg: "var(--bg)", icon: "🙈" },
     { label: "Con entregas", value: stats.withSubmissions, color: COLORS.ok, bg: "var(--ok-bg)", icon: "📥" },
     { label: "Calificadas", value: stats.graded, color: COLORS.brand, bg: "var(--brand-light)", icon: "✅" },
     { label: "Vencidas", value: stats.overdue, color: stats.overdue > 0 ? COLORS.critical : "var(--muted)", bg: stats.overdue > 0 ? "var(--critical-bg)" : "var(--bg)", icon: "⏰" },
@@ -380,6 +382,9 @@ function AssignmentsPanel({ orgUnitId }) {
 
               <div style={{ flexShrink: 0, textAlign: "center", minWidth: 70 }}>
                 <div
+                  title={r.withFb > r.withSub
+                    ? "Incluye estudiantes calificados sin entrega (p. ej. nota 0)"
+                    : "Estudiantes con calificación / total de estudiantes"}
                   style={{
                     fontSize: 12,
                     fontWeight: 900,
@@ -391,7 +396,7 @@ function AssignmentsPanel({ orgUnitId }) {
                       : "var(--muted)",
                   }}
                 >
-                  {r.withFb}/{r.withSub}
+                  {Math.min(r.withFb, r.totalUsers)}/{r.totalUsers}
                   {r.isGraded && <span style={{ marginLeft: 3 }}>✓</span>}
                 </div>
                 <div style={{ fontSize: 9, color: "var(--muted)", fontWeight: 700, textTransform: "uppercase" }}>
