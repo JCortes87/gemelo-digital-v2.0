@@ -21,6 +21,7 @@ import ErrorBoundary from "../components/ui/ErrorBoundary";
 import SmartAlerts from "../components/dashboard/SmartAlerts";
 import CourseTrends from "../components/dashboard/CourseTrends";
 import DueDateCalendar from "../components/dashboard/DueDateCalendar";
+import AssignmentsPanel from "../components/dashboard/AssignmentsPanel";
 import AINarrativeSummary from "../components/dashboard/AINarrativeSummary";
 import GradePredictions from "../components/dashboard/GradePredictions";
 import EvidenceReports from "../components/dashboard/EvidenceReports";
@@ -196,6 +197,11 @@ export default function TeacherDashboard() {
 
   // Scroll to section when voice command navigates
   useEffect(() => {
+    // La tabla de estudiantes ahora vive en su propia pestaña
+    if (activeSection === "students") {
+      setActiveTab("students");
+      return;
+    }
     const map = {
       overview:          overviewRef,
       priority:          priorityRef,
@@ -206,6 +212,7 @@ export default function TeacherDashboard() {
     if (ref?.current) {
       ref.current.scrollIntoView({ behavior: "smooth", block: "start" });
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeSection]);
 
   const [orgUnitId, setOrgUnitId] = useState(() => {
@@ -313,6 +320,8 @@ export default function TeacherDashboard() {
 
   // SuperAdmin impersonation: view a student's portal
   const [impersonateStudent, setImpersonateStudent] = useState(null); // { userId, name }
+  // Solo superadmin: alternar entre vista profesor y vista estudiante del curso actual
+  const [adminView, setAdminView] = useState("teacher"); // "teacher" | "student"
 
   // Quick filter (active filter chip applied to the students table)
   // Values: null, "risk_high", "risk_medium", "no_coverage", "overdue", "pending_grade", "approved"
@@ -373,7 +382,7 @@ export default function TeacherDashboard() {
   const [drawerTab, setDrawerTab] = useState("resumen");
 
   // ── Main navigation tabs (persisted in URL) ──────────
-  const VALID_TABS = ["dashboard", "routes", "predictions", "evidences", "learning-outcomes", "assistant", "help"];
+  const VALID_TABS = ["dashboard", "students", "calendar", "trends", "routes", "predictions", "evidences", "learning-outcomes", "assistant", "help"];
   const [searchParams, setSearchParams] = useSearchParams();
   const tabFromUrl = searchParams.get("tab");
   const activeTab = VALID_TABS.includes(tabFromUrl) ? tabFromUrl : "dashboard";
@@ -1641,6 +1650,9 @@ const contentKpis = useMemo(() => {
     const cmds = [];
     // Navigation
     cmds.push({ id: "nav_dashboard", group: "Navegar", icon: "📊", label: "Ir al Dashboard", hint: "1", action: () => setActiveTab("dashboard") });
+    cmds.push({ id: "nav_students", group: "Navegar", icon: "👥", label: "Estudiantes", hint: "4", action: () => setActiveTab("students") });
+    cmds.push({ id: "nav_calendar", group: "Navegar", icon: "📅", label: "Calendario de entregas", hint: "5", action: () => setActiveTab("calendar") });
+    cmds.push({ id: "nav_trends", group: "Navegar", icon: "📈", label: "Tendencias del curso", hint: "6", action: () => setActiveTab("trends") });
     cmds.push({ id: "nav_routes", group: "Navegar", icon: "🛤️", label: "Rutas de atención", hint: "2", action: () => setActiveTab("routes") });
     cmds.push({ id: "nav_assistant", group: "Navegar", icon: "🤖", label: "Asistente IA", hint: "3", action: () => setActiveTab("assistant") });
     // Actions
@@ -1679,6 +1691,9 @@ const contentKpis = useMemo(() => {
     { keys: "1", handler: () => setActiveTab("dashboard"), description: "Dashboard" },
     { keys: "2", handler: () => setActiveTab("routes"), description: "Rutas" },
     { keys: "3", handler: () => setActiveTab("assistant"), description: "Asistente" },
+    { keys: "4", handler: () => setActiveTab("students"), description: "Estudiantes" },
+    { keys: "5", handler: () => setActiveTab("calendar"), description: "Calendario" },
+    { keys: "6", handler: () => setActiveTab("trends"), description: "Tendencias" },
     { keys: "r", handler: handleRefresh, description: "Refrescar" },
     { keys: "c", handler: handleOpenCoursePanel, description: "Cambiar curso" },
     { keys: "?", handler: () => setPaletteOpen(true), description: "Ayuda" },
@@ -1987,6 +2002,8 @@ const contentKpis = useMemo(() => {
         isSuperAdmin={isSuperAdmin}
         studentRows={studentRows}
         onImpersonate={setImpersonateStudent}
+        adminView={adminView}
+        onAdminViewChange={isSuperAdmin ? setAdminView : undefined}
       />
 
       {/* ── Main content ── */}
@@ -2117,6 +2134,107 @@ const contentKpis = useMemo(() => {
           </div>
         </div>
 
+        {/* ── KPIs principales del curso ── */}
+        <div
+          className="fade-up fade-up-1"
+          style={{
+            display: "grid",
+            gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(4, 1fr)",
+            gap: 16,
+            marginBottom: 16,
+          }}
+        >
+          {/* Estudiantes */}
+          <div className="kpi-card" style={{ display: "flex", alignItems: "center", gap: 14 }}>
+            <div style={{
+              width: 64, height: 64, borderRadius: "50%", flexShrink: 0,
+              background: "var(--brand-light)", display: "flex", alignItems: "center",
+              justifyContent: "center", fontSize: 26,
+            }} aria-hidden="true">👥</div>
+            <div style={{ minWidth: 0 }}>
+              <div style={{ fontSize: 11, fontWeight: 800, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.06em" }}>
+                Estudiantes
+              </div>
+              <div style={{ fontSize: 28, fontWeight: 900, color: "var(--text)", fontFamily: "var(--font-mono)", lineHeight: 1.15 }}>
+                {studentsCount || "—"}
+              </div>
+              <div style={{ fontSize: 11, color: "var(--muted)" }}>Inscritos en el curso</div>
+            </div>
+          </div>
+
+          {/* Nota promedio */}
+          <div className="kpi-card" style={{ display: "flex", alignItems: "center", gap: 14 }}>
+            <CircularRing
+              pct={avgPerfPct != null && Number(avgPerfPct) > 0 ? avgPerfPct : 0}
+              size={64}
+              stroke={7}
+              color={avgPerfPct != null && Number(avgPerfPct) > 0 ? colorForPct(avgPerfPct, thresholds) : "var(--border)"}
+              label={avgPerfPct == null || Number(avgPerfPct) === 0 ? "—" : fmtGrade10FromPct(avgPerfPct)}
+              fontSize={13}
+            />
+            <div style={{ minWidth: 0 }}>
+              <div style={{ fontSize: 11, fontWeight: 800, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.06em" }}>
+                Nota promedio
+              </div>
+              <div style={{ fontSize: 28, fontWeight: 900, color: avgPerfPct != null && Number(avgPerfPct) > 0 ? colorForPct(avgPerfPct, thresholds) : "var(--muted)", fontFamily: "var(--font-mono)", lineHeight: 1.15 }}>
+                {avgPerfPct == null || Number(avgPerfPct) === 0 ? "—" : fmtGrade10FromPct(avgPerfPct)}
+              </div>
+              <div style={{ fontSize: 11, color: "var(--muted)" }}>Escala 0–10 · gradebook</div>
+            </div>
+          </div>
+
+          {/* En riesgo */}
+          <div className="kpi-card" style={{ display: "flex", alignItems: "center", gap: 14 }}>
+            <CircularRing
+              pct={atRiskPct != null ? Math.min(100, atRiskPct) : 0}
+              size={64}
+              stroke={7}
+              color={
+                atRiskPct == null ? "var(--border)"
+                  : atRiskPct > 40 ? COLORS.critical
+                  : atRiskPct > 20 ? COLORS.watch
+                  : COLORS.ok
+              }
+              label={atRiskPct == null ? "—" : String(atRiskCount)}
+              fontSize={14}
+            />
+            <div style={{ minWidth: 0 }}>
+              <div style={{ fontSize: 11, fontWeight: 800, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.06em" }}>
+                En riesgo
+              </div>
+              <div style={{
+                fontSize: 28, fontWeight: 900, fontFamily: "var(--font-mono)", lineHeight: 1.15,
+                color: atRiskPct == null ? "var(--muted)" : atRiskPct > 40 ? COLORS.critical : atRiskPct > 20 ? COLORS.watch : COLORS.ok,
+              }}>
+                {atRiskPct == null ? "—" : atRiskCount}
+              </div>
+              <div style={{ fontSize: 11, color: "var(--muted)" }}>
+                {atRiskPct == null ? "Sin datos aún" : `${fmtPct(atRiskPct)} del curso (alto + medio)`}
+              </div>
+            </div>
+          </div>
+
+          {/* Contenidos creados */}
+          <div className="kpi-card" style={{ display: "flex", alignItems: "center", gap: 14 }}>
+            <div style={{
+              width: 64, height: 64, borderRadius: "50%", flexShrink: 0,
+              background: contentKpis?.createdCount != null ? `${contentRhythmMeta.bg}` : "var(--bg)",
+              display: "flex", alignItems: "center", justifyContent: "center", fontSize: 26,
+            }} aria-hidden="true">📚</div>
+            <div style={{ minWidth: 0 }}>
+              <div style={{ fontSize: 11, fontWeight: 800, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.06em" }}>
+                Contenidos creados
+              </div>
+              <div style={{ fontSize: 28, fontWeight: 900, color: contentKpis?.createdCount != null ? contentRhythmMeta.color : "var(--muted)", fontFamily: "var(--font-mono)", lineHeight: 1.15 }}>
+                {contentKpis?.createdCount ?? "—"}
+              </div>
+              <div style={{ fontSize: 11, color: "var(--muted)" }}>
+                {contentKpis?.minExpected != null ? `Mínimo esperado: ${contentKpis.minExpected}` : "Desde inicio del curso"}
+              </div>
+            </div>
+          </div>
+        </div>
+
         {/* ── Alertas inteligentes (fusiona Radar docente + heurísticas locales) ── */}
         <div className="fade-up fade-up-1" style={{ marginBottom: 16 }}>
           <ErrorBoundary sectionName="Alertas inteligentes">
@@ -2151,6 +2269,18 @@ const contentKpis = useMemo(() => {
           </Card>
         </div>
 
+        {/* ── Estado de asignaciones ── */}
+        <div className="fade-up fade-up-2" style={{ marginBottom: 16 }}>
+          <Card
+            title={<span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>📝 Asignaciones del curso <InfoTooltip text="Estado de las asignaciones (dropbox) que has creado en Brightspace: cuántas tienen entregas de estudiantes (con % de entrega), cuántas ya están completamente calificadas y cuántas vencieron. Ordenadas por fecha de entrega." /></span>}
+            accent="brand"
+          >
+            <ErrorBoundary sectionName="Asignaciones del curso">
+              <AssignmentsPanel orgUnitId={orgUnitId} />
+            </ErrorBoundary>
+          </Card>
+        </div>
+
         <div
           className="fade-up fade-up-2"
           style={{
@@ -2163,63 +2293,6 @@ const contentKpis = useMemo(() => {
         >
           <div ref={overviewRef}>
           <Card title="Gestión del curso" right={<StatusBadge status={courseStatus} />} accent="brand">
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr",
-                gap: 16,
-                marginBottom: 14,
-              }}
-            >
-              <Stat
-                label="Nota promedio (0–10)"
-                value={avgPerfPct == null || Number(avgPerfPct) === 0 ? "—" : fmtGrade10FromPct(avgPerfPct)}
-                valueColor={colorForPct(avgPerfPct, thresholds)}
-                sub={
-                  avgCov == null || Number(avgCov) === 0
-                    ? "Sin cobertura registrada"
-                    : `${fmtPct(covDone)} calificado · ${fmtPct(covPending)} pendiente`
-                }
-              />
-              <Stat
-                label="Estudiantes"
-                value={studentsCount}
-                sub={`${overview?.courseGradebook?.avgGradedItemsCount ?? 0}/${overview?.courseGradebook?.avgTotalItemsCount ?? 0} ítems prom.`}
-              />
-            </div>
-
-            <Divider />
-
-            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
-              <div
-                style={{
-                  fontSize: 11,
-                  color: "var(--muted)",
-                  fontWeight: 700,
-                  textTransform: "uppercase",
-                  letterSpacing: "0.05em",
-                }}
-              >
-                En riesgo (alto + medio)
-              </div>
-              <InfoTooltip text="Este indicador es un resultado. La gestión del curso se prioriza por acciones docentes: publicación sostenida de contenidos, oportunidad de retroalimentación y cierre evaluativo. Objetivo operativo: mínimo 1 contenido nuevo cada 2 semanas y retroalimentación posterior al vencimiento en máximo 8 días." />
-            </div>
-
-            <Stat
-              label=""
-              value={atRiskPct == null ? "—" : fmtPct(atRiskPct)}
-              valueColor={
-                atRiskPct != null && atRiskPct > 40
-                  ? COLORS.critical
-                  : atRiskPct != null && atRiskPct > 20
-                  ? COLORS.watch
-                  : COLORS.ok
-              }
-              sub={totalStudents ? `${atRiskCount} de ${totalStudents} estudiantes` : "—"}
-            />
-
-            <Divider />
-
             <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
               <div
                 style={{
@@ -2247,60 +2320,9 @@ const contentKpis = useMemo(() => {
               </div>
             </div>
 
-            <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 10 }}>
-              <div
-                style={{
-                  padding: 12,
-                  border: "1px solid var(--border)",
-                  borderRadius: 12,
-                  background: "var(--card)",
-                }}
-              >
-                <div
-                  style={{
-                    fontSize: 11,
-                    color: "var(--muted)",
-                    fontWeight: 800,
-                    letterSpacing: "0.05em",
-                    textTransform: "uppercase",
-                  }}
-                >
-                  Contenidos creados
-                </div>
-                <div style={{ fontSize: 26, fontWeight: 900, marginTop: 6 }}>
-                  {contentKpis?.createdCount == null ? "—" : contentKpis.createdCount}
-                </div>
-                <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 2 }}>
-                  Desde inicio del curso
-                </div>
-              </div>
-
-              <div
-                style={{
-                  padding: 12,
-                  border: "1px solid var(--border)",
-                  borderRadius: 12,
-                  background: "var(--card)",
-                }}
-              >
-                <div
-                  style={{
-                    fontSize: 11,
-                    color: "var(--muted)",
-                    fontWeight: 800,
-                    letterSpacing: "0.05em",
-                    textTransform: "uppercase",
-                  }}
-                >
-                  Mínimo esperado
-                </div>
-                <div style={{ fontSize: 26, fontWeight: 900, marginTop: 6 }}>
-                  {contentKpis?.minExpected == null ? "—" : contentKpis.minExpected}
-                </div>
-                <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 2 }}>
-                  Basado en avance del curso
-                </div>
-              </div>
+            <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 4 }}>
+              <strong style={{ color: "var(--text)", fontFamily: "var(--font-mono)" }}>{contentKpis?.createdCount ?? "—"}</strong> contenidos creados
+              {" · "}mínimo esperado <strong style={{ color: "var(--text)", fontFamily: "var(--font-mono)" }}>{contentKpis?.minExpected ?? "—"}</strong>
             </div>
 
             {contentKpis?.progressRatio != null && (
@@ -2717,25 +2739,67 @@ const contentKpis = useMemo(() => {
 
         </div>
 
-        {/* ── Analytics section: Trends ── */}
-        <div className="fade-up fade-up-3" style={{ marginTop: 20, marginBottom: 16 }}>
+        </>}
+
+        {/* ── Tendencias tab ── */}
+        {activeTab === "trends" && (
+        <div className="fade-up tab-enter">
+          <div style={{ marginBottom: 16 }}>
+            <div style={{ fontSize: 10, fontWeight: 800, color: "var(--brand)", textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: 4 }}>
+              G.D · Tendencias
+            </div>
+            <h1 style={{ fontSize: isMobile ? 20 : 26, fontWeight: 900, color: "var(--text)", letterSpacing: "-0.02em", lineHeight: 1.1, marginBottom: 4 }}>
+              Tendencias del curso
+            </h1>
+            <div style={{ fontSize: 13, color: "var(--muted)", fontWeight: 500 }}>
+              {courseInfo?.Name || `Curso ${orgUnitId}`}
+            </div>
+          </div>
           <Card title={<span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>Tendencias del curso <InfoTooltip text="Evolución de nota promedio, porcentaje en riesgo y cobertura a lo largo de los últimos días. Los datos se capturan automáticamente cada vez que abres el dashboard." /></span>} accent="brand">
             <ErrorBoundary sectionName="Tendencias del curso">
               <CourseTrends snapshots={courseSnapshots} />
             </ErrorBoundary>
           </Card>
         </div>
+        )}
 
-        {/* ── Calendario de entregas ── */}
-        <div className="fade-up fade-up-3" style={{ marginBottom: 16 }}>
+        {/* ── Calendario tab ── */}
+        {activeTab === "calendar" && (
+        <div className="fade-up tab-enter">
+          <div style={{ marginBottom: 16 }}>
+            <div style={{ fontSize: 10, fontWeight: 800, color: "var(--brand)", textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: 4 }}>
+              G.D · Calendario
+            </div>
+            <h1 style={{ fontSize: isMobile ? 20 : 26, fontWeight: 900, color: "var(--text)", letterSpacing: "-0.02em", lineHeight: 1.1, marginBottom: 4 }}>
+              Calendario de entregas
+            </h1>
+            <div style={{ fontSize: 13, color: "var(--muted)", fontWeight: 500 }}>
+              {courseInfo?.Name || `Curso ${orgUnitId}`}
+            </div>
+          </div>
           <Card title={<span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>Calendario de entregas <InfoTooltip text="Próximas entregas del curso con detección de sobrecarga (3+ en el mismo día). Heatmap semanal al final. Toma los datos directamente del gradebook del curso." /></span>}>
             <ErrorBoundary sectionName="Calendario de entregas">
               <DueDateCalendar orgUnitId={orgUnitId} studentRows={studentRows} />
             </ErrorBoundary>
           </Card>
         </div>
+        )}
 
-        <div ref={studentsRef} className="fade-up fade-up-3" style={{ marginTop: 4 }}>
+        {/* ── Estudiantes tab ── */}
+        {activeTab === "students" && (
+        <div className="fade-up tab-enter">
+          <div style={{ marginBottom: 16 }}>
+            <div style={{ fontSize: 10, fontWeight: 800, color: "var(--brand)", textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: 4 }}>
+              G.D · Estudiantes
+            </div>
+            <h1 style={{ fontSize: isMobile ? 20 : 26, fontWeight: 900, color: "var(--text)", letterSpacing: "-0.02em", lineHeight: 1.1, marginBottom: 4 }}>
+              Listado de estudiantes
+            </h1>
+            <div style={{ fontSize: 13, color: "var(--muted)", fontWeight: 500 }}>
+              {courseInfo?.Name || `Curso ${orgUnitId}`}
+            </div>
+          </div>
+        <div ref={studentsRef}>
           <Card
             title={
               <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -3295,10 +3359,8 @@ const contentKpis = useMemo(() => {
             )}
           </Card>
         </div>
-
-
-
-        </>}
+        </div>
+        )}
 
         </div>
       </main>
@@ -4127,6 +4189,43 @@ const contentKpis = useMemo(() => {
           </div>
         )}
       </Drawer>
+
+      {/* SuperAdmin — vista estudiante del curso actual (sesión propia) */}
+      {isSuperAdmin && adminView === "student" && !impersonateStudent && (
+        <div style={{
+          position: "fixed", inset: 0, zIndex: 305,
+          background: "var(--page-bg, #f5f7fb)",
+          overflow: "auto",
+        }}>
+          <div style={{
+            position: "sticky", top: 0, zIndex: 5,
+            padding: "8px 20px",
+            background: "linear-gradient(90deg, var(--brand) 0%, #1e40af 100%)",
+            color: "#fff",
+            display: "flex", alignItems: "center", justifyContent: "space-between",
+            gap: 12, flexWrap: "wrap",
+            fontSize: 12, fontWeight: 700,
+          }}>
+            <span>🎓 Vista estudiante (administrador) — estás viendo el portal con tu propia sesión. Para ver los datos de un estudiante específico usa "Ver como…"</span>
+            <button
+              onClick={() => setAdminView("teacher")}
+              style={{
+                background: "#fff", border: "none", borderRadius: 6,
+                padding: "4px 12px", fontSize: 11, fontWeight: 800,
+                cursor: "pointer", color: "var(--brand)", flexShrink: 0,
+              }}
+            >
+              👨‍🏫 Volver a vista profesor
+            </button>
+          </div>
+          <React.Suspense fallback={<SharedCesaLoader title="Portal del Estudiante" subtitle="Cargando vista estudiante" />}>
+            <StudentPortal
+              orgUnitIdOverride={orgUnitId}
+              allowOverviewPanel={isSuperAdmin}
+            />
+          </React.Suspense>
+        </div>
+      )}
 
       {/* SuperAdmin impersonation — view a student's portal */}
       {impersonateStudent && (

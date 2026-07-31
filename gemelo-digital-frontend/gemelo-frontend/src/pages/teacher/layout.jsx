@@ -6,6 +6,9 @@ export function AppSidebar({ activeTab, setActiveTab, currentCourseName, mobileO
   const { t } = useI18n();
   const NAV = [
     { id: "dashboard",  icon: "📊", label: t("nav.dashboard", "Dashboard") },
+    { id: "students",   icon: "👥", label: t("nav.students", "Estudiantes") },
+    { id: "calendar",   icon: "📅", label: t("nav.calendar", "Calendario") },
+    { id: "trends",     icon: "📈", label: t("nav.trends", "Tendencias") },
     { id: "routes",     icon: "🛤️", label: t("nav.routes", "Rutas de atención") },
     { id: "predictions", icon: "🔮", label: t("nav.predictions", "Predicción de notas") },
     { id: "evidences",  icon: "📑", label: t("nav.evidences", "Evidencias") },
@@ -93,6 +96,7 @@ export function AppTopbar({
   authUser, isDualRole, onGoHome,
   onOpenPalette, onOpenCoordinator,
   isSuperAdmin, studentRows, onImpersonate,
+  adminView, onAdminViewChange,
 }) {
   const [showImpersonateMenu, setShowImpersonateMenu] = useState(false);
   const [impersonateSearch, setImpersonateSearch] = useState("");
@@ -136,6 +140,45 @@ export function AppTopbar({
 
       {/* Right */}
       <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        {/* Solo superadmin: alternar vista profesor / estudiante */}
+        {onAdminViewChange && (
+          <div
+            role="tablist"
+            aria-label="Cambiar entre vista profesor y vista estudiante"
+            style={{
+              display: "inline-flex", gap: 2, padding: 3, borderRadius: 10,
+              background: "var(--bg)", border: "1px solid var(--border)",
+            }}
+          >
+            {[
+              { key: "teacher", icon: "👨‍🏫", label: t("topbar.teacherView", "Vista profesor") },
+              { key: "student", icon: "🎓", label: t("topbar.studentView", "Vista estudiante") },
+            ].map((v) => {
+              const active = (adminView || "teacher") === v.key;
+              return (
+                <button
+                  key={v.key}
+                  role="tab"
+                  aria-selected={active}
+                  onClick={() => onAdminViewChange(v.key)}
+                  title={v.label}
+                  style={{
+                    border: "none", cursor: "pointer",
+                    fontSize: 11, fontWeight: 700, fontFamily: "var(--font)",
+                    padding: "5px 10px", borderRadius: 8,
+                    display: "inline-flex", alignItems: "center", gap: 5,
+                    background: active ? "var(--brand)" : "transparent",
+                    color: active ? "#fff" : "var(--muted-strong)",
+                    transition: "background 0.15s",
+                  }}
+                >
+                  <span aria-hidden="true">{v.icon}</span>
+                  {!isMobile && <span>{v.label}</span>}
+                </button>
+              );
+            })}
+          </div>
+        )}
         {onOpenPalette && (
           <button
             className="btn"
