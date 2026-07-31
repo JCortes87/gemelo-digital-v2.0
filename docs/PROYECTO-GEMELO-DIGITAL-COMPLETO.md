@@ -239,7 +239,8 @@ agregada y predictiva sobre el desempeño de cada curso.
 | `GET /gemelo/course/{ou}/grade-items` | Grade items + dropbox con due dates (DB-first). Lo usa el calendario |
 | `GET /brightspace/course/{ou}/dropbox/folders` | Asignaciones crudas de Brightspace (con TotalUsersWithSubmissions/Feedback). Lo usa AssignmentsPanel |
 | `GET /brightspace/course/{ou}/classlist` | Classlist crudo (incluye `LastAccessed` por estudiante). Lo usan la tarjeta de Accesos y la columna Último acceso |
-| `GET /brightspace/course/{ou}/content/consumption` | **Nuevo (jul 2026)**: agrega el user progress de contenido por estudiante → `{perUser: {userId: temasVisitados}}` |
+| `GET /brightspace/course/{ou}/content/consumption` | **Nuevo (jul 2026)**: consumo de contenidos por estudiante → `{perUser, perUserTopics}` (user progress con fallback a completions por tema) |
+| `GET /brightspace/course/{ou}/instructors` | **Nuevo (jul 2026)**: profesores del curso con rol real (LP enrollments) — lo usa "Accesos del profesor" |
 
 ---
 
@@ -684,6 +685,35 @@ principal y respaldadas en `gemelo-digital-v2.0`; cada una se mergeó a
   autofirmado, ya configurado en `vite.config.js`).
 - Los secretos `SESSION_SECRET`/`LTI_STATE_SECRET` se generaron aleatorios
   para local (obligatorios porque `TOOL_BASE_URL` es https).
+
+### Iteraciones posteriores de la misma sesión
+- Tarjeta de cobertura recortada y renombrada a **"Cumplimiento
+  evaluativo"** (se eliminó la sección de ritmo de contenidos, duplicada
+  con el KPI superior).
+- **Accesos al curso**: labels aclarados ("Entraron hoy", "Entraron en
+  los últimos 7 días", "Sin entrar hace +14 días", "Nunca han entrado");
+  los 4 items son desplegables y muestran quiénes son (clic en el nombre
+  abre el gemelo del estudiante). Sección **"Accesos del profesor"** con
+  el último ingreso del docente (rol real vía nuevo endpoint
+  `/brightspace/course/{ou}/instructors` sobre LP enrollments; fallback:
+  no-estudiantes del classlist).
+- **Contenidos consumidos** movido a la tarjeta de Accesos, con dos
+  barras (promedio de temas abiertos y % de estudiantes que abrieron) y
+  botón **"Acceso a contenidos"** que despliega quiénes y qué contenidos
+  abrió cada estudiante (icono por tipo inferido del título). El endpoint
+  `/content/consumption` devuelve también `perUserTopics` y tiene doble
+  estrategia (user progress con fallback a completions por tema).
+- **Asignaciones**: el panel cuenta y lista solo las **publicadas**
+  ("Activas") y agrega el contador "No publicadas" (ocultas). El dato de
+  calificadas por asignación se muestra sobre el total de estudiantes
+  (Brightspace cuenta feedback dado incluso a quienes no entregaron, por
+  eso podía verse >100%).
+- **KPI "Contenidos publicados"** con desglose por tipo desplegable
+  (PDF, Word, Excel, PowerPoint, video, enlace, HTML, otro — tipo
+  inferido del título del tema).
+- Limitación documentada: la **duración de las sesiones** (tiempo
+  conectado) no está disponible vía API REST de Brightspace; solo existe
+  en Data Hub. La tarjeta muestra recencia de acceso, no duración.
 
 ### Convenciones
 - Mensajes de commit y títulos de PR **en imperativo** ("ajusta…",

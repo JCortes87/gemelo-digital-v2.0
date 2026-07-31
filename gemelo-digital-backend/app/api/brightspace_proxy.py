@@ -821,6 +821,51 @@ async def brightspace_classlist(
     return {"count": len(items), "items": items}
 
 
+@router.get("/brightspace/course/{org_unit_id}/instructors")
+async def brightspace_course_instructors(request: Request, org_unit_id: int):
+    """Usuarios del curso con rol de profesor/instructor (LP enrollments,
+    que a diferencia del classlist sí trae el nombre del rol).
+
+    Devuelve {items: [{Identifier, DisplayName, RoleName}]}.
+    """
+    token, err = _require_token_from_request(request)
+    if err:
+        return err
+    headers = _auth_headers(token)
+
+    keywords = ("instructor", "profesor", "docente", "teacher", "facilitador")
+    items = []
+    bookmark = None
+    for _ in range(5):  # máx 5 páginas de ~100
+        url = (
+            f"{BRIGHTSPACE_BASE_URL}/d2l/api/lp/{LP_VERSION}"
+            f"/enrollments/orgUnits/{org_unit_id}/users/"
+        )
+        if bookmark:
+            url += f"?bookmark={urllib.parse.quote(str(bookmark))}"
+        status, data = await _bs_get_cached(url, headers)
+        if status != 200 or not isinstance(data, dict):
+            break
+        for rec in (data.get("Items") or []):
+            if not isinstance(rec, dict):
+                continue
+            user = rec.get("User") or {}
+            role = rec.get("Role") or {}
+            role_name = str(role.get("Name") or "")
+            if any(k in role_name.lower() for k in keywords):
+                items.append({
+                    "Identifier": user.get("Identifier"),
+                    "DisplayName": user.get("DisplayName"),
+                    "RoleName": role_name,
+                })
+        paging = data.get("PagingInfo") or {}
+        bookmark = paging.get("Bookmark")
+        if not paging.get("HasMoreItems") or not bookmark:
+            break
+
+    return {"count": len(items), "items": items}
+
+
 @router.get("/brightspace/course/{org_unit_id}/content/consumption")
 async def brightspace_content_consumption(request: Request, org_unit_id: int):
     """Resumen de consumo de contenidos por estudiante: cuantos temas del

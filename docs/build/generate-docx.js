@@ -1353,6 +1353,13 @@ children.push(bullet("KPIs rediseñados al mismo estilo: mi nota actual, asignac
 children.push(bullet("Los Resultados de Aprendizaje conservan la explicación de cada resultado."));
 children.push(H3("Superadmin"));
 children.push(bullet("El botón 'Vista estudiante' abre un selector emergente (buscar por nombre o ID) y muestra el portal del estudiante elegido; reemplaza al menú 'Ver como...' del topbar."));
+children.push(H3("Iteraciones posteriores (misma sesión)"));
+children.push(bullet("Tarjeta de cobertura recortada y renombrada a 'Cumplimiento evaluativo' (se eliminó la sección de ritmo de contenidos, duplicada con el KPI superior)."));
+children.push(bullet("Accesos al curso: labels aclarados ('Entraron hoy', 'Entraron en los últimos 7 días', 'Sin entrar hace +14 días', 'Nunca han entrado'); los 4 items son desplegables y muestran quiénes son (clic en el nombre abre el gemelo). Sección 'Accesos del profesor' con el último ingreso del docente (rol real vía endpoint nuevo /brightspace/course/{ou}/instructors sobre LP enrollments)."));
+children.push(bullet("Contenidos consumidos movido a la tarjeta de Accesos: dos barras (promedio de temas abiertos y % de estudiantes que abrieron) y botón 'Acceso a contenidos' que despliega quiénes y qué contenidos abrió cada estudiante, con icono por tipo. El endpoint /content/consumption devuelve también perUserTopics."));
+children.push(bullet("Asignaciones: el panel cuenta y lista solo las publicadas ('Activas') y agrega el contador 'No publicadas'. Las calificadas por asignación se muestran sobre el total de estudiantes (Brightspace cuenta feedback dado incluso a quienes no entregaron)."));
+children.push(bullet("KPI 'Contenidos publicados' con desglose por tipo desplegable (PDF, Word, Excel, PowerPoint, video, enlace, HTML, otro)."));
+children.push(bullet("Limitación documentada: la duración de las sesiones (tiempo conectado) no está disponible vía API REST de Brightspace; solo existe en Data Hub. Se muestra recencia de acceso, no duración."));
 children.push(H3("Convenciones y notas"));
 children.push(bullet("Mensajes de commit y títulos de PR en imperativo ('ajusta...', 'agrega...'), con prefijo tipo conventional commits."));
 children.push(bullet("Dev local: venv + certificado autofirmado en gemelo-digital-backend/certs/ + .env local; el BRIGHTSPACE_SCOPE del .env viejo pedía grades:grades:read (ya no autorizado) y se comentó para usar el default del código."));
