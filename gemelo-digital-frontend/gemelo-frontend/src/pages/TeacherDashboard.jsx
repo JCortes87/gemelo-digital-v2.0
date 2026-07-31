@@ -99,7 +99,9 @@ export default function TeacherDashboard() {
 
   // ── Voice command state ─────────────────────────────────
   const [voiceFeedback, setVoiceFeedback] = useState("");
-  const [activeSection, setActiveSection] = useState("students");
+  // null al inicio: solo cambia cuando un comando de voz/paleta navega.
+  // (Si arranca en "students", el efecto de navegación abre esa pestaña al montar.)
+  const [activeSection, setActiveSection] = useState(null);
   const [advancedQuery, setAdvancedQuery] = useState({ mode: "text", target: null });
 
   const [darkMode, setDarkMode] = useState(false);
@@ -2207,18 +2209,6 @@ const contentKpis = useMemo(() => {
           </div>
         </div>
 
-        {/* ── Estado de asignaciones ── */}
-        <div className="fade-up fade-up-1" style={{ marginBottom: 12 }}>
-          <Card
-            title={<span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>📝 Asignaciones del curso <InfoTooltip text="Estado de las asignaciones (dropbox) que has creado en Brightspace: cuántas tienen entregas de estudiantes (con % de entrega), cuántas ya están completamente calificadas y cuántas vencieron. Ordenadas por fecha de entrega." /></span>}
-            accent="brand"
-          >
-            <ErrorBoundary sectionName="Asignaciones del curso">
-              <AssignmentsPanel orgUnitId={orgUnitId} />
-            </ErrorBoundary>
-          </Card>
-        </div>
-
         <div
           className="fade-up fade-up-2"
           style={{
@@ -2229,8 +2219,8 @@ const contentKpis = useMemo(() => {
             alignItems: "start",
           }}
         >
-          <div ref={overviewRef}>
-          <Card title="Gestión del curso" right={<StatusBadge status={courseStatus} />} accent="brand">
+          <div ref={overviewRef} style={{ order: 2 }}>
+          <Card title={<span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>📚 Contenidos y cobertura</span>} right={<StatusBadge status={courseStatus} />} accent="brand">
             <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
               <div
                 style={{
@@ -2308,8 +2298,8 @@ const contentKpis = useMemo(() => {
           </div>
 
           {/* ── Riesgo académico + Distribución apilados en 1 columna ── */}
-          <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-            <Card title={<span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>Riesgo académico <InfoTooltip text="Distribución de los estudiantes según su nota actual: Alto (<5.0), Medio (5.0–7.0), Bajo (≥7.0). Calculado solo con notas reales del gradebook, excluye columnas 'Corte'." /></span>} accent="pending">
+          <div style={{ display: "flex", flexDirection: "column", gap: 12, order: 1 }}>
+            <Card title={<span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>⚠️ Riesgo académico <InfoTooltip text="Distribución de los estudiantes según su nota actual: Alto (<5.0), Medio (5.0–7.0), Bajo (≥7.0). Calculado solo con notas reales del gradebook, excluye columnas 'Corte'." /></span>} accent="pending">
               <div
                 role="img"
                 aria-label="Gráfico de pastel: distribución de estudiantes por nivel de riesgo académico"
@@ -2380,9 +2370,9 @@ const contentKpis = useMemo(() => {
             <GradeDistributionCard studentRows={studentRows} thresholds={thresholds} />
           </div>
 
-          <div ref={priorityRef}>
+          <div ref={priorityRef} style={{ order: 3 }}>
           <Card
-            title={<span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>Estudiantes prioritarios <InfoTooltip text="Estudiantes que requieren tu atención inmediata: nota crítica (<5), cobertura baja (<60%), ítems vencidos sin calificar o pendientes de calificación. Ordenados por nivel de riesgo." /></span>} accent="critical"
+            title={<span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>🚨 Estudiantes prioritarios <InfoTooltip text="Estudiantes que requieren tu atención inmediata: nota crítica (<5), cobertura baja (<60%), ítems vencidos sin calificar o pendientes de calificación. Ordenados por nivel de riesgo." /></span>} accent="critical"
             right={
               assignmentRiskData.length > 0
                 ? <span className="tag" style={{ background: "var(--critical-bg)", color: "#B42318" }}>Requieren atención</span>
@@ -2514,9 +2504,9 @@ const contentKpis = useMemo(() => {
           </Card>
           </div>
 
-          <div ref={learningOutcomesRef}>
+          <div ref={learningOutcomesRef} style={{ order: 4 }}>
           <Card
-            title={<span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>Prioridad académica <InfoTooltip text="Resultados de Aprendizaje (RA) del curso ordenados de menor a mayor desempeño. El RA en primera posición es donde tus estudiantes están más débiles — prioriza refuerzo ahí." /></span>}
+            title={<span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>🎯 Resultados de aprendizaje <InfoTooltip text="Resultados de Aprendizaje (RA) del curso ordenados de menor a mayor desempeño. El RA en primera posición es donde tus estudiantes están más débiles — prioriza refuerzo ahí." /></span>}
             accent="brand"
             right={
               <button
@@ -2675,6 +2665,18 @@ const contentKpis = useMemo(() => {
           </Card>
         </div>
 
+        </div>
+
+        {/* ── Estado de asignaciones (entregado / calificado / vencido) ── */}
+        <div className="fade-up fade-up-2" style={{ marginBottom: 12 }}>
+          <Card
+            title={<span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>📝 Asignaciones del curso <InfoTooltip text="Estado de las asignaciones (dropbox) que has creado en Brightspace: cuántas tienen entregas de estudiantes (con % de entrega), cuántas ya están completamente calificadas y cuántas vencieron. Ordenadas por fecha de entrega." /></span>}
+            accent="brand"
+          >
+            <ErrorBoundary sectionName="Asignaciones del curso">
+              <AssignmentsPanel orgUnitId={orgUnitId} />
+            </ErrorBoundary>
+          </Card>
         </div>
 
         {/* ── Alertas inteligentes (fusiona Radar docente + heurísticas locales) ── */}
