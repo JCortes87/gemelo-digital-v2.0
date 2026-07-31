@@ -9,6 +9,7 @@ import {
   CartesianGrid,
   Legend,
 } from "recharts";
+import { TrendingUp } from "lucide-react";
 import { COLORS } from "../../utils/colors";
 
 /**
@@ -21,19 +22,21 @@ import { COLORS } from "../../utils/colors";
 function CourseTrends({ snapshots = [] }) {
   const data = React.useMemo(() => snapshots.map((s) => ({
     date: s.date ? s.date.slice(5) : "",  // MM-DD
-    "Nota promedio": s.avgPct != null ? Number((s.avgPct / 10).toFixed(2)) : null,
+    "Nota promedio": s.avgPct != null ? Number(s.avgPct.toFixed(1)) : null,
     "% en riesgo": s.atRiskPct != null ? Number(s.atRiskPct.toFixed(1)) : null,
     "Cobertura": s.coveragePct != null ? Number(s.coveragePct.toFixed(1)) : null,
   })), [snapshots]);
 
   if (snapshots.length < 2) {
     return (
-      <div style={{ padding: "24px 20px", textAlign: "center", color: "var(--muted)" }}>
-        <div style={{ fontSize: 28, opacity: 0.4, marginBottom: 8 }}>📈</div>
-        <div style={{ fontSize: 13, fontWeight: 700, color: "var(--muted)" }}>
+      <div className="empty-v2" style={{ padding: "28px 20px" }}>
+        <div className="empty-v2-icon">
+          <TrendingUp size={30} strokeWidth={1.8} />
+        </div>
+        <div style={{ fontSize: 14, fontWeight: 800, color: "var(--text)", marginBottom: 6 }}>
           Aún no hay suficientes datos para graficar tendencias
         </div>
-        <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 4 }}>
+        <div style={{ fontSize: 12, color: "var(--muted)" }}>
           Vuelve mañana — se captura un snapshot automático cada día.
         </div>
       </div>
@@ -41,17 +44,26 @@ function CourseTrends({ snapshots = [] }) {
   }
 
   return (
-    <div>
+    <div className="chart-appear">
       <div style={{ fontSize: 11, color: "var(--muted)", marginBottom: 10 }}>
         Evolución de los últimos <strong>{snapshots.length}</strong> días. Los snapshots se
         capturan automáticamente al abrir el dashboard cada día.
       </div>
-      <div style={{ width: "100%", height: 220 }}>
+      <div
+        role="img"
+        aria-label={`Gráfico de tendencias del curso a lo largo de los últimos ${snapshots.length} días`}
+        style={{ width: "100%", height: 220 }}
+      >
         <ResponsiveContainer>
           <LineChart data={data} margin={{ left: -10, right: 10, top: 8, bottom: 0 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
             <XAxis dataKey="date" tick={{ fontSize: 10, fill: "var(--muted)" }} />
-            <YAxis tick={{ fontSize: 10, fill: "var(--muted)" }} />
+            <YAxis
+              domain={[0, 100]}
+              ticks={[0, 25, 50, 75, 100]}
+              tickFormatter={(v) => `${v}`}
+              tick={{ fontSize: 10, fill: "var(--muted)" }}
+            />
             <Tooltip
               contentStyle={{
                 background: "var(--card)",
@@ -65,22 +77,28 @@ function CourseTrends({ snapshots = [] }) {
               type="monotone"
               dataKey="Nota promedio"
               stroke={COLORS.brand}
-              strokeWidth={2}
+              strokeWidth={2.5}
               dot={{ r: 3 }}
+              animationDuration={900}
+              animationEasing="ease-out"
             />
             <Line
               type="monotone"
               dataKey="% en riesgo"
               stroke={COLORS.critical}
-              strokeWidth={2}
+              strokeWidth={2.5}
               dot={{ r: 3 }}
+              animationDuration={900}
+              animationEasing="ease-out"
             />
             <Line
               type="monotone"
               dataKey="Cobertura"
               stroke={COLORS.ok}
-              strokeWidth={2}
+              strokeWidth={2.5}
               dot={{ r: 3 }}
+              animationDuration={900}
+              animationEasing="ease-out"
             />
           </LineChart>
         </ResponsiveContainer>

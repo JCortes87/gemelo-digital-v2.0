@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import asyncio
+import logging
+import re
+import time
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -50,6 +53,292 @@ from app.services.role_utils import (
     resolve_access_level,
     normalize_view_from_enrollment,
 )
+
+logger = logging.getLogger("uvicorn.error")
+
+# =========================================================
+# Auto-mapeo de Resultados de Aprendizaje (RA) desde outcomeSets
+# =========================================================
+# Muchos cursos (+10k) no tienen config manual en config/courses/{id}.json.
+# Para ellos derivamos los RAs en runtime a partir de:
+#   - /lo/outcomeSets/  → descripciones en formato "CODIGO-Texto"
+#   - CriteriaOutcome de la evaluación de rúbrica → OutcomeId por criterio
+# El endpoint /lo/alignments/ da 404 en esta versión, por eso el vínculo
+# criterio→outcome se toma del propio payload de la evaluación.
+
+# Formato observado: "Z1O1DOR3-Emplear los conceptos...". Guión ASCII/medio/
+# largo o dos puntos, con espacios opcionales alrededor.
+_OUTCOME_CODE_REGEX = re.compile(r"^([A-Za-z0-9._-]+)\s*[-–—:]\s*(.+)$")
+
+# Cache TTL en memoria por orgUnitId del índice de outcomes (el build corre
+# por-estudiante, así evitamos golpear Brightspace N veces por snapshot).
+_OUTCOME_SETS_CACHE: Dict[int, Tuple[float, Dict[str, Dict[str, str]]]] = {}
+_OUTCOME_SETS_TTL = 600  # 10 min
+
+# Índice de alineaciones (criterio de rúbrica → outcomeId) por curso.
+# Puente entre CriteriaOutcome (sin OutcomeId) y outcomeSets, vía el
+# endpoint bulk /lo/alignments/. Cacheado igual que outcomeSets.
+_ALIGN_CACHE: Dict[int, Tuple[float, Dict[str, List[str]]]] = {}
+_ALIGN_TTL = 600  # 10 min
+
+# Índice de alineaciones quiz→outcomeId por curso (para RA evaluados por quiz).
+_QUIZ_ALIGN_CACHE: Dict[int, Tuple[float, Dict[str, List[str]]]] = {}
+_QUIZ_ALIGN_TTL = 600  # 10 min
+
+# Cache genérico por curso para datos que NO varían por estudiante
+# (dropbox folders, grade items, grade categories). Sin esto, build_gemelo()
+# refetchea estos recursos N veces por snapshot (N = estudiantes del curso).
+# El lock por key evita el stampede: con concurrency=8 en /ra/dashboard los
+# primeros 8 builds dispararían el mismo fetch en paralelo.
+_COURSE_DATA_CACHE: Dict[Tuple[str, int], Tuple[float, Any]] = {}
+_COURSE_DATA_LOCKS: Dict[Tuple[str, int], asyncio.Lock] = {}
+_COURSE_DATA_TTL = 300  # 5 min
+
+
+async def _get_course_data_cached(kind: str, orgUnitId: int, fetch) -> Any:
+    """Devuelve `fetch()` cacheado por (kind, orgUnitId) con TTL y dedup."""
+    key = (kind, int(orgUnitId))
+    hit = _COURSE_DATA_CACHE.get(key)
+    if hit and (time.time() - hit[0]) < _COURSE_DATA_TTL:
+        return hit[1]
+    lock = _COURSE_DATA_LOCKS.setdefault(key, asyncio.Lock())
+    async with lock:
+        hit = _COURSE_DATA_CACHE.get(key)
+        if hit and (time.time() - hit[0]) < _COURSE_DATA_TTL:
+            return hit[1]
+        data = await fetch()
+        _COURSE_DATA_CACHE[key] = (time.time(), data)
+        return data
+
+
+def _parse_outcome_desc(desc: str) -> Optional[Dict[str, str]]:
+    """Devuelve {code,title,description} si el texto encaja "CODIGO-Texto"."""
+    if not desc:
+        return None
+    m = _OUTCOME_CODE_REGEX.match(desc.strip())
+    if not m:
+        return None
+    return {
+        "code": m.group(1).upper(),
+        "title": m.group(2).strip(),
+        "description": desc.strip(),
+    }
+
+
+def _clean_text(s: str) -> str:
+    """Quita caracteres invisibles que Brightspace inserta alrededor del texto
+    (zero-width space, BOM) y normaliza nbsp a espacio. Sin esto el código RA
+    queda precedido por un \\u200b y el regex '^CODIGO' no matchea."""
+    if not s:
+        return ""
+    for ch in ("\u200b", "\u200c", "\u200d", "\ufeff"):
+        s = s.replace(ch, "")
+    s = s.replace("\xa0", " ")
+    return s.strip()
+
+
+def _richtext_to_str(v: Any) -> str:
+    """Brightspace suele devolver textos como RichText {Text, Html}. Extrae
+    el texto plano tanto si viene como string como si viene como ese objeto."""
+    if v is None:
+        return ""
+    if isinstance(v, dict):
+        v = (
+            v.get("Text") or v.get("text")
+            or v.get("Html") or v.get("html") or ""
+        )
+    return _clean_text(str(v))
+
+
+def _walk_outcome_nodes(node: Any, out: Dict[str, Dict[str, str]]) -> None:
+    """Recorre recursivamente el árbol de outcomeSets acumulando
+    { outcomeId(uuid) : {code,title,description} }.
+
+    El código del RA (p.ej. 'Z1O1DOR3') puede venir en un campo aparte
+    (Notation/AltNotation) o embebido en la descripción como 'CODIGO-Texto'.
+    La descripción puede ser string o RichText {Text,Html}."""
+    if node is None:
+        return
+    if isinstance(node, list):
+        for it in node:
+            _walk_outcome_nodes(it, out)
+        return
+    if not isinstance(node, dict):
+        return
+    oid = (
+        node.get("SourceId")
+        or node.get("OutcomeId")
+        or node.get("Id")
+        or node.get("id")
+    )
+    notation = (
+        node.get("ShortCode") or node.get("shortCode")
+        or node.get("Notation") or node.get("notation")
+        or node.get("AltNotation") or node.get("altNotation")
+    )
+    if notation:
+        notation = _clean_text(str(notation))
+    desc = _richtext_to_str(
+        node.get("Description") or node.get("description")
+        or node.get("Name") or node.get("name")
+    ).strip()
+
+    parsed = None
+    if notation:
+        code = str(notation).strip().upper()
+        title = desc
+        m = _OUTCOME_CODE_REGEX.match(desc)
+        if m and m.group(1).upper() == code:
+            title = m.group(2).strip()
+        parsed = {
+            "code": code,
+            "title": title or desc or code,
+            "description": desc or code,
+        }
+    elif desc:
+        parsed = _parse_outcome_desc(desc)
+
+    if oid and parsed:
+        out.setdefault(str(oid), parsed)
+    for k in (
+        "Outcomes", "outcomes",
+        "SubOutcomes", "subOutcomes",
+        "ChildOutcomes", "childOutcomes",
+        "Children", "children",
+    ):
+        if k in node:
+            _walk_outcome_nodes(node[k], out)
+
+
+def _first_leaf_outcome(node: Any):
+    """Devuelve el primer nodo hijo de outcome (para diagnóstico)."""
+    if isinstance(node, list):
+        for it in node:
+            r = _first_leaf_outcome(it)
+            if r is not None:
+                return r
+        return None
+    if not isinstance(node, dict):
+        return None
+    for k in ("Outcomes", "outcomes", "SubOutcomes", "subOutcomes",
+              "ChildOutcomes", "childOutcomes", "Children", "children"):
+        children = node.get(k)
+        if children:
+            r = _first_leaf_outcome(children)
+            if r is not None:
+                return r
+    # nodo sin hijos → es una hoja (outcome)
+    if node.get("Id") or node.get("OutcomeId") or node.get("SourceId"):
+        return node
+    return None
+
+
+def _index_outcome_sets(payload: Any) -> Dict[str, Dict[str, str]]:
+    """Devuelve { outcomeUuid : {code,title,description} }."""
+    out: Dict[str, Dict[str, str]] = {}
+    if not payload:
+        return out
+    items = payload
+    if isinstance(payload, dict):
+        items = payload.get("outcomeSets") or payload.get("OutcomeSets") or payload
+    _walk_outcome_nodes(items, out)
+    return out
+
+
+def _outcome_id_from_co(co: Dict[str, Any]) -> Optional[str]:
+    """Extrae el OutcomeId (uuid) de un CriteriaOutcome, probando las
+    variantes de nombre que devuelve Brightspace. None si no lo trae."""
+    if not isinstance(co, dict):
+        return None
+    for k in ("OutcomeId", "outcomeId", "SourceId", "sourceId"):
+        v = co.get(k)
+        if v:
+            return str(v)
+    outs = co.get("Outcomes") or co.get("outcomes")
+    if isinstance(outs, list) and outs and isinstance(outs[0], dict):
+        first = outs[0]
+        for k in ("OutcomeId", "SourceId", "Id", "id"):
+            v = first.get(k)
+            if v:
+                return str(v)
+    return None
+
+
+def _index_alignments(payload: Any) -> Dict[str, List[str]]:
+    """Construye { str(rubricId) : [outcomeId, ...] } desde el endpoint
+    bulk /lo/alignments/.
+
+    Estructura real (verificada en cesa.brightspace.com, v1.93):
+        [ { "OutcomeSetId": 95,
+            "OutcomeId": "<guid>",
+            "Activities": [ { "ActivityType": "Assignment",
+                              "ObjectId": <folderId>,
+                              "RubricId": <rubricId> },
+                            { "ActivityType": "Quiz",
+                              "ObjectId": <quizId>,
+                              "QuestionId": <qId> }, ... ] }, ... ]
+
+    Es decir: el OutcomeId está arriba y las actividades alineadas cuelgan
+    de él. La alineación es a nivel de RÚBRICA (RubricId), no de criterio —
+    el API de esta versión no expone el vínculo criterio→outcome. Una misma
+    rúbrica puede alinearse a varios outcomes, por eso el valor es lista.
+    """
+    out: Dict[str, List[str]] = {}
+    if not isinstance(payload, list):
+        return out
+    for entry in payload:
+        if not isinstance(entry, dict):
+            continue
+        oid = entry.get("OutcomeId") or entry.get("outcomeId")
+        if not oid:
+            continue
+        oid = str(oid)
+        for act in (entry.get("Activities") or []):
+            if not isinstance(act, dict):
+                continue
+            rid = act.get("RubricId") or act.get("rubricId")
+            if rid in (None, ""):
+                continue
+            bucket = out.setdefault(str(int(rid)), [])
+            if oid not in bucket:
+                bucket.append(oid)
+    return out
+
+
+def _index_quiz_alignments(payload: Any) -> Dict[str, List[str]]:
+    """Construye { str(quizId) : [outcomeId, ...] } desde el bulk
+    /lo/alignments/, tomando las actividades ActivityType == "Quiz".
+
+    A diferencia de las rúbricas, aquí la alineación es a nivel de PREGUNTA
+    (cada Activity trae QuestionId), pero el API no expone la nota por
+    pregunta, así que colapsamos a nivel de QUIZ: un quiz se considera
+    alineado a todos los outcomes de sus preguntas. El % del quiz (via grade
+    item) se atribuye a cada uno de esos outcomes (aproximación aceptada:
+    misma granularidad que las rúbricas).
+    """
+    out: Dict[str, List[str]] = {}
+    if not isinstance(payload, list):
+        return out
+    for entry in payload:
+        if not isinstance(entry, dict):
+            continue
+        oid = entry.get("OutcomeId") or entry.get("outcomeId")
+        if not oid:
+            continue
+        oid = str(oid)
+        for act in (entry.get("Activities") or []):
+            if not isinstance(act, dict):
+                continue
+            if (act.get("ActivityType") or "").lower() != "quiz":
+                continue
+            qz = act.get("ObjectId") or act.get("objectId")
+            if qz in (None, ""):
+                continue
+            bucket = out.setdefault(str(int(qz)), [])
+            if oid not in bucket:
+                bucket.append(oid)
+    return out
+
 
 # =========================================================
 # Servicio principal: GemeloService
@@ -137,6 +426,249 @@ class GemeloService:
         self, pct: Any, thresholds: Optional[Dict[str, float]] = None
     ) -> str:
         return risk_from_pct(pct, thresholds)
+
+    async def _get_outcome_index(self, orgUnitId: int) -> Dict[str, Dict[str, str]]:
+        """Índice { outcomeUuid : {code,title,description} } del curso,
+        cacheado en memoria por orgUnitId (TTL 10 min)."""
+        now = time.monotonic()
+        cached = _OUTCOME_SETS_CACHE.get(orgUnitId)
+        if cached and (now - cached[0]) < _OUTCOME_SETS_TTL:
+            return cached[1]
+        try:
+            payload = await self.bs.list_outcome_sets(orgUnitId)
+        except Exception as e:
+            logger.warning(
+                "outcome_index: list_outcome_sets falló para %s: %s", orgUnitId, e
+            )
+            payload = None
+        idx = _index_outcome_sets(payload)
+        if not idx:
+            # DIAG: por qué el índice sale vacío. Volcamos forma del payload.
+            try:
+                ptype = type(payload).__name__
+                plen = len(payload) if hasattr(payload, "__len__") else "n/a"
+                sample = None
+                first = None
+                if isinstance(payload, list) and payload:
+                    first = payload[0]
+                elif isinstance(payload, dict):
+                    first = payload
+                if isinstance(first, dict):
+                    sample = {
+                        "keys": list(first.keys())[:20],
+                        "Description": first.get("Description")
+                        or first.get("description"),
+                        "Outcomes_type": type(
+                            first.get("Outcomes") or first.get("outcomes")
+                        ).__name__,
+                    }
+                child = _first_leaf_outcome(payload)
+                child_dump = None
+                if isinstance(child, dict):
+                    child_dump = {
+                        "keys": list(child.keys())[:25],
+                        "Notation": child.get("Notation") or child.get("notation")
+                        or child.get("AltNotation"),
+                        "Description": child.get("Description")
+                        or child.get("description"),
+                        "Name": child.get("Name") or child.get("name"),
+                    }
+                logger.info(
+                    "DIAG outcome_index EMPTY course=%s payload_type=%s len=%s sample=%s child=%s",
+                    orgUnitId, ptype, plen, sample, child_dump,
+                )
+            except Exception as e:
+                logger.info("DIAG outcome_index dump failed: %s", e)
+        if idx:
+            _OUTCOME_SETS_CACHE[orgUnitId] = (now, idx)
+        return idx
+
+    async def _get_alignment_index(self, orgUnitId: int) -> Dict[str, List[str]]:
+        """Índice { str(rubricId) : [outcomeId, ...] } del curso, vía el
+        endpoint bulk /lo/alignments/.
+
+        Es el puente rúbrica→outcome que CriteriaOutcome no trae. Se
+        cachea por orgUnitId (TTL 10 min). Devuelve {} si el tenant no
+        expone /lo/alignments/ (404) o falta el scope (403)."""
+        now = time.monotonic()
+        cached = _ALIGN_CACHE.get(orgUnitId)
+        if cached and (now - cached[0]) < _ALIGN_TTL:
+            return cached[1]
+        try:
+            payload = await self.bs.list_alignments(orgUnitId)
+        except Exception as e:
+            logger.warning(
+                "alignment_index: list_alignments falló para %s: %s", orgUnitId, e
+            )
+            payload = None
+        idx = _index_alignments(payload)
+        if not idx:
+            # DIAG: por qué el índice sale vacío. Volcamos la forma cruda.
+            try:
+                ptype = type(payload).__name__
+                plen = len(payload) if hasattr(payload, "__len__") else "n/a"
+                first = payload[0] if isinstance(payload, list) and payload else payload
+                sample = (
+                    {"keys": list(first.keys())[:25]}
+                    if isinstance(first, dict) else str(first)[:200]
+                )
+                logger.info(
+                    "DIAG alignment_index EMPTY course=%s type=%s len=%s sample=%s",
+                    orgUnitId, ptype, plen, sample,
+                )
+            except Exception as e:
+                logger.info("DIAG alignment_index dump failed: %s", e)
+        if idx:
+            _ALIGN_CACHE[orgUnitId] = (now, idx)
+        return idx
+
+    async def _get_quiz_alignment_index(
+        self, orgUnitId: int
+    ) -> Dict[str, List[str]]:
+        """Índice { str(quizId) : [outcomeId, ...] } del curso, vía el bulk
+        /lo/alignments/ filtrando ActivityType == Quiz. Cacheado 10 min."""
+        now = time.monotonic()
+        cached = _QUIZ_ALIGN_CACHE.get(orgUnitId)
+        if cached and (now - cached[0]) < _QUIZ_ALIGN_TTL:
+            return cached[1]
+        try:
+            payload = await self.bs.list_alignments(orgUnitId)
+        except Exception as e:
+            logger.warning(
+                "quiz_alignment_index: list_alignments falló %s: %s", orgUnitId, e
+            )
+            payload = None
+        idx = _index_quiz_alignments(payload)
+        if idx:
+            _QUIZ_ALIGN_CACHE[orgUnitId] = (now, idx)
+        return idx
+
+    async def build_quiz_outcomes(
+        self,
+        orgUnitId: int,
+        user_ids: List[int],
+        outcome_index: Optional[Dict[str, Dict[str, str]]] = None,
+        concurrency: int = 8,
+    ) -> List[Dict[str, Any]]:
+        """Calcula el promedio (%) por resultado de aprendizaje evaluado por
+        QUIZ, a nivel curso.
+
+        Aproximación (D2L no expone la nota por pregunta): el % de cada quiz
+        —tomado del grade item asociado (PointsNumerator/Denominator)— se
+        atribuye a todos los outcomes a los que el quiz está alineado. El
+        outcome de un estudiante = promedio de sus quizzes alineados; el del
+        curso = promedio entre estudiantes con datos.
+
+        Devuelve una lista de dicts con la misma forma que `ras` pero con
+        source="quiz": {code,label,title,avgPct,coveragePct,studentsWithData,
+        totalStudents,source,quizIds}.
+        """
+        quiz_align = await self._get_quiz_alignment_index(orgUnitId)
+        if not quiz_align:
+            return []
+
+        if outcome_index is None:
+            try:
+                outcome_index = await self._get_outcome_index(orgUnitId)
+            except Exception:
+                outcome_index = {}
+
+        # quizId -> gradeItemId (para leer el % por estudiante vía grades)
+        try:
+            quizzes = await self.bs.list_quizzes(orgUnitId)
+        except Exception as e:
+            logger.warning("build_quiz_outcomes list_quizzes %s: %s", orgUnitId, e)
+            quizzes = []
+        quiz_to_grade: Dict[str, int] = {}
+        for q in quizzes:
+            qid = q.get("QuizId") or q.get("Id")
+            gid = q.get("GradeItemId")
+            if qid is None or gid is None:
+                continue
+            quiz_to_grade[str(int(qid))] = int(gid)
+
+        # Solo nos interesan los grade items de quizzes ALINEADOS a outcomes.
+        grade_to_quiz: Dict[int, str] = {}
+        for qid in quiz_align.keys():
+            gid = quiz_to_grade.get(qid)
+            if gid is not None:
+                grade_to_quiz[gid] = qid
+        if not grade_to_quiz:
+            return []
+
+        total_students = len(user_ids)
+
+        # Por outcomeId: acumulador de porcentajes (uno por estudiante).
+        acc: Dict[str, List[float]] = {}
+
+        async def _one_student(uid: int) -> None:
+            try:
+                values = await self.bs.list_grade_values_for_user(orgUnitId, uid)
+            except Exception:
+                return
+            # quizId -> pct de ESTE estudiante
+            student_quiz_pct: Dict[str, float] = {}
+            for gv in values or []:
+                gid = gv.get("GradeObjectIdentifier") or gv.get("GradeObjectId")
+                try:
+                    gid = int(gid)
+                except Exception:
+                    continue
+                qid = grade_to_quiz.get(gid)
+                if not qid:
+                    continue
+                num = gv.get("PointsNumerator")
+                den = gv.get("PointsDenominator")
+                try:
+                    num = float(num)
+                    den = float(den)
+                except (TypeError, ValueError):
+                    continue
+                if den <= 0:
+                    continue
+                pct = max(0.0, min(100.0, (num / den) * 100.0))
+                student_quiz_pct[qid] = pct
+            if not student_quiz_pct:
+                return
+            # outcome del estudiante = promedio de sus quizzes alineados
+            per_outcome: Dict[str, List[float]] = {}
+            for qid, pct in student_quiz_pct.items():
+                for oid in quiz_align.get(qid, []):
+                    per_outcome.setdefault(oid, []).append(pct)
+            for oid, pcts in per_outcome.items():
+                acc.setdefault(oid, []).append(sum(pcts) / len(pcts))
+
+        sem = asyncio.Semaphore(max(1, concurrency))
+
+        async def _guarded(uid: int) -> None:
+            async with sem:
+                await _one_student(uid)
+
+        await asyncio.gather(*[_guarded(u) for u in user_ids])
+
+        results: List[Dict[str, Any]] = []
+        for oid, pcts in acc.items():
+            if not pcts:
+                continue
+            info = (outcome_index or {}).get(oid) or {}
+            code = info.get("code") or oid
+            count = len(pcts)
+            results.append({
+                "code": code,
+                "label": info.get("title") or code,
+                "title": info.get("title"),
+                "avgPct": round(sum(pcts) / count, 1),
+                "coveragePct": (
+                    round((count / total_students) * 100.0, 1)
+                    if total_students else 0.0
+                ),
+                "studentsWithData": count,
+                "totalStudents": total_students,
+                "source": "quiz",
+                "outcomeId": oid,
+            })
+        results.sort(key=lambda x: x["code"])
+        return results
 
     def _pct_from_outcome(
         self,
@@ -343,6 +875,7 @@ class GemeloService:
         overdue_unscored_vals: List[float] = []
         macro_acc: Dict[str, List[float]] = {}
         students_at_risk: List[Dict[str, Any]] = []
+        students_macro: Dict[int, Dict[str, Any]] = {}
         student_names: Dict[int, str] = {}
 
         # Construir mapa nombre por userId desde classlist
@@ -373,6 +906,25 @@ class GemeloService:
             r = self._risk_from_performance(perf_pct, thresholds)
             risk_dist[r] = risk_dist.get(r, 0) + 1
 
+            # mostCriticalMacro (peor RA) para TODOS los estudiantes, no solo los
+            # en riesgo: la tarjeta del dashboard debe reflejar el RA más bajo REAL
+            # del estudiante y coincidir con su vista de detalle. Preferir RAs
+            # usados (pct > 0): un RA en 0/None es "no evaluado / sin evidencia",
+            # no un desempeño real de 0. Solo si ninguno tiene datos caemos al
+            # mínimo global.
+            _worst_macro = None
+            _macro_units = g.get("macroUnits") or g.get("macro", {}).get("units") or []
+            if _macro_units:
+                _valid = [
+                    {"code": str(m.get("code", "")), "pct": float(m.get("pct") or 0)}
+                    for m in _macro_units if m.get("code") and m.get("pct") is not None
+                ]
+                if _valid:
+                    _used = [x for x in _valid if x["pct"] > 0]
+                    _worst_macro = min(_used or _valid, key=lambda x: x["pct"])
+            if uid is not None and _worst_macro is not None:
+                students_macro[uid] = _worst_macro
+
             is_at_risk = (
                 r in ("alto", "medio")
                 or (perf_pct is not None and float(perf_pct) < float(thresholds.get("critical", 50.0)))
@@ -380,17 +932,6 @@ class GemeloService:
                 or float(cov_pct_s) < 60
             )
             if is_at_risk and uid is not None:
-                # Compute mostCriticalMacro from macroUnits (worst RA for this student)
-                _macro_units = g.get("macroUnits") or g.get("macro", {}).get("units") or []
-                _worst_macro = None
-                if _macro_units:
-                    _valid = [
-                        {"code": str(m.get("code", "")), "pct": float(m.get("pct") or 0)}
-                        for m in _macro_units if m.get("code") and m.get("pct") is not None
-                    ]
-                    if _valid:
-                        _worst_macro = min(_valid, key=lambda x: x["pct"])
-
                 students_at_risk.append({
                     "userId": uid,
                     "displayName": student_names.get(uid, str(uid)),
@@ -689,6 +1230,12 @@ class GemeloService:
                     float(s.get("currentPerformancePct") or 999),
                 ),
             ),
+            # Peor RA por estudiante (todos, no solo en riesgo). Clave = userId (str
+            # en JSON). El frontend lo usa para mostrar el RA crítico real de cada
+            # estudiante en su tarjeta, coincidiendo con la vista de detalle.
+            "studentsMostCriticalMacro": {
+                str(k): v for k, v in students_macro.items()
+            },
             "thresholds": thresholds,
             "alerts": alerts,
         }
@@ -790,8 +1337,16 @@ class GemeloService:
                 else cfg.get("rubrics")
             )
 
-        if rubrics_cfg:
-            folders = await self.bs.list_dropbox_folders(orgUnitId)
+        # Procesar rúbricas para TODOS los cursos, tengan o no config manual.
+        # Sin config -> unidades sintéticas mapeadas a códigos RA reales
+        # (Nivel 2) o RUB-{rubricId} como fallback (Nivel 1).
+        folders = await _get_course_data_cached(
+            "dropbox_folders", orgUnitId,
+            lambda: self.bs.list_dropbox_folders(orgUnitId),
+        )
+        outcome_index = await self._get_outcome_index(orgUnitId)
+        align_index = await self._get_alignment_index(orgUnitId)
+        if folders:
 
             def _folder_rubric_id(folder: Dict[str, Any]) -> Optional[int]:
                 rubrics = (folder.get("Assessment") or {}).get("Rubrics") or []
@@ -859,30 +1414,99 @@ class GemeloService:
                         continue
                     outcome_by_criterion[str(int(cid))] = co
 
-                # Fallback: si no hay configuración local de rúbrica, creamos una
-                # unidad sintética por rúbrica usando los datos de Brightspace
-                # directamente. Cada criterio aporta con peso 1.0 a esa unidad.
+                # Fallback: si no hay configuración local de rúbrica, creamos
+                # unidades sintéticas desde los datos de Brightspace. Nivel 2:
+                # cada criterio se mapea a su código RA real (Z1O1DOR3...) vía
+                # el OutcomeId del CriteriaOutcome cruzado con outcomeSets. Si
+                # no hay OutcomeId/match, cae a RUB-{rubricId}. Peso 1.0.
                 if not rubric_cfg:
                     rubric_name = rubric_detail.get("Name") or f"Rúbrica {rubricId}"
                     folder_name = folder.get("Name") or f"Folder {folderId}"
-                    unit_code = f"RUB-{rubricId}"
+                    mapped_any = False
+
+                    # Outcomes a los que se alinea ESTA rúbrica (vía bulk
+                    # /lo/alignments/). La alineación es a nivel de rúbrica —
+                    # el API no expone el vínculo por criterio — así que el
+                    # score de cada criterio se atribuye a cada outcome
+                    # alineado. Cada outcome se resuelve a su código RA real
+                    # (Z1O1DOR3...) vía outcome_index. Si la rúbrica NO está
+                    # alineada a ningún resultado de aprendizaje, se OMITE:
+                    # ya no emitimos unidades sintéticas RUB-{rubricId} — el
+                    # dashboard solo muestra resultados de aprendizaje reales.
+                    rubric_oids = align_index.get(rubricId) or []
+                    resolved = [
+                        (outcome_index[o]["code"], o)
+                        for o in rubric_oids
+                        if o in outcome_index
+                    ]
+                    if resolved:
+                        mapped_any = True
+
                     for cid, co in outcome_by_criterion.items():
+                        # OutcomeId directo del CriteriaOutcome (raro) tiene
+                        # prioridad; si no, usamos los outcomes de la rúbrica.
+                        direct = _outcome_id_from_co(co)
+                        if direct and direct in outcome_index:
+                            targets = [(outcome_index[direct]["code"], direct)]
+                            mapped_any = True
+                        elif resolved:
+                            targets = resolved
+                        else:
+                            continue  # rúbrica sin outcome alineado → no emitir
+
+                        # En cursos auto (sin config) el % se calcula contra el
+                        # máximo real de cada criterio (Cells[*].Points), no
+                        # contra la constante level_points=4.0. Cada rúbrica
+                        # puede usar escala distinta (0-4, 0-10...). Clamp a
+                        # [0,100] por seguridad ante datos atípicos.
                         pct = self._pct_from_outcome(
-                            co, rubric_detail, scale_type, max_level_points
+                            co, rubric_detail, "criterion_max_points",
+                            max_level_points,
                         )
-                        units_acc.setdefault(unit_code, []).append(
-                            (
-                                pct,
-                                1.0,
-                                {
-                                    "folderId": folderId,
-                                    "rubricId": rubricId_int,
-                                    "criterionId": int(cid),
-                                    "rubricName": rubric_name,
-                                    "folderName": folder_name,
-                                },
+                        pct = max(0.0, min(100.0, pct))
+                        for unit_code, oid in targets:
+                            units_acc.setdefault(unit_code, []).append(
+                                (
+                                    pct,
+                                    1.0,
+                                    {
+                                        "folderId": folderId,
+                                        "rubricId": rubricId_int,
+                                        "criterionId": int(cid),
+                                        "rubricName": rubric_name,
+                                        "folderName": folder_name,
+                                        "outcomeId": oid,
+                                    },
+                                )
                             )
+                    # Diagnóstico: revela la estructura real de CriteriaOutcome
+                    # y si el mapeo a códigos RA funcionó para esta rúbrica.
+                    if outcome_by_criterion:
+                        _sample = next(iter(outcome_by_criterion.values()))
+                        logger.info(
+                            "auto-RA[%s] rubric=%s outcome_index=%d align_index=%d co_keys=%s mapped=%s",
+                            orgUnitId, rubricId, len(outcome_index), len(align_index),
+                            list(_sample.keys()) if isinstance(_sample, dict) else type(_sample).__name__,
+                            mapped_any,
                         )
+                        try:
+                            _cg = (rubric_detail.get("CriteriaGroups") or []) if isinstance(rubric_detail, dict) else []
+                            _g0 = _cg[0] if _cg else {}
+                            _lvl0 = (_g0.get("Levels") or [{}])[0]
+                            _crit0 = (_g0.get("Criteria") or [{}])[0]
+                            _cell0 = (_crit0.get("Cells") or [{}])[0] if isinstance(_crit0, dict) else {}
+                            _oa0 = (rubric_detail.get("OverallLevels") or [{}])[0]
+                            logger.info(
+                                "DIAG-struct[%s] rubric=%s scoring=%s level0=%s crit0_keys=%s cell0=%s overall0=%s",
+                                orgUnitId, rubricId,
+                                rubric_detail.get("ScoringMethod"),
+                                _lvl0,
+                                list(_crit0.keys()) if isinstance(_crit0, dict) else type(_crit0).__name__,
+                                _cell0,
+                                _oa0,
+                            )
+                        except Exception as _e:
+                            logger.info("DIAG-struct dump failed: %s", _e)
                     continue
 
                 learning_units = (
@@ -1027,7 +1651,9 @@ class GemeloService:
                 )
                 return {}
 
-            raw_items = await list_items_fn(orgUnitId)
+            raw_items = await _get_course_data_cached(
+                "grade_items", orgUnitId, lambda: list_items_fn(orgUnitId)
+            )
             if isinstance(raw_items, dict):
                 raw_items = raw_items.get("Items") or raw_items.get("items") or []
             if not isinstance(raw_items, list):
@@ -1049,7 +1675,10 @@ class GemeloService:
             list_cats_fn = getattr(self.bs, "list_grade_categories", None)
             if callable(list_cats_fn):
                 try:
-                    raw_cats = await list_cats_fn(orgUnitId)
+                    raw_cats = await _get_course_data_cached(
+                        "grade_categories", orgUnitId,
+                        lambda: list_cats_fn(orgUnitId),
+                    )
                     if isinstance(raw_cats, dict):
                         raw_cats = raw_cats.get("Items") or raw_cats.get("items") or []
                     for c in (raw_cats or []):
@@ -1115,7 +1744,9 @@ class GemeloService:
             dropbox_due_by_folder_id: Dict[int, Optional[datetime]] = {}
             if callable(list_dropbox_fn):
                 try:
-                    folders = await list_dropbox_fn(orgUnitId)
+                    folders = await _get_course_data_cached(
+                        "dropbox_folders", orgUnitId, lambda: list_dropbox_fn(orgUnitId)
+                    )
                     if isinstance(folders, dict):
                         folders = folders.get("Items") or folders.get("items") or []
                     if isinstance(folders, list):
@@ -1632,7 +2263,9 @@ class GemeloService:
         if not (callable(list_items_fn) and callable(list_values_fn)):
             return {}
 
-        raw_items = await list_items_fn(orgUnitId)
+        raw_items = await _get_course_data_cached(
+            "grade_items", orgUnitId, lambda: list_items_fn(orgUnitId)
+        )
         if isinstance(raw_items, dict):
             raw_items = raw_items.get("Items") or raw_items.get("items") or []
         if not isinstance(raw_items, list):
@@ -1673,7 +2306,9 @@ class GemeloService:
         dropbox_due_by_folder_id: Dict[int, Optional[datetime]] = {}
         if callable(list_dropbox_fn):
             try:
-                folders = await list_dropbox_fn(orgUnitId)
+                folders = await _get_course_data_cached(
+                    "dropbox_folders", orgUnitId, lambda: list_dropbox_fn(orgUnitId)
+                )
                 if isinstance(folders, dict):
                     folders = folders.get("Items") or folders.get("items") or []
                 if isinstance(folders, list):

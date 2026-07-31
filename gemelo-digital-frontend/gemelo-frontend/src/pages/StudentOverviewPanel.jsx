@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid, ReferenceLine } from "recharts";
-import { apiGet, mapLimit } from "../utils/api";
+import { apiGet, apiGetCached, mapLimit } from "../utils/api";
 import { COLORS, colorForPct } from "../utils/colors";
 import { computeRiskFromPct, fmtPct, fmtGrade10FromPct } from "../utils/helpers";
 import { injectStyles } from "../styles/global";
@@ -90,7 +90,7 @@ export default function StudentOverviewPanel({ userId, period, onClose }) {
         const courseId = course.id || course.orgUnitId;
         if (!courseId) return;
         try {
-          const data = await apiGet(`/gemelo/course/${courseId}/student/${userId}`);
+          const data = await apiGetCached(`/gemelo/course/${courseId}/student/${userId}`);
           if (!alive) return;
           const summary = data?.summary || {};
           setCourseMetrics((prev) => ({
@@ -366,7 +366,11 @@ export default function StudentOverviewPanel({ userId, period, onClose }) {
                   <div style={{ fontSize: 12, fontWeight: 800, color: "var(--text)", marginBottom: 8, letterSpacing: "-0.01em" }}>
                     Evolución por período · nota promedio /10
                   </div>
-                  <div style={{ width: "100%", height: 180 }}>
+                  <div
+                    role="img"
+                    aria-label="Gráfico de evolución de la nota promedio por período académico"
+                    style={{ width: "100%", height: 180 }}
+                  >
                     <ResponsiveContainer>
                       <LineChart data={data} margin={{ top: 6, right: 18, left: 0, bottom: 4 }}>
                         <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" vertical={false} />

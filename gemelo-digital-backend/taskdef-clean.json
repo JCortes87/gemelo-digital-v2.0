@@ -2,7 +2,7 @@
   "family": "default-gemelo-digital-api",
   "executionRoleArn": "arn:aws:iam::718624265053:role/service-role/ecsTaskExecutionRole",
   "networkMode": "awsvpc",
-  
+
   "containerDefinitions": [
     {
       "name": "Main",
@@ -21,7 +21,6 @@
       "essential": true,
       "command": [],
       "environment": [
-        { "name": "ELEVENLABS_API_KEY", "value": "67e3f0bd9fcdb7bd0123c15d4e9faa4af80e9c81599bc62bf36a741d356ae1a3" },
         { "name": "ELEVENLABS_VOICE_ID", "value": "YExhVa4bZONzeingloMX" },
         {
           "name": "BRIGHTSPACE_SCOPE",
@@ -34,10 +33,6 @@
         {
           "name": "BRIGHTSPACE_CLIENT_ID",
           "value": "b566f3ae-1907-4ca4-92d7-b423590aabf4"
-        },
-        {
-          "name": "BRIGHTSPACE_CLIENT_SECRET",
-          "value": "gkiUceOuC7QU81qGSDSiYeh_R6bEhytvFz7kWYjUG5o"
         },
         {
           "name": "FRONTEND_BASE_URL",
@@ -68,8 +63,42 @@
           "value": "https://auth.brightspace.com/core/connect/token"
         },
         {
+          "name": "LTI_ISSUER",
+          "value": "https://cesa.brightspace.com"
+        },
+        {
+          "name": "LTI_CLIENT_ID",
+          "value": "ff6ebfb3-789b-498e-8821-8b65ff9e4630"
+        },
+        {
+          "name": "LTI_AUTH_ENDPOINT",
+          "value": "https://cesa.brightspace.com/d2l/lti/authenticate"
+        },
+        {
+          "name": "LTI_JWKS_URL",
+          "value": "https://cesa.brightspace.com/d2l/.well-known/jwks"
+        }
+      ],
+      "secrets": [
+        {
+          "name": "BRIGHTSPACE_CLIENT_SECRET",
+          "valueFrom": "arn:aws:secretsmanager:us-east-1:718624265053:secret:gemelo/brightspace-client-secret-JOZcps"
+        },
+        {
           "name": "DATABASE_URL",
-          "value": "postgresql+psycopg://gemelo_admin:GemeloD1g1tal2026!@gemelo-digital-db.crp1lzwejl3x.us-east-1.rds.amazonaws.com:5432/gemelo_digital"
+          "valueFrom": "arn:aws:secretsmanager:us-east-1:718624265053:secret:gemelo/database-url-gJuD2u"
+        },
+        {
+          "name": "SESSION_SECRET",
+          "valueFrom": "arn:aws:secretsmanager:us-east-1:718624265053:secret:gemelo/session-secret-9b4uQ0"
+        },
+        {
+          "name": "LTI_STATE_SECRET",
+          "valueFrom": "arn:aws:secretsmanager:us-east-1:718624265053:secret:gemelo/lti-state-secret-r9Rug7"
+        },
+        {
+          "name": "ELEVENLABS_API_KEY",
+          "valueFrom": "arn:aws:secretsmanager:us-east-1:718624265053:secret:gemelo/elevenlabs-api-key-2tCUKZ"
         }
       ],
       "mountPoints": [],

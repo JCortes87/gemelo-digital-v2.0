@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect } from "react";
+import React, { createContext, useContext, useState, useEffect, useMemo, useCallback } from "react";
 import { apiUrl } from "../utils/api";
 
 const AuthContext = createContext(null);
@@ -60,7 +60,7 @@ export function AuthProvider({ children }) {
                 { type: "gemelo-auth", sid: _sid, orgUnitId: _hashOu, firstLogin: parts[3] === "1" },
                 window.location.origin,
               );
-            } catch {}
+            } catch { /* noop */ }
             // Dar 300ms para que el mensaje llegue antes de cerrar
             setTimeout(() => window.close(), 300);
             return; // No seguir inicializando el contexto en la ventana popup
@@ -77,11 +77,8 @@ export function AuthProvider({ children }) {
           setInitialOrgUnitId(_hashOu);
         }
 
-        // Call /auth/me
-        const _meUrl = _sid
-          ? apiUrl(`/auth/me?sid=${encodeURIComponent(_sid)}`)
-          : apiUrl("/auth/me");
-        const res = await fetch(_meUrl, {
+        // Call /auth/me (el sid va solo en el header Bearer, nunca en la URL)
+        const res = await fetch(apiUrl("/auth/me"), {
           credentials: "include",
           headers: _sid ? { "Authorization": `Bearer ${_sid}` } : {},
         });
@@ -120,12 +117,20 @@ export function AuthProvider({ children }) {
           const appRoles = mapAllRoles(allRolesRaw);
           const primaryRole = mapSingleRole(data.role) || appRoles[0];
 
-          // SuperAdmin detection: env var list, backend role, or enrolled roles
+          // SuperAdmin detection: env var list, backend role, or enrolled roles.
+          // El backend detecta el rol de sistema por RoleId numérico y trata
+          // igual a "Super Administrator" (105) y "Administrator" (116) —
+          // _ADMIN_ROLES en gemelo.py autoriza ambos. Aquí replicamos eso:
+          // match exacto de "administrator" (exacto para NO capturar roles de
+          // curso como "Coordinador Administrativo").
           const superAdminIds = (import.meta.env?.VITE_SUPERADMIN_IDS || "").split(",").map(s => s.trim()).filter(Boolean);
+          const _sysRole = String(data.role || "").trim().toLowerCase();
           const isSuperAdmin =
             superAdminIds.includes(String(data.user_id)) ||
             allRolesRaw.some((r) => String(r).toLowerCase().includes("super admin")) ||
-            String(data.role || "").toLowerCase().includes("super admin");
+            allRolesRaw.some((r) => String(r).trim().toLowerCase() === "administrator") ||
+            _sysRole.includes("super admin") ||
+            _sysRole === "administrator";
           const user = {
             ...data,
             all_roles: allRolesRaw,
@@ -171,35 +176,37 @@ export function AuthProvider({ children }) {
     })();
   }, []);
 
-  const logout = async () => {
+  const logout = useCallback(async () => {
     try {
       const sid = localStorage.getItem("gemelo_sid");
       const hdrs = sid ? { Authorization: `Bearer ${sid}` } : {};
       await fetch(apiUrl("/auth/logout"), { method: "POST", credentials: "include", headers: hdrs });
-    } catch {}
+    } catch { /* noop */ }
     localStorage.removeItem("gemelo_sid");
     sessionStorage.clear();
     // Redirect to root (login) instead of reload to avoid 403 on SPA routes
     window.location.href = window.location.origin + "/";
-  };
+  }, []);
 
-  const role = authUser?.appRole || "instructor";
+  // Memoizado: sin esto el objeto value se recrea en cada render del provider
+  // y TODOS los consumidores de useAuth() re-renderizan en cascada.
+  const value = useMemo(() => ({
+    authUser,
+    authChecked,
+    role: authUser?.appRole || "instructor",
+    allRoles: authUser?.appRoles || ["instructor"],
+    isDualRole: authUser?.isDualRole || false,
+    isInstructor: authUser?.isInstructor ?? true,
+    isStudent: authUser?.isStudent ?? false,
+    isSuperAdmin: authUser?.isSuperAdmin ?? false,
+    logout,
+    showTutorial,
+    setShowTutorial,
+    initialOrgUnitId,
+  }), [authUser, authChecked, logout, showTutorial, initialOrgUnitId]);
 
   return (
-    <AuthContext.Provider value={{
-      authUser,
-      authChecked,
-      role,
-      allRoles: authUser?.appRoles || ["instructor"],
-      isDualRole: authUser?.isDualRole || false,
-      isInstructor: authUser?.isInstructor ?? true,
-      isStudent: authUser?.isStudent ?? false,
-      isSuperAdmin: authUser?.isSuperAdmin ?? false,
-      logout,
-      showTutorial,
-      setShowTutorial,
-      initialOrgUnitId,
-    }}>
+    <AuthContext.Provider value={value}>
       {children}
     </AuthContext.Provider>
   );

@@ -73,12 +73,21 @@ _MACRO_RE = re.compile(r"^([A-Za-z]+)\.(\d+)(?:\.)?")
 
 def _macro_code_from_unit(code: str) -> Optional[str]:
     """
-    Convierte un unit_code (ej. 'C.1.3') a su macrocompetencia
-    (ej. 'C1'). Retorna None si el code no matchea el formato.
+    Convierte un unit_code (ej. 'C.1.3') a su macrocompetencia (ej. 'C1').
+
+    Cursos con config manual usan el formato 'PREFIJO.N.M' y se agrupan por
+    'PREFIJON'. Cursos auto-mapeados (la gran mayoría, sin config) generan
+    códigos sintéticos que NO llevan ese formato: códigos RA reales como
+    'Z1O1DOR3' o el fallback 'RUB-11483'. Para que esos RAs también se
+    muestren, los códigos que no matchean el formato pasan como su propia
+    macro (uno por código) en vez de descartarse.
     """
-    m = _MACRO_RE.match(str(code or "").strip())
-    if not m:
+    clean = str(code or "").strip()
+    if not clean:
         return None
+    m = _MACRO_RE.match(clean)
+    if not m:
+        return clean
     prefix, num = m.group(1), m.group(2)
     return f"{prefix}{num}"
 

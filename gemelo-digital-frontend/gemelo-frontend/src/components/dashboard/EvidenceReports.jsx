@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect } from "react";
-import { apiGet, apiDownloadUrl } from "../../utils/api";
+import { apiGet, apiGetCached, apiDownload, apiUrl } from "../../utils/api";
 import { exportInstitutionalFeedbackPdf } from "../../utils/export";
 import { COLORS, colorForPct } from "../../utils/colors";
 import { fmtPct, fmtGrade10FromPct, computeRiskFromPct } from "../../utils/helpers";
@@ -24,18 +24,20 @@ export default function EvidenceReports({
 }) {
   const [seed, setSeed] = useState(0); // bump to re-randomize
   const [details, setDetails] = useState({}); // userId → { evidences, loading, error }
+  const [expanded, setExpanded] = useState({}); // userId → bool (show all evidences)
   const [feedbackModal, setFeedbackModal] = useState(null); // { studentName, evidenceName, loading, data, error }
 
   const openFeedback = async (student, evidence) => {
     if (!evidence.linkedDropboxId) return;
-    const downloadUrl = apiDownloadUrl(
-      `/brightspace/course/${orgUnitId}/dropbox/folder/${evidence.linkedDropboxId}/student/${student.userId}/download`
-    );
+    // Solo la ruta (sin token): la descarga real usa apiDownload con header
+    // Authorization, y el PDF/print muestra la URL limpia, sin sid.
+    const downloadPath =
+      `/brightspace/course/${orgUnitId}/dropbox/folder/${evidence.linkedDropboxId}/student/${student.userId}/download`;
     setFeedbackModal({
       studentName: student.displayName,
       studentId: student.userId,
       evidenceName: evidence.name || `Ítem ${evidence.gradeObjectId}`,
-      downloadUrl,
+      downloadPath,
       loading: true,
       data: null,
       error: null,
@@ -83,7 +85,7 @@ export default function EvidenceReports({
       if (details[s.userId]?.evidences || details[s.userId]?.loading) return;
       setDetails((prev) => ({ ...prev, [s.userId]: { loading: true } }));
       try {
-        const data = await apiGet(`/gemelo/course/${orgUnitId}/student/${s.userId}`);
+        const data = await apiGetCached(`/gemelo/course/${orgUnitId}/student/${s.userId}`);
         const evidences = Array.isArray(data?.gradebook?.evidences)
           ? data.gradebook.evidences.filter((e) => !e.isCorte)
           : [];
@@ -104,6 +106,7 @@ export default function EvidenceReports({
   const reroll = () => {
     setSeed((s) => s + 1);
     setDetails({}); // clear cache so we re-fetch
+    setExpanded({}); // collapse expanded lists
   };
 
   if (!samples) {
@@ -208,12 +211,12 @@ export default function EvidenceReports({
             </div>
           ) : (
             <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-              {evidences.slice(0, 6).map((e, i) => {
+              {(expanded[student.userId] ? evidences : evidences.slice(0, 6)).map((e, i) => {
                 const isGraded = e.scorePct != null;
                 const evColor = isGraded ? colorForPct(e.scorePct, null) : "var(--muted)";
                 const hasDropbox = e.linkedDropboxId != null;
-                const downloadHref = hasDropbox
-                  ? apiDownloadUrl(`/brightspace/course/${orgUnitId}/dropbox/folder/${e.linkedDropboxId}/student/${student.userId}/download`)
+                const downloadPath = hasDropbox
+                  ? `/brightspace/course/${orgUnitId}/dropbox/folder/${e.linkedDropboxId}/student/${student.userId}/download`
                   : null;
                 return (
                   <div key={i} style={{
@@ -242,10 +245,8 @@ export default function EvidenceReports({
                     </span>
                     {hasDropbox && (
                       <>
-                        <a
-                          href={downloadHref}
-                          target="_blank"
-                          rel="noopener noreferrer"
+                        <button
+                          type="button"
                           title="Descargar entrega del estudiante (ZIP)"
                           style={{
                             fontSize: 10, fontWeight: 700,
@@ -254,12 +255,16 @@ export default function EvidenceReports({
                             color: "var(--brand)",
                             textDecoration: "none",
                             border: "1px solid rgba(52, 120, 246, 0.25)",
-                            flexShrink: 0,
+                            flexShrink: 0, cursor: "pointer",
                           }}
-                          onClick={(ev) => ev.stopPropagation()}
+                          onClick={(ev) => {
+                            ev.stopPropagation();
+                            apiDownload(downloadPath, `entrega-${student.userId}.zip`)
+                              .catch((err) => window.alert(`No se pudo descargar la entrega: ${err?.message || err}`));
+                          }}
                         >
                           ⬇
-                        </a>
+                        </button>
                         <button
                           type="button"
                           title="Ver retroalimentación del docente"
@@ -283,9 +288,22 @@ export default function EvidenceReports({
                 );
               })}
               {evidences.length > 6 && (
-                <div style={{ fontSize: 10, color: "var(--muted)", textAlign: "center", padding: "4px 0" }}>
-                  + {evidences.length - 6} evidencias más
-                </div>
+                <button
+                  type="button"
+                  onClick={() => setExpanded((prev) => ({ ...prev, [student.userId]: !prev[student.userId] }))}
+                  style={{
+                    fontSize: 11, fontWeight: 700, color: "var(--brand)",
+                    textAlign: "center", padding: "6px 0", marginTop: 2,
+                    background: "rgba(52,120,246,0.08)",
+                    border: "1px solid rgba(52,120,246,0.2)",
+                    borderRadius: 8, cursor: "pointer",
+                    fontFamily: "var(--font)",
+                  }}
+                >
+                  {expanded[student.userId]
+                    ? "▲ Ver menos"
+                    : `▼ Ver ${evidences.length - 6} evidencias más`}
+                </button>
               )}
             </div>
           )}
@@ -402,11 +420,14 @@ export default function EvidenceReports({
                 </div>
               </div>
               <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
-                {feedbackModal.downloadUrl && (
-                  <a
-                    href={feedbackModal.downloadUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
+                {feedbackModal.downloadPath && (
+                  <button
+                    onClick={() => {
+                      apiDownload(
+                        feedbackModal.downloadPath,
+                        `entrega-${feedbackModal.studentId || "estudiante"}.zip`
+                      ).catch((err) => window.alert(`No se pudo descargar la entrega: ${err?.message || err}`));
+                    }}
                     title="Descargar entrega del estudiante"
                     style={{
                       background: "rgba(52,120,246,0.08)", border: "1px solid rgba(52,120,246,0.25)",
@@ -416,7 +437,7 @@ export default function EvidenceReports({
                       fontFamily: "var(--font)", textDecoration: "none",
                       display: "flex", alignItems: "center", gap: 4,
                     }}
-                  >⬇ Entrega</a>
+                  >⬇ Entrega</button>
                 )}
                 <button
                   onClick={() => {
@@ -427,7 +448,9 @@ export default function EvidenceReports({
                       studentName: feedbackModal.studentName,
                       studentId: feedbackModal.studentId,
                       courseInfo,
-                      downloadUrl: feedbackModal.downloadUrl,
+                      // URL informativa SIN token (el sid nunca debe quedar
+                      // incrustado en un PDF que se comparte/archiva).
+                      downloadUrl: apiUrl(feedbackModal.downloadPath),
                     });
                   }}
                   disabled={feedbackModal.loading || !feedbackModal.data}
@@ -460,9 +483,9 @@ export default function EvidenceReports({
               <div style={{ fontSize: 12, color: "#555" }}>
                 Estudiante: {feedbackModal.studentName} · Fecha: {new Date().toLocaleDateString("es-CO", { year: "numeric", month: "long", day: "numeric" })}
               </div>
-              {feedbackModal.downloadUrl && (
+              {feedbackModal.downloadPath && (
                 <div style={{ fontSize: 10, color: "#555", marginTop: 4 }}>
-                  Entrega disponible en: {feedbackModal.downloadUrl}
+                  Entrega disponible en: {apiUrl(feedbackModal.downloadPath)}
                 </div>
               )}
             </div>
@@ -483,7 +506,8 @@ export default function EvidenceReports({
                 const outOf = fb.outOf;
                 const files = Array.isArray(fb.files) ? fb.files : [];
                 const rubrics = Array.isArray(fb.rubrics) ? fb.rubrics : [];
-                const hasContent = text || score != null || files.length > 0 || rubrics.length > 0;
+                const outcomes = Array.isArray(fb.outcomes) ? fb.outcomes : [];
+                const hasContent = text || score != null || files.length > 0 || rubrics.length > 0 || outcomes.length > 0;
 
                 const levelColor = (level) => {
                   if (!level) return "var(--muted)";
@@ -540,6 +564,40 @@ export default function EvidenceReports({
                       </div>
                     )}
 
+                    {/* Learning outcomes (RAs) aligned to this assignment */}
+                    {outcomes.length > 0 && (
+                      <div>
+                        <div style={{ fontSize: 10, fontWeight: 800, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 8 }}>
+                          🎯 Resultados de aprendizaje
+                        </div>
+                        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                          {outcomes.map((o, oi) => (
+                            <div key={oi} style={{
+                              display: "flex", alignItems: "center", gap: 10,
+                              padding: "8px 12px", borderRadius: 8,
+                              background: "var(--bg)", border: "1px solid var(--border)",
+                              borderLeft: "3px solid var(--brand)",
+                            }}>
+                              {o.code && (
+                                <span style={{
+                                  fontSize: 10, fontWeight: 900, fontFamily: "var(--font-mono)",
+                                  padding: "2px 8px", borderRadius: 6,
+                                  background: "rgba(52,120,246,0.12)", color: "var(--brand)",
+                                  border: "1px solid rgba(52,120,246,0.25)", flexShrink: 0,
+                                  whiteSpace: "nowrap",
+                                }}>
+                                  {o.code}
+                                </span>
+                              )}
+                              <span style={{ fontSize: 12, color: "var(--text)", lineHeight: 1.4 }}>
+                                {o.label || o.code || "Resultado de aprendizaje"}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
                     {/* Teacher's general comment */}
                     {text && (
                       <div>
@@ -575,6 +633,20 @@ export default function EvidenceReports({
                             <div style={{ fontSize: 13, fontWeight: 800, color: "var(--text)", marginTop: 2 }}>
                               {r.name || "Sin nombre"}
                             </div>
+                            {Array.isArray(r.outcomes) && r.outcomes.length > 0 && (
+                              <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginTop: 6 }}>
+                                {r.outcomes.map((o, oi) => (
+                                  <span key={oi} title={o.label || o.code || ""} style={{
+                                    fontSize: 9, fontWeight: 800, fontFamily: "var(--font-mono)",
+                                    padding: "2px 6px", borderRadius: 5,
+                                    background: "rgba(52,120,246,0.1)", color: "var(--brand)",
+                                    border: "1px solid rgba(52,120,246,0.22)",
+                                  }}>
+                                    🎯 {o.code || "RA"}
+                                  </span>
+                                ))}
+                              </div>
+                            )}
                           </div>
                           {r.score != null && (
                             <div style={{ textAlign: "right", flexShrink: 0 }}>
@@ -619,7 +691,7 @@ export default function EvidenceReports({
                                 {/* Left accent bar */}
                                 <div style={{ width: 3, borderRadius: 99, background: cColor, flexShrink: 0, alignSelf: "stretch", minHeight: 24, opacity: 0.7 }} />
                                 <div style={{ flex: 1, minWidth: 0 }}>
-                                  <div style={{ display: "flex", alignItems: "flex-start", gap: 8, marginBottom: c.comment ? 6 : 0 }}>
+                                  <div style={{ display: "flex", alignItems: "flex-start", gap: 8, marginBottom: (c.comment || c.levelDescription) ? 6 : 0 }}>
                                     <span style={{ fontSize: 13, fontWeight: 700, color: "var(--text)", flex: 1, lineHeight: 1.35 }}>
                                       {c.name}
                                     </span>
@@ -647,6 +719,20 @@ export default function EvidenceReports({
                                       )}
                                     </div>
                                   </div>
+                                  {c.levelDescription && (
+                                    <div
+                                      style={{
+                                        fontSize: 12, color: "var(--text)",
+                                        lineHeight: 1.55,
+                                        padding: "7px 10px",
+                                        background: cColor + "10",
+                                        borderRadius: 7,
+                                        borderLeft: "2px solid " + cColor,
+                                        marginBottom: c.comment ? 6 : 0,
+                                      }}
+                                      dangerouslySetInnerHTML={{ __html: sanitizeHtml(c.levelDescription) }}
+                                    />
+                                  )}
                                   {c.comment && (
                                     <div
                                       style={{

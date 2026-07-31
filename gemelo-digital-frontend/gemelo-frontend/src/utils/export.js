@@ -253,7 +253,7 @@ export function exportCourseReport(studentRows, courseInfo, overview) {
   </table>
 
   <div class="footer">
-    CESA · G.D V.260428 · Reporte generado automáticamente
+    CESA · G.D 2026.7.10 · Reporte generado automáticamente
   </div>
 
   <script>
@@ -359,7 +359,11 @@ export function exportInstitutionalFeedbackPdf({
             ${c.level ? `<span style="font-size:9px;font-weight:800;padding:2px 8px;border-radius:99px;background:${cColor}22;color:${cColor};border:1px solid ${cColor}55;text-transform:uppercase">${escapeHtml(c.level)}</span>` : "—"}
           </td>
           <td style="padding:8px 10px;border-bottom:1px solid #E4E8EF;text-align:right;font-family:ui-monospace,monospace;font-size:13px;font-weight:900;color:${cColor};width:8%">${c.points != null ? c.points : "—"}</td>
-          <td style="padding:8px 10px;border-bottom:1px solid #E4E8EF;font-size:10px;color:#5A6580;line-height:1.4">${c.comment ? c.comment : '<span style="color:#B0B7C3;font-style:italic">Sin comentario</span>'}</td>
+          <td style="padding:8px 10px;border-bottom:1px solid #E4E8EF;font-size:10px;color:#5A6580;line-height:1.4">${
+            (c.levelDescription || c.comment)
+              ? `${c.levelDescription ? `<div style="color:#0F1827">${c.levelDescription}</div>` : ""}${c.comment ? `<div style="margin-top:${c.levelDescription ? "4px" : "0"};color:#5A6580">${c.comment}</div>` : ""}`
+              : '<span style="color:#B0B7C3;font-style:italic">Sin comentario</span>'
+          }</td>
         </tr>
       `;
     }).join("");

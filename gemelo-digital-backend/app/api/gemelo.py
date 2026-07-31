@@ -1,6 +1,7 @@
 # app/api/gemelo.py
-import logging
-import traceback
+# Router core de gemelo. Los endpoints de outcomes, debug y admin viven en
+# sub-routers extraidos (gemelo_outcomes / gemelo_debug / gemelo_admin) que se
+# montan al final de este archivo. Helpers compartidos: gemelo_shared.
 from typing import Any, Dict, List, Optional
 import asyncio
 from collections import defaultdict
@@ -8,9 +9,11 @@ from collections import defaultdict
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request
 
 from app.config_loader import load_course_bundle
-from app.services.brightspace_client import BrightspaceClient, get_brightspace_client
+from app.rate_limit import limiter
+from app.services.brightspace_client import BrightspaceClient
 from app.services.gemelo_service import GemeloService
 from app.services.sync_service import SyncService
+from app.api.gemelo_shared import get_service, _http500, logger
 
 #|---------- Lectura desde Postgres con chequeo de frescura de los datos ----------|
 from app.services.gemelo_db_service import (
@@ -96,7 +99,6 @@ def _extract_access_token_from_client(bs: BrightspaceClient) -> Optional[str]:
         return None
     return None
 
-logger = logging.getLogger("uvicorn.error")
 
 router = APIRouter(prefix="/gemelo", tags=["gemelo"])
 
@@ -115,12 +117,6 @@ def _get_ra_lock(orgUnitId: int) -> _asyncio.Lock:
     return _RA_DASHBOARD_LOCKS[orgUnitId]
 
 
-
-def get_service(
-    request: Request,
-    bs: "BrightspaceClient" = Depends(get_brightspace_client),
-) -> GemeloService:
-    return GemeloService(bs)
 
 
 def _dump(obj: Any) -> Dict[str, Any]:
@@ -193,18 +189,15 @@ def _safe_bundle(orgUnitId: int) -> Dict[str, Any]:
         return {}
 
 
-def _http500(e: Exception, where: str, **ctx):
-    logger.error("HTTP 500 en %s | ctx=%s | err=%s", where, ctx, str(e))
-    logger.error(traceback.format_exc())
-    raise HTTPException(status_code=500, detail=str(e))
-
 
 # =========================================================
 # Endpoints productivos
 # =========================================================
 
 @router.get("/course/{orgUnitId}/student/{userId}")
+@limiter.limit("60/minute")
 async def gemelo_course_student(
+    request: Request,
     orgUnitId: int,
     userId: int,
     svc: GemeloService = Depends(get_service),
@@ -218,7 +211,9 @@ async def gemelo_course_student(
 
 
 @router.get("/course/{orgUnitId}/overview")
+@limiter.limit("30/minute")
 async def gemelo_course_overview(
+    request: Request,
     orgUnitId: int,
     background_tasks: BackgroundTasks,
     fresh_max_minutes: int = Query(
@@ -340,7 +335,9 @@ async def gemelo_course_metric_history(
 
 
 @router.get("/course/{orgUnitId}/ra/dashboard")
+@limiter.limit("10/minute")
 async def gemelo_course_ra_dashboard(
+    request: Request,
     orgUnitId: int,
     only_students: bool = Query(True, description="Si true, filtra roles de estudiante"),
     limit: Optional[int] = Query(None, ge=1, le=500, description="Max usuarios a procesar (para piloto)"),
@@ -357,7 +354,9 @@ async def gemelo_course_ra_dashboard(
         cached = _RA_DASHBOARD_CACHE.get(orgUnitId)
         if cached and (now_ts - cached["ts"] < _RA_DASHBOARD_TTL):
             cached_ras = (cached["data"].get("ras") or [])
-            if any(r.get("studentsWithData", 0) > 0 for r in cached_ras):
+            # Cachea si hay resultados de aprendizaje (aunque sean sin datos de
+            # rúbrica: cursos evaluados solo por quiz igual listan sus RAs).
+            if cached_ras:
                 return cached["data"]
 
         # Adquirir lock por curso para evitar que requests concurrentes
@@ -368,7 +367,7 @@ async def gemelo_course_ra_dashboard(
             cached = _RA_DASHBOARD_CACHE.get(orgUnitId)
             if cached and (now_ts - cached["ts"] < _RA_DASHBOARD_TTL):
                 cached_ras = (cached["data"].get("ras") or [])
-                if any(r.get("studentsWithData", 0) > 0 for r in cached_ras):
+                if cached_ras:
                     return cached["data"]
 
             students_payload = await svc.list_course_students(orgUnitId)
@@ -449,7 +448,36 @@ async def gemelo_course_ra_dashboard(
                     except Exception:
                         continue
 
+            # Catálogo de resultados de aprendizaje reales del curso y qué
+            # outcomes están alineados a asignaciones (rúbricas). Sirve para
+            # (a) etiquetar con la descripción real y (b) listar TAMBIÉN los
+            # resultados sin datos de rúbrica, marcándolos "no alineado a
+            # asignaciones" (típicamente solo evaluados por quiz), sin calcular
+            # su nota — eso queda pendiente.
+            try:
+                outcome_index = await svc._get_outcome_index(orgUnitId)
+            except Exception:
+                outcome_index = {}
+            try:
+                align_index = await svc._get_alignment_index(orgUnitId)
+            except Exception:
+                align_index = {}
+            aligned_outcome_ids = {
+                oid for oids in align_index.values() for oid in oids
+            }
+            code_to_info = {
+                info.get("code"): info
+                for info in outcome_index.values()
+                if info.get("code")
+            }
+            code_to_oid = {
+                info.get("code"): oid
+                for oid, info in outcome_index.items()
+                if info.get("code")
+            }
+
             ras = []
+            seen_codes = set()
             for code in sorted(agg.keys()):
                 count = agg[code]["count"]
                 avg = round(agg[code]["sum"] / count, 1) if count else None
@@ -457,20 +485,57 @@ async def gemelo_course_ra_dashboard(
                     round((count / total_students) * 100.0, 1)
                     if total_students else 0.0
                 )
+                info = code_to_info.get(code) or {}
                 ras.append({
                     "code": code,
-                    "label": code,
+                    "label": info.get("title") or code,
+                    "title": info.get("title"),
                     "avgPct": avg,
                     "coveragePct": coverage_pct,
                     "studentsWithData": count,
                     "totalStudents": total_students,
+                    "alignedToAssignment": True,
                 })
+                seen_codes.add(code)
+
+            # Resultados de aprendizaje reales SIN datos de rúbrica: los
+            # mostramos igual pero sin nota. Si tampoco están alineados a una
+            # rúbrica (solo quiz o sin alinear), lo indicamos explícitamente.
+            for oid, info in outcome_index.items():
+                code = info.get("code")
+                if not code or code in seen_codes:
+                    continue
+                aligned = oid in aligned_outcome_ids
+                ras.append({
+                    "code": code,
+                    "label": info.get("title") or code,
+                    "title": info.get("title"),
+                    "avgPct": None,
+                    "coveragePct": 0.0,
+                    "studentsWithData": 0,
+                    "totalStudents": total_students,
+                    "alignedToAssignment": aligned,
+                    "note": None if aligned else "No alineado a asignaciones",
+                })
+                seen_codes.add(code)
+
+            ras.sort(key=lambda x: x["code"])
+
+            # RA evaluados por QUIZ: promedio (%) por outcome alineado a quizzes.
+            # Va en una pestaña lateral aparte de los RA por rúbrica/asignación.
+            try:
+                quiz_outcomes = await svc.build_quiz_outcomes(
+                    orgUnitId, user_ids, outcome_index, concurrency=concurrency
+                )
+            except Exception:
+                quiz_outcomes = []
 
             payload = {
                 "orgUnitId": orgUnitId,
                 "totalStudents": total_students,
                 "updatedAt": last_updated_at,
                 "ras": ras,
+                "quizOutcomes": quiz_outcomes,
             }
 
             _RA_DASHBOARD_CACHE[orgUnitId] = {"ts": _time.time(), "data": payload}
@@ -578,45 +643,6 @@ def get_course_config(orgUnitId: int):
     except Exception as e:
         _http500(e, "get_course_config", orgUnitId=orgUnitId)
 
-
-# =========================================================
-# Endpoints de debug
-# =========================================================
-
-@router.get("/debug/{orgUnitId}/folders")
-async def debug_folders(
-    orgUnitId: int,
-    svc: GemeloService = Depends(get_service),
-):
-    try:
-        data = await svc.bs.list_dropbox_folders(orgUnitId)
-        return {"orgUnitId": orgUnitId, "pythonType": str(type(data)), "data": data}
-    except Exception as e:
-        _http500(e, "debug_folders", orgUnitId=orgUnitId)
-
-
-@router.get("/debug/{orgUnitId}/rubric/{rubricId}")
-async def debug_rubric(
-    orgUnitId: int,
-    rubricId: str,
-    svc: GemeloService = Depends(get_service),
-):
-    try:
-        return await svc.bs.get_rubric_detail(orgUnitId, rubricId)
-    except Exception as e:
-        _http500(e, "debug_rubric", orgUnitId=orgUnitId, rubricId=rubricId)
-
-
-@router.get("/course/{orgUnitId}/learning-outcomes")
-async def gemelo_learning_outcomes(
-    orgUnitId: int,
-    svc: GemeloService = Depends(get_service),
-):
-    try:
-        data = await svc.bs.list_outcome_sets(orgUnitId)
-        return {"orgUnitId": orgUnitId, "outcomeSets": data}
-    except Exception as e:
-        _http500(e, "gemelo_learning_outcomes", orgUnitId=orgUnitId)
 
 
 @router.get("/course/{orgUnitId}/grade-items")
@@ -880,125 +906,6 @@ async def gemelo_grade_items(
         _http500(e, "gemelo_grade_items", orgUnitId=orgUnitId)
 
 
-@router.get(
-    "/debug/{orgUnitId}/folder/{folderId}/student/{userId}/rubric/{rubricId}/assessment"
-)
-async def debug_assessment(
-    orgUnitId: int,
-    folderId: int,
-    userId: int,
-    rubricId: int,
-    svc: GemeloService = Depends(get_service),
-):
-    try:
-        return await svc.bs.get_dropbox_rubric_assessment(
-            orgUnitId=orgUnitId,
-            folderId=folderId,
-            rubricId=rubricId,
-            userId=userId,
-        )
-    except Exception as e:
-        _http500(
-            e, "debug_assessment",
-            orgUnitId=orgUnitId, folderId=folderId,
-            userId=userId, rubricId=rubricId,
-        )
-
-
-@router.get("/debug/{orgUnitId}/classlist")
-async def debug_classlist(
-    orgUnitId: int,
-    full: bool = Query(False, description="Si true, devuelve la lista completa"),
-    limit: int = Query(3, ge=1, le=500, description="Tamaño del sample cuando full=false"),
-    svc: GemeloService = Depends(get_service),
-):
-    try:
-        data = await svc.bs.list_classlist(orgUnitId)
-
-        if isinstance(data, list):
-            items = data
-        elif isinstance(data, dict):
-            items = data.get("Items") or data.get("items") or []
-        else:
-            items = []
-
-        payload = {
-            "orgUnitId": orgUnitId,
-            "pythonType": str(type(data)),
-            "count": len(items),
-        }
-        payload["items" if full else "sample"] = items if full else items[:limit]
-        return payload
-    except Exception as e:
-        _http500(e, "debug_classlist", orgUnitId=orgUnitId)
-
-
-@router.get("/debug/{orgUnitId}/grades/items")
-async def debug_grade_items(
-    orgUnitId: int,
-    svc: GemeloService = Depends(get_service),
-):
-    try:
-        data = await svc.bs.list_grade_items(orgUnitId)
-
-        if isinstance(data, dict):
-            data_list = data.get("Items") or data.get("items") or []
-        else:
-            data_list = data if isinstance(data, list) else []
-
-        parsed = []
-        for it in (data_list[:10] if isinstance(data_list, list) else []):
-            if isinstance(it, dict):
-                parsed.append({
-                    "Id": it.get("Id") or it.get("Identifier"),
-                    "Name": it.get("Name"),
-                    "Weight": it.get("Weight"),
-                    "GradeType": it.get("GradeType"),
-                    "CategoryId": it.get("CategoryId"),
-                    # Incluimos fechas para diagnóstico del "no enviado"
-                    "DueDate": it.get("DueDate"),
-                    "EndDate": it.get("EndDate"),
-                })
-
-        return {
-            "orgUnitId": orgUnitId,
-            "pythonType": str(type(data)),
-            "count": len(data_list) if isinstance(data_list, list) else None,
-            "parsedSample": parsed,
-            "rawSample": data_list[:5] if isinstance(data_list, list) else data_list,
-        }
-    except Exception as e:
-        _http500(e, "debug_grade_items", orgUnitId=orgUnitId)
-
-
-@router.get("/debug/{orgUnitId}/grades/{gradeObjectId}/student/{userId}")
-async def debug_grade_value(
-    orgUnitId: int,
-    gradeObjectId: int,
-    userId: int,
-    svc: GemeloService = Depends(get_service),
-):
-    try:
-        data = await svc.bs.get_grade_value(orgUnitId, gradeObjectId, userId)
-        return {
-            "orgUnitId": orgUnitId,
-            "gradeObjectId": gradeObjectId,
-            "userId": userId,
-            "pythonType": str(type(data)),
-            "raw": data,
-            "extracted": {
-                "PointsNumerator": data.get("PointsNumerator") if isinstance(data, dict) else None,
-                "PointsDenominator": data.get("PointsDenominator") if isinstance(data, dict) else None,
-                "WeightedNumerator": data.get("WeightedNumerator") if isinstance(data, dict) else None,
-                "WeightedDenominator": data.get("WeightedDenominator") if isinstance(data, dict) else None,
-            },
-        }
-    except Exception as e:
-        _http500(
-            e, "debug_grade_value",
-            orgUnitId=orgUnitId, gradeObjectId=gradeObjectId, userId=userId,
-        )
-
 
 # =========================================================
 # Helpers internos
@@ -1021,3 +928,16 @@ async def _gather_with_semaphore(coros, limit: int = 10):
             return await c
 
     return await asyncio.gather(*(runner(c) for c in coros), return_exceptions=True)
+
+
+
+# =========================================================
+# Sub-routers extraidos (refactor #15) — mismo API surface
+# =========================================================
+from app.api.gemelo_outcomes import router as _outcomes_router
+from app.api.gemelo_debug import router as _debug_router
+from app.api.gemelo_admin import router as _admin_router
+
+router.include_router(_outcomes_router)
+router.include_router(_debug_router)
+router.include_router(_admin_router)

@@ -1,5 +1,5 @@
 import React, { useMemo, useState, useEffect } from "react";
-import { apiGet } from "../../utils/api";
+import { apiGetCached } from "../../utils/api";
 
 /**
  * Per-assignment upcoming delivery list.
@@ -38,7 +38,7 @@ function DueDateCalendar({ orgUnitId, studentRows, studentEvidences }) {
     setError(null);
     (async () => {
       try {
-        const data = await apiGet(`/gemelo/course/${orgUnitId}/grade-items`);
+        const data = await apiGetCached(`/gemelo/course/${orgUnitId}/grade-items`);
         if (!alive) return;
         const list = Array.isArray(data?.items) ? data.items : [];
         setItems(list);

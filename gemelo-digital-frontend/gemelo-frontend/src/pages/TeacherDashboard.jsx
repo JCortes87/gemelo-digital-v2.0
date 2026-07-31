@@ -1,20 +1,13 @@
-import React, { useEffect, useMemo, useState } from "react";
-import ReactDOM from "react-dom";
-import { useNavigate } from "react-router-dom";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
+import { Presentation, GraduationCap, ArrowRight, LogOut } from "lucide-react";
 import {
   ResponsiveContainer,
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
   Tooltip,
   PieChart,
   Pie,
   Cell,
-  CartesianGrid,
-  LineChart,
   Line,
-  ReferenceLine,
 } from "recharts";
 import { useAuth } from "../context/AuthContext";
 import { useI18n } from "../context/I18nContext";
@@ -23,34 +16,53 @@ import Breadcrumb from "../components/ui/Breadcrumb";
 import LastUpdated from "../components/ui/LastUpdated";
 import CommandPalette from "../components/ui/CommandPalette";
 import ContextualTip from "../components/ui/ContextualTip";
+import SharedCesaLoader from "../components/ui/CesaLoader";
+import ErrorBoundary from "../components/ui/ErrorBoundary";
 import SmartAlerts from "../components/dashboard/SmartAlerts";
 import CourseTrends from "../components/dashboard/CourseTrends";
 import DueDateCalendar from "../components/dashboard/DueDateCalendar";
+import AssignmentsPanel from "../components/dashboard/AssignmentsPanel";
 import AINarrativeSummary from "../components/dashboard/AINarrativeSummary";
 import GradePredictions from "../components/dashboard/GradePredictions";
 import EvidenceReports from "../components/dashboard/EvidenceReports";
 const CoordinatorDashboard = React.lazy(() => import("./CoordinatorDashboard"));
 const StudentPortal = React.lazy(() => import("./StudentPortal"));
 import useStudentNotes from "../hooks/useStudentNotes";
-import useCompactMode from "../hooks/useCompactMode";
 import useKeyboardShortcuts from "../hooks/useKeyboardShortcuts";
 import useCourseSnapshots from "../hooks/useCourseSnapshots";
 import useStudentChat from "../hooks/useStudentChat";
 import { exportStudentsCsv, exportCourseReport, STUDENT_CSV_COLUMNS } from "../utils/export";
-import { apiUrl, apiGet, mapLimit, API_BASE_URL } from "../utils/api";
-import { sanitizeHtml } from "../utils/sanitize";
-import { elSpeak, elStop, elListen } from "../utils/speech";
-import { COLORS, STATUS_CONFIG, colorForRisk, colorForPct, colorForLearningOutcome } from "../utils/colors";
+import { apiUrl, apiGet, apiGetCached, apiPost, invalidateApiCache, API_BASE_URL } from "../utils/api";
+import { elSpeak } from "../utils/speech";
+import { COLORS, STATUS_CONFIG, colorForRisk, colorForPct } from "../utils/colors";
 import {
   toDate, weeksBetween, clamp, normStatus,
   fmtPct, fmtGrade10FromPct, contentRhythmStatus,
-  parseFormulaReferences, matchEvidencesByFormula,
-  detectCortePeriod, buildCorteGroups,
-  flattenOutcomeDescriptions, isVisibleContentItem,
-  safeAvg, pickCriticalMacroFromGemelo,
+  buildCorteGroups, flattenOutcomeDescriptions,
   computeRiskFromPct, suggestRouteForStudent,
 } from "../utils/helpers";
 import { isStudentRole } from "../utils/roles";
+import VoiceAssistant from "../components/dashboard/VoiceAssistant";
+import { parseVoiceCommand, findLowestResultStudent, findHighestRiskStudent, findStudentByName } from "../utils/voiceCommands";
+import RoutesView from "../components/dashboard/RoutesView";
+// Módulos extraídos de este archivo (#15): estilos, átomos de UI, paneles,
+// layout, modales, onboarding y el vinculador de RAs.
+import { injectStyles } from "./teacher/dashboardStyles";
+import useMediaQuery from "../hooks/useMediaQuery";
+import {
+  StatusBadge, CircularRing, ThresholdsModal, Card, Stat, Divider,
+  ProgressBar, InfoTooltip, SortTh, CoverageBars,
+} from "./teacher/primitives";
+import { AnnouncementsModal, OnboardingTutorial } from "./teacher/onboarding";
+import {
+  LoginScreen, CesaLoader, UnlinkedItemsList, AlertsPanel, Drawer,
+  ProjectionBlock, NoRaMappingNotice, QualityFlagsBlock, PendingItemsBlock,
+  EvidencesTimeline, CoursePanel, StudentCard, GradeDistributionCard,
+} from "./teacher/panels";
+import { AppSidebar, AppTopbar } from "./teacher/layout";
+import { BugReportModal, FloatingAI } from "./teacher/modals";
+import { RaLinker } from "./teacher/RaLinker";
+
 /**
  * =========================
  * Config
@@ -59,3828 +71,14 @@ import { isStudentRole } from "../utils/roles";
 
 const DEFAULT_ORG_UNIT_ID = 0; // Se sobreescribe con el curso del LTI o selección del docente
 
-/**
- * =========================
- * CSS injection
- * =========================
- */
-const GLOBAL_STYLES = `
-  @import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600&display=swap');
-
-  :root {
-    /* ── Layout ── */
-    --sidebar-w: 220px;
-
-    /* ── Colors ── */
-    --bg: #F2F4F8;
-    --bg2: #FAFBFD;
-    --card: #FFFFFF;
-    --border: #E4E8EF;
-    --border2: #CDD3DE;
-    --text: #0F1827;
-    --muted: #5A6580;
-    --brand: #0B5FFF;
-    --brand-2: #003EA6;
-    --brand-light: #EBF1FF;
-    --brand-light2: #D6E4FF;
-    --shadow: 0 1px 3px rgba(15,24,39,0.06), 0 4px 16px rgba(15,24,39,0.04);
-    --shadow-md: 0 4px 12px rgba(15,24,39,0.08), 0 8px 24px rgba(15,24,39,0.06);
-    --shadow-lg: 0 8px 32px rgba(15,24,39,0.12), 0 16px 48px rgba(15,24,39,0.08);
-    --radius: 16px;
-    --radius-lg: 24px;
-    --font: 'Manrope', system-ui, sans-serif;
-    --font-mono: 'JetBrains Mono', monospace;
-    --ok: #12B76A;
-    --ok-bg: #ECFDF3;
-    --ok-border: #A9EFC5;
-    --watch: #E8900A;
-    --watch-bg: #FFF8ED;
-    --watch-border: #FCD385;
-    --critical: #D92D20;
-    --critical-bg: #FEF3F2;
-    --critical-border: #FDA29B;
-    --pending: #8B96A8;
-    --pending-bg: #F1F3F7;
-    --pending-border: #D1D8E4;
-  }
-
-  .dark {
-    --bg: #0B1120;
-    --bg2: #101828;
-    --card: #1A2332;
-    --border: #2D3B4F;
-    --border2: #3D4F66;
-    --text: #F1F5FB;
-    --muted: #94A3BB;
-    --brand: #3B82F6;
-    --brand-light: #172554;
-    --brand-light2: #1E3A5F;
-    --shadow: 0 1px 4px rgba(0,0,0,0.5), 0 4px 16px rgba(0,0,0,0.35);
-    --shadow-md: 0 4px 12px rgba(0,0,0,0.55), 0 8px 24px rgba(0,0,0,0.4);
-    --shadow-lg: 0 8px 32px rgba(0,0,0,0.65);
-    --ok: #34D399;
-    --ok-bg: #0D2818;
-    --ok-border: #166534;
-    --watch: #FBBF24;
-    --watch-bg: #27200A;
-    --watch-border: #854D0E;
-    --critical: #F87171;
-    --critical-bg: #2A0F0F;
-    --critical-border: #991B1B;
-    --pending-bg: #1A2332;
-    --pending-border: #2D3B4F;
-  }
-
-  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-
-  body {
-    font-family: var(--font);
-    background: var(--bg);
-    color: var(--text);
-    font-size: 14px;
-    line-height: 1.5;
-    -webkit-font-smoothing: antialiased;
-    font-feature-settings: "cv11", "ss01";
-  }
-
-  /* ── Sidebar Layout ── */
-  .app-sidebar {
-    position: fixed;
-    left: 0; top: 0; bottom: 0;
-    width: var(--sidebar-w);
-    background: var(--card);
-    border-right: 1px solid var(--border);
-    display: flex;
-    flex-direction: column;
-    z-index: 100;
-    transition: transform 0.28s cubic-bezier(.4,0,.2,1);
-  }
-  .app-sidebar.collapsed { transform: translateX(calc(-1 * var(--sidebar-w))); }
-  .sidebar-logo {
-    padding: 22px 20px 18px;
-    border-bottom: 1px solid var(--border);
-    display: flex; align-items: center; gap: 10px;
-  }
-  .sidebar-logo-icon {
-    width: 36px; height: 36px;
-    background: var(--brand);
-    border-radius: 10px;
-    display: flex; align-items: center; justify-content: center;
-    color: #fff; font-size: 16px; font-weight: 900;
-    letter-spacing: -0.05em; flex-shrink: 0;
-  }
-  .sidebar-logo-text { line-height: 1.2; }
-  .sidebar-logo-name { font-size: 12px; font-weight: 800; color: var(--text); letter-spacing: 0.02em; }
-  .sidebar-logo-sub { font-size: 10px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em; }
-  .sidebar-nav { padding: 12px 10px; flex: 1; display: flex; flex-direction: column; gap: 2px; }
-  .sidebar-section-label {
-    font-size: 10px; font-weight: 700; text-transform: uppercase;
-    letter-spacing: 0.1em; color: var(--muted);
-    padding: 8px 10px 4px; margin-top: 8px;
-  }
-  .sidebar-nav-item {
-    display: flex; align-items: center; gap: 9px;
-    padding: 9px 12px; border-radius: 10px;
-    font-size: 13px; font-weight: 600; color: var(--muted);
-    cursor: pointer; transition: all 0.15s ease;
-    border: none; background: transparent; width: 100%; text-align: left;
-  }
-  .sidebar-nav-item:hover { background: var(--bg); color: var(--text); }
-  .sidebar-nav-item.active {
-    background: var(--brand-light);
-    color: var(--brand);
-  }
-  .sidebar-nav-item.active .snav-icon { color: var(--brand); }
-  .sidebar-nav-dot {
-    width: 5px; height: 5px; border-radius: 50%;
-    background: transparent; transition: background 0.15s; flex-shrink: 0;
-    margin-left: auto;
-  }
-  .sidebar-nav-item.active .sidebar-nav-dot { background: var(--brand); }
-  .snav-icon { font-size: 16px; flex-shrink: 0; }
-  .sidebar-footer {
-    padding: 12px 10px 16px;
-    border-top: 1px solid var(--border);
-    display: flex; flex-direction: column; gap: 4px;
-  }
-  .sidebar-course-pill {
-    padding: 10px 12px; border-radius: 10px;
-    background: var(--brand-light); margin-bottom: 8px;
-  }
-  .sidebar-course-label { font-size: 9px; font-weight: 800; color: var(--brand); text-transform: uppercase; letter-spacing: 0.1em; }
-  .sidebar-course-name { font-size: 11px; font-weight: 700; color: var(--text); margin-top: 2px; line-height: 1.3; }
-
-  /* ── Top Bar ── */
-  .app-topbar {
-    position: fixed;
-    left: var(--sidebar-w); right: 0; top: 0;
-    height: 56px;
-    background: rgba(255,255,255,0.9);
-    backdrop-filter: blur(16px) saturate(180%);
-    -webkit-backdrop-filter: blur(16px) saturate(180%);
-    border-bottom: 1px solid var(--border);
-    display: flex; align-items: center; justify-content: space-between;
-    padding: 0 24px 0 20px;
-    z-index: 50;
-    transition: left 0.28s cubic-bezier(.4,0,.2,1);
-  }
-  .dark .app-topbar { background: rgba(17,24,39,0.9); }
-  .app-topbar.sidebar-collapsed { left: 0; }
-  .topbar-search {
-    display: flex; align-items: center; gap: 8px;
-    background: var(--bg);
-    border: 1px solid var(--border);
-    border-radius: 10px;
-    padding: 7px 12px;
-    width: 240px;
-    transition: all 0.15s;
-  }
-  .topbar-search:focus-within {
-    border-color: var(--brand);
-    box-shadow: 0 0 0 3px rgba(11,95,255,0.1);
-    width: 280px;
-  }
-  .topbar-search input {
-    border: none; background: transparent; outline: none;
-    font-size: 13px; font-weight: 500; color: var(--text);
-    font-family: var(--font); flex: 1;
-  }
-  .topbar-search input::placeholder { color: var(--muted); }
-  .topbar-icon-btn {
-    width: 36px; height: 36px;
-    display: flex; align-items: center; justify-content: center;
-    border-radius: 9px; border: 1px solid var(--border);
-    background: transparent; cursor: pointer;
-    color: var(--muted); font-size: 15px;
-    transition: all 0.15s; flex-shrink: 0;
-  }
-  .topbar-icon-btn:hover { background: var(--bg); color: var(--text); }
-  .topbar-avatar {
-    width: 32px; height: 32px; border-radius: 50%;
-    background: var(--brand); color: #fff;
-    display: flex; align-items: center; justify-content: center;
-    font-size: 12px; font-weight: 800; flex-shrink: 0;
-    cursor: pointer;
-  }
-
-  /* ── Main content offset ── */
-  .app-main {
-    margin-left: var(--sidebar-w);
-    padding-top: 56px;
-    min-height: 100vh;
-    transition: margin-left 0.28s cubic-bezier(.4,0,.2,1);
-  }
-  .app-main.sidebar-collapsed { margin-left: 0; }
-  .app-content { padding: 24px 28px; max-width: 100%; }
-
-  @media (max-width: 1024px) {
-    .app-sidebar { transform: translateX(calc(-1 * var(--sidebar-w))); }
-    .app-sidebar.mobile-open { transform: translateX(0); }
-    .app-topbar { left: 0; }
-    .app-main { margin-left: 0; }
-    .sidebar-backdrop {
-      position: fixed; inset: 0;
-      background: rgba(0,0,0,0.45);
-      z-index: 90; backdrop-filter: blur(2px);
-    }
-  }
-
-  /* ── Floating AI button ── */
-  .ai-fab {
-    position: fixed; bottom: 28px; right: 28px;
-    z-index: 200;
-  }
-  .ai-fab-btn {
-    width: 56px; height: 56px;
-    background: var(--brand);
-    border-radius: 50%;
-    border: none; cursor: pointer;
-    display: flex; align-items: center; justify-content: center;
-    font-size: 22px;
-    box-shadow: 0 4px 20px rgba(11,95,255,0.4), 0 2px 8px rgba(11,95,255,0.2);
-    transition: all 0.2s ease;
-    position: relative;
-  }
-  .ai-fab-btn:hover { transform: scale(1.08); box-shadow: 0 8px 28px rgba(11,95,255,0.5); }
-  .ai-fab-btn.active { background: var(--brand-2); }
-  .ai-fab-tooltip {
-    position: absolute; bottom: 68px; right: 0;
-    background: var(--card); border: 1px solid var(--border);
-    border-radius: 10px; padding: 7px 12px;
-    font-size: 11px; font-weight: 700; color: var(--text);
-    white-space: nowrap; box-shadow: var(--shadow);
-    animation: fadeUp 0.2s ease both;
-  }
-  .ai-fab-panel {
-    position: absolute; bottom: 72px; right: 0;
-    width: 380px;
-    background: var(--card);
-    border: 1px solid var(--border);
-    border-radius: 20px;
-    box-shadow: var(--shadow-lg);
-    overflow: hidden;
-    display: flex; flex-direction: column;
-    max-height: 520px;
-    animation: fadeUp 0.25s cubic-bezier(.4,0,.2,1) both;
-  }
-  @media (max-width: 480px) { .ai-fab-panel { width: calc(100vw - 48px); right: -4px; } }
-  .ai-fab-panel-header {
-    padding: 16px 18px;
-    background: var(--brand);
-    color: #fff;
-    display: flex; align-items: center; justify-content: space-between;
-    flex-shrink: 0;
-  }
-
-  /* ── Student detail upgrades ── */
-  .grade-ring-wrap {
-    position: relative;
-    display: flex; align-items: center; justify-content: center;
-  }
-  .grade-ring-svg { transform: rotate(-90deg); }
-  .grade-ring-label {
-    position: absolute; inset: 0;
-    display: flex; flex-direction: column; align-items: center; justify-content: center;
-  }
-  .route-card {
-    background: linear-gradient(135deg, var(--brand) 0%, var(--brand-2) 100%);
-    border-radius: var(--radius);
-    padding: 20px;
-    color: #fff;
-    position: relative;
-    overflow: hidden;
-  }
-  .route-card::before {
-    content: ''; position: absolute;
-    top: -40px; right: -40px;
-    width: 120px; height: 120px;
-    border-radius: 50%;
-    background: rgba(255,255,255,0.06);
-  }
-  .route-step {
-    display: flex; gap: 12px; align-items: flex-start;
-    padding: 12px 14px; border-radius: 10px;
-    background: rgba(255,255,255,0.1);
-    margin-bottom: 8px;
-  }
-  .route-step.done { background: rgba(255,255,255,0.15); }
-  .route-step.pending { background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.15); }
-
-  .cesa-loader-wrap {
-    position: fixed; inset: 0;
-    display: flex; align-items: center; justify-content: center;
-    background: var(--bg);
-    z-index: 100;
-  }
-  .cesa-loader-card {
-    background: var(--card);
-    border: 1px solid var(--border);
-    border-radius: 24px;
-    padding: 40px 48px;
-    text-align: center;
-    box-shadow: var(--shadow-lg);
-    min-width: 320px;
-    max-width: 480px;
-  }
-  .cesa-loader-title { font-size: 20px; font-weight: 800; color: var(--text); }
-  .cesa-loader-sub { font-size: 13px; color: var(--muted); margin-top: 4px; }
-  .cesa-loader-center { margin: 28px 0; }
-  .cesa-loader-foot { font-size: 12px; color: var(--muted); }
-
-  .cesa-water-text {
-    position: relative; display: inline-block;
-    font-size: 56px; font-weight: 900; letter-spacing: -2px;
-    overflow: hidden; height: 72px; line-height: 72px;
-  }
-  .cesa-water-text__outline {
-    color: transparent;
-    -webkit-text-stroke: 2px var(--border);
-  }
-  .cesa-water-text__fill {
-    position: absolute; inset: 0;
-    color: var(--brand);
-    clip-path: inset(100% 0 0 0);
-    animation: waterFill 1.8s ease-in-out infinite alternate;
-  }
-  .cesa-water-text__wave {
-    position: absolute; bottom: 0; left: -100%;
-    width: 300%; height: 100%;
-    background: linear-gradient(90deg, transparent, rgba(11,95,255,.08), transparent);
-    animation: waveSlide 2s linear infinite;
-  }
-  @keyframes waterFill {
-    0% { clip-path: inset(100% 0 0 0); }
-    100% { clip-path: inset(0% 0 0 0); }
-  }
-  @keyframes waveSlide {
-    from { transform: translateX(0); }
-    to { transform: translateX(33.33%); }
-  }
-
-  @keyframes fadeUp {
-    from { opacity: 0; transform: translateY(12px); }
-    to { opacity: 1; transform: translateY(0); }
-  }
-  .fade-up { animation: fadeUp 0.35s ease both; }
-  .fade-up-1 { animation-delay: 0.05s; }
-  .fade-up-2 { animation-delay: 0.1s; }
-  .fade-up-3 { animation-delay: 0.15s; }
-  .fade-up-4 { animation-delay: 0.2s; }
-
-  @keyframes pulse {
-    0%, 100% { opacity: 1; transform: scale(1); }
-    50% { opacity: 0.5; transform: scale(0.85); }
-  }
-  .pulse-dot {
-    display: inline-block; width: 8px; height: 8px;
-    border-radius: 50%; animation: pulse 1.4s ease infinite;
-  }
-
-  @keyframes fillBar {
-    from { width: 0%; }
-    to { width: var(--target-w); }
-  }
-  .fill-bar { animation: fillBar 0.7s cubic-bezier(.4,0,.2,1) both; animation-delay: 0.2s; }
-
-  .drawer-enter { animation: drawerIn 0.28s cubic-bezier(.4,0,.2,1) both; }
-  @keyframes drawerIn {
-    from { transform: translateX(48px); opacity: 0; }
-    to { transform: translateX(0); opacity: 1; }
-  }
-
-  /* ── Page tab transitions ── */
-  @keyframes tabIn {
-    from { opacity: 0; transform: translateY(10px); }
-    to   { opacity: 1; transform: translateY(0); }
-  }
-  .tab-enter { animation: tabIn 0.3s cubic-bezier(.4,0,.2,1) both; }
-
-  /* ── Card hover lift ── */
-  .kpi-card { transition: box-shadow 0.18s ease, transform 0.18s ease; }
-  .kpi-card:hover { box-shadow: var(--shadow-md) !important; }
-
-  /* ── Sidebar nav hover slide ── */
-  .sidebar-nav-item { transition: all 0.15s ease; }
-  .sidebar-nav-item:not(.active):hover { transform: translateX(3px); }
-
-  .tr-hover { transition: all 0.15s ease; }
-  .tr-hover:hover { background: var(--brand-light) !important; }
-  .tr-hover:hover td { color: var(--text) !important; }
-
-  /* ── Responsive: narrow viewport improvements ── */
-  @media (max-width: 640px) {
-    .app-content { padding: 14px 12px; }
-    .kpi-card { padding: 14px; border-radius: 16px; }
-    .ai-fab { bottom: 16px; right: 16px; }
-    .ai-fab-panel { bottom: 68px; }
-    .sidebar-logo-name { font-size: 11px; }
-  }
-  @media (max-width: 480px) {
-    .ai-fab-panel { width: calc(100vw - 36px); right: -4px; }
-    .ai-fab-btn { width: 48px; height: 48px; font-size: 18px; }
-  }
-
-  ::-webkit-scrollbar { width: 6px; height: 6px; }
-  ::-webkit-scrollbar-track { background: transparent; }
-  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 99px; }
-  ::-webkit-scrollbar-thumb:hover { background: var(--muted); }
-
-  .badge {
-    display: inline-flex; align-items: center; gap: 5px;
-    padding: 4px 10px; border-radius: 999px;
-    font-size: 10px; font-weight: 800; white-space: nowrap;
-    letter-spacing: 0.04em; text-transform: uppercase;
-  }
-
-  .kpi-card {
-    background: var(--card);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-lg);
-    padding: 20px;
-    box-shadow: var(--shadow);
-    transition: box-shadow 0.2s ease, transform 0.2s ease;
-  }
-  .kpi-card:hover { box-shadow: var(--shadow-md); transform: translateY(-1px); }
-
-  .tag {
-    display: inline-flex; align-items: center;
-    padding: 3px 9px; border-radius: 6px;
-    font-size: 10px; font-weight: 800;
-    letter-spacing: 0.03em;
-    background: var(--brand-light);
-    color: var(--brand);
-  }
-
-  .chip {
-    display: inline-flex; align-items: center; gap: 4px;
-    border: 1px solid var(--border);
-    border-radius: 8px; padding: 4px 10px;
-    font-size: 12px; font-weight: 700;
-    background: var(--card); color: var(--muted);
-    cursor: pointer; transition: all 0.15s ease;
-  }
-  .chip:hover, .chip.active {
-    border-color: var(--brand);
-    color: var(--brand);
-    background: var(--brand-light);
-  }
-
-  .btn {
-    border: 1px solid var(--border);
-    background: var(--card);
-    color: var(--text);
-    border-radius: 10px;
-    padding: 8px 14px;
-    cursor: pointer;
-    font-weight: 700;
-    font-size: 13px;
-    font-family: var(--font);
-    transition: all 0.15s ease;
-    display: inline-flex; align-items: center; gap: 6px;
-    letter-spacing: -0.01em;
-  }
-  .btn:hover {
-    border-color: var(--brand); color: var(--brand);
-    background: var(--brand-light); transform: translateY(-1px);
-    box-shadow: 0 2px 8px rgba(11,95,255,0.1);
-  }
-  .btn:active { transform: translateY(0); }
-  .btn-primary {
-    background: var(--brand); color: #fff; border-color: var(--brand);
-    box-shadow: 0 2px 8px rgba(11,95,255,0.3);
-  }
-  .btn-primary:hover {
-    background: var(--brand-2); color: #fff; border-color: var(--brand-2);
-    box-shadow: 0 4px 14px rgba(11,95,255,0.4);
-  }
-
-  .scenario-card {
-    border: 1px solid var(--border);
-    border-radius: 10px; padding: 12px;
-    display: flex; flex-direction: column; gap: 4px;
-    background: var(--card);
-  }
-  .scenario-card.scenario-risk { border-color: #FECDCA; background: var(--critical-bg); }
-  .scenario-card.scenario-base { border-color: var(--border); }
-  .scenario-card.scenario-improve { border-color: #A9EFC5; background: var(--ok-bg); }
-
-  .qc-flag {
-    font-size: 12px; padding: 8px 12px;
-    border-radius: 8px; background: var(--pending-bg);
-    border: 1px solid var(--border);
-    font-family: var(--font-mono);
-    color: var(--muted);
-  }
-
-  input[type="text"], input[type="number"] {
-    font-family: var(--font);
-    outline: none;
-    transition: border-color 0.15s ease, box-shadow 0.15s ease;
-  }
-  input[type="text"]:focus, input[type="number"]:focus {
-    border-color: var(--brand) !important;
-    box-shadow: 0 0 0 3px rgba(11,95,255,0.12) !important;
-  }
-  
-  .scroll-y {
-    overflow-y: auto;
-    overflow-x: hidden;
-  }
-
-  .ra-scroll {
-    max-height: 260px;
-    padding-right: 4px;
-  }
-
-  .ra-priority-scroll {
-    max-height: 380px;
-    padding-right: 4px;
-    overflow-y: auto;
-  }
-
-  .empty-state {
-    display: flex; flex-direction: column; align-items: center;
-    justify-content: center; gap: 8px;
-    padding: 40px 20px;
-    color: var(--muted);
-    border: 1px dashed var(--border);
-    border-radius: var(--radius);
-    background: var(--card);
-  }
-  .empty-state-icon { font-size: 36px; opacity: 0.35; }
-  .empty-state > span:nth-child(2) { font-size: 14px; font-weight: 700; color: var(--muted); }
-
-  /* ── Course Panel ── */
-  .course-panel-overlay {
-    position: fixed; inset: 0;
-    background: rgba(13,17,23,0.5);
-    z-index: 60;
-    display: flex; align-items: flex-start; justify-content: flex-end;
-    padding: 0;
-    backdrop-filter: blur(2px);
-    animation: fadeIn 0.2s ease both;
-  }
-  @keyframes fadeIn { from { opacity:0; } to { opacity:1; } }
-
-  .course-panel {
-    width: min(480px, 100vw);
-    height: 100vh;
-    background: var(--card);
-    border-left: 1px solid var(--border);
-    display: flex; flex-direction: column;
-    animation: slideIn 0.28s cubic-bezier(.4,0,.2,1) both;
-    box-shadow: -8px 0 40px rgba(0,0,0,0.15);
-  }
-  @keyframes slideIn {
-    from { transform: translateX(40px); opacity: 0; }
-    to   { transform: translateX(0);    opacity: 1; }
-  }
-
-  .course-item {
-    display: flex; align-items: center; gap: 12px;
-    padding: 12px 16px;
-    border-bottom: 1px solid var(--border);
-    cursor: pointer;
-    transition: background 0.15s ease;
-    text-decoration: none;
-  }
-  .course-item:hover { background: var(--brand-light); }
-  .course-item.active { background: var(--brand-light); border-left: 3px solid var(--brand); }
-  .course-item-dot {
-    width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0;
-  }
-
-  /* ── Voice search ── */
-  .voice-btn {
-    display: inline-flex; align-items: center; justify-content: center;
-    width: 34px; height: 34px;
-    border-radius: 10px;
-    border: 1px solid var(--border);
-    background: var(--card);
-    cursor: pointer;
-    transition: all 0.15s ease;
-    font-size: 15px;
-    flex-shrink: 0;
-    color: var(--muted);
-  }
-  .voice-btn:hover { border-color: var(--brand); background: var(--brand-light); color: var(--brand); }
-  .voice-btn.listening {
-    border-color: var(--critical);
-    background: var(--critical-bg);
-    color: var(--critical);
-    animation: voicePulse 1s ease infinite;
-  }
-  @keyframes voicePulse {
-    0%, 100% { box-shadow: 0 0 0 0 rgba(217,45,32,0.3); }
-    50%       { box-shadow: 0 0 0 6px rgba(217,45,32,0); }
-  }
-
-  /* ── Voice hint ── */
-  .voice-hint {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    padding: 5px 10px;
-    border-radius: 10px;
-    border: 1px dashed var(--border);
-    background: var(--bg);
-    color: var(--muted);
-    font-size: 11px;
-    font-weight: 600;
-    flex-wrap: wrap;
-  }
-
-  /* ── Main Tab Bar ── */
-  .main-tabs {
-    display: flex;
-    gap: 4px;
-    margin-bottom: 16px;
-    border-bottom: 1px solid var(--border);
-    padding-bottom: 0;
-  }
-  .main-tab {
-    padding: 8px 16px 10px;
-    font-size: 12px;
-    font-weight: 700;
-    color: var(--muted);
-    cursor: pointer;
-    border-radius: 8px 8px 0 0;
-    border: 1px solid transparent;
-    border-bottom: none;
-    background: transparent;
-    transition: all 0.15s;
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    margin-bottom: -1px;
-    position: relative;
-  }
-  .main-tab:hover { color: var(--text); background: var(--card); border-color: var(--border); }
-  .main-tab.active {
-    color: var(--brand);
-    background: var(--card);
-    border-color: var(--border);
-    border-bottom-color: var(--card);
-  }
-  .main-tab .tab-dot {
-    width: 6px; height: 6px; border-radius: 50%;
-    background: currentColor; opacity: 0.6;
-  }
-
-  /* ── AI Assistant Panel ── */
-  .ai-panel {
-    display: flex;
-    flex-direction: column;
-    gap: 14px;
-  }
-  .ai-status-outer {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    padding: 10px 14px;
-    border-radius: 10px;
-    border: 1px solid var(--border);
-    background: var(--bg);
-    transition: all 0.25s;
-    min-height: 48px;
-  }
-  .ai-status-outer.listening {
-    border-color: rgba(217,45,32,0.45);
-    background: var(--critical-bg);
-  }
-  .ai-status-outer.thinking {
-    border-color: rgba(11,95,255,0.35);
-    background: var(--brand-light);
-  }
-  .ai-status-outer.speaking {
-    border-color: rgba(18,183,106,0.35);
-    background: var(--ok-bg);
-  }
-  .ai-status-icon {
-    width: 36px; height: 36px;
-    border-radius: 50%;
-    display: flex; align-items: center; justify-content: center;
-    font-size: 16px; flex-shrink: 0;
-    background: var(--card);
-    border: 1px solid var(--border);
-  }
-  .ai-wave {
-    display: flex; align-items: center; gap: 2px; height: 18px;
-  }
-  .ai-wave-bar {
-    width: 3px; border-radius: 2px;
-    animation: waveAI 1.1s ease-in-out infinite;
-  }
-  .ai-wave-bar:nth-child(1) { height: 6px;  animation-delay: 0s; }
-  .ai-wave-bar:nth-child(2) { height: 12px; animation-delay: 0.1s; }
-  .ai-wave-bar:nth-child(3) { height: 18px; animation-delay: 0.2s; }
-  .ai-wave-bar:nth-child(4) { height: 12px; animation-delay: 0.1s; }
-  .ai-wave-bar:nth-child(5) { height: 6px;  animation-delay: 0s; }
-  @keyframes waveAI {
-    0%, 100% { transform: scaleY(0.4); }
-    50%       { transform: scaleY(1); }
-  }
-  .ai-chat {
-    background: var(--bg2, var(--bg));
-    border: 1px solid var(--border);
-    border-radius: 12px;
-    padding: 12px 10px;
-    max-height: 300px;
-    min-height: 120px;
-    overflow-y: auto;
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-    scrollbar-width: thin;
-  }
-  .ai-bubble-wrap { display: flex; flex-direction: column; }
-  .ai-bubble-wrap.user { align-items: flex-end; }
-  .ai-bubble-wrap.bot  { align-items: flex-start; }
-  .ai-bubble {
-    max-width: 86%;
-    font-size: 12.5px;
-    line-height: 1.55;
-    padding: 9px 13px;
-    border-radius: 8px;
-  }
-  .ai-bubble.bot {
-    background: var(--card);
-    border: 1px solid var(--border);
-    border-radius: 2px 12px 12px 12px;
-    box-shadow: 0 1px 2px rgba(0,0,0,0.04);
-  }
-  .ai-bubble.user {
-    background: var(--brand-light2, var(--brand-light));
-    border: 1px solid rgba(11,95,255,0.25);
-    border-radius: 12px 2px 12px 12px;
-    color: var(--text);
-  }
-  .ai-meta {
-    font-size: 9px; font-weight: 800;
-    letter-spacing: 0.07em; text-transform: uppercase;
-    color: var(--muted); margin-bottom: 3px;
-    display: flex; align-items: center; gap: 6px;
-  }
-  .ai-voice-badge {
-    background: var(--brand-light); color: var(--brand);
-    border-radius: 999px; padding: 1px 7px;
-    font-size: 9px; font-weight: 700;
-  }
-  .ai-speak-btn {
-    border: 1px solid var(--border);
-    background: transparent;
-    border-radius: 999px;
-    padding: 3px 10px;
-    font-size: 10px; font-weight: 700;
-    color: var(--muted);
-    cursor: pointer;
-    margin-top: 5px;
-    transition: all 0.15s;
-  }
-  .ai-speak-btn:hover { border-color: var(--ok); color: var(--ok); }
-  .ai-speak-btn.active { border-color: var(--ok); color: var(--ok); background: var(--ok-bg); }
-  .ai-typing {
-    display: flex; align-items: center; gap: 4px; padding: 6px 2px;
-  }
-  .ai-typing-dot {
-    width: 5px; height: 5px; border-radius: 50%;
-    background: var(--brand);
-    animation: waveAI 1.2s ease-in-out infinite;
-  }
-  .ai-typing-dot:nth-child(2) { animation-delay: 0.15s; }
-  .ai-typing-dot:nth-child(3) { animation-delay: 0.3s; }
-  .ai-chip-btn {
-    background: var(--card);
-    border: 1px solid var(--border);
-    border-radius: 999px;
-    padding: 5px 13px;
-    font-size: 11px; font-weight: 600;
-    color: var(--muted);
-    cursor: pointer;
-    transition: all 0.15s;
-    white-space: nowrap;
-  }
-  .ai-chip-btn:hover {
-    border-color: var(--brand);
-    color: var(--brand);
-    background: var(--brand-light);
-  }
-  .ai-input {
-    flex: 1;
-    border: 1px solid var(--border);
-    border-radius: 10px;
-    padding: 10px 14px;
-    font-size: 12px; font-weight: 600;
-    background: var(--card);
-    color: var(--text);
-    outline: none;
-    transition: border-color 0.15s, box-shadow 0.15s;
-    font-family: var(--font);
-  }
-  .ai-input:focus {
-    border-color: var(--brand);
-    box-shadow: 0 0 0 3px rgba(11,95,255,0.1);
-  }
-  .ai-input::placeholder { color: var(--muted); }
-  .ai-send-btn {
-    background: var(--brand);
-    color: #fff;
-    border: none;
-    border-radius: 10px;
-    padding: 10px 18px;
-    font-size: 12px; font-weight: 800;
-    cursor: pointer;
-    transition: opacity 0.15s;
-    white-space: nowrap;
-    font-family: var(--font);
-  }
-  .ai-send-btn:hover { opacity: 0.85; }
-  .ai-toggle {
-    display: flex; align-items: center; gap: 8px;
-    padding: 6px 12px;
-    border-radius: 8px;
-    border: 1px solid var(--border);
-    background: var(--card);
-    cursor: pointer;
-    transition: all 0.15s;
-    user-select: none;
-  }
-  .ai-toggle.active { border-color: var(--ok); background: var(--ok-bg); }
-  .ai-toggle-dot {
-    width: 8px; height: 8px; border-radius: 50%;
-    background: var(--muted); transition: background 0.2s;
-  }
-  .ai-toggle.active .ai-toggle-dot { background: var(--ok); box-shadow: 0 0 6px var(--ok); }
-  .ai-stop-btn {
-    background: var(--critical-bg);
-    border: 1px solid rgba(217,45,32,0.3);
-    border-radius: 8px;
-    padding: 6px 12px;
-    font-size: 11px; font-weight: 700;
-    color: var(--critical);
-    cursor: pointer;
-    transition: all 0.15s;
-    display: none;
-  }
-  .ai-stop-btn.visible { display: block; }
-  .ai-guide-grid {
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 12px;
-  }
-  @media (max-width: 640px) {
-    .ai-guide-grid { grid-template-columns: 1fr; }
-    .main-tabs { overflow-x: auto; }
-  }
-`;
-
-function injectStyles() {
-  if (typeof document === "undefined") return;
-  const id = "gemelo-styles";
-  if (document.getElementById(id)) return;
-  const el = document.createElement("style");
-  el.id = id;
-  el.textContent = GLOBAL_STYLES;
-  document.head.appendChild(el);
-}
-
-/**
- * =========================
- * Hook: Media Query
- * =========================
- */
-function useMediaQuery(query) {
-  const getMatch = () => {
-    if (typeof window === "undefined" || !window.matchMedia) return false;
-    return window.matchMedia(query).matches;
-  };
-  const [matches, setMatches] = React.useState(getMatch);
-
-  React.useEffect(() => {
-    if (!window.matchMedia) return;
-    const m = window.matchMedia(query);
-    const onChange = () => setMatches(m.matches);
-    onChange();
-
-    if (m.addEventListener) m.addEventListener("change", onChange);
-    else m.addListener(onChange);
-
-    return () => {
-      if (m.removeEventListener) m.removeEventListener("change", onChange);
-      else m.removeListener(onChange);
-    };
-  }, [query]);
-
-  return matches;
-}
-
-/**
- * =========================
- * UI Atoms
- * =========================
- */
-
-function StatusBadge({ status }) {
-  const s = normStatus(status);
-  const cfg = STATUS_CONFIG[s] || {
-    bg: "var(--pending-bg)",
-    fg: "var(--muted)",
-    dot: COLORS.pending,
-    label: status || "—",
-  };
-  return (
-    <span
-      className="badge"
-      style={{
-        background: cfg.bg, color: cfg.fg,
-        border: `1px solid ${cfg.dot}22`,
-        fontWeight: 700, letterSpacing: "0.03em",
-        padding: "4px 10px", fontSize: 11,
-        borderRadius: 999,
-      }}
-    >
-      <span
-        className="pulse-dot"
-        style={{ background: cfg.dot, width: 5, height: 5, borderRadius: "50%", display: "inline-block", flexShrink: 0 }}
-      />
-      {cfg.label}
-    </span>
-  );
-}
-
-
-// ─────────────────────────────────────────────
-// CircularRing — SVG progress ring (CESA Curator style)
-// ─────────────────────────────────────────────
-const CircularRing = React.memo(function CircularRing({ pct, size = 80, stroke = 8, color, label, sublabel, fontSize }) {
-  const r = (size - stroke) / 2;
-  const circ = 2 * Math.PI * r;
-  const pctClamped = Math.max(0, Math.min(100, Number(pct) || 0));
-  const offset = circ - (circ * pctClamped) / 100;
-  const ringColor = color || "var(--brand)";
-  const textSize = fontSize || Math.round(size * 0.22);
-  return (
-    <div
-      style={{ position: "relative", width: size, height: size, flexShrink: 0 }}
-      role="progressbar"
-      aria-valuenow={Math.round(pctClamped)}
-      aria-valuemin={0}
-      aria-valuemax={100}
-      aria-label={sublabel ? `${sublabel}: ${Math.round(pctClamped)}%` : `Progreso ${Math.round(pctClamped)}%`}
-    >
-      <svg width={size} height={size} style={{ transform: "rotate(-90deg)" }} aria-hidden="true">
-        <circle
-          cx={size / 2} cy={size / 2} r={r}
-          fill="none" stroke="var(--border)" strokeWidth={stroke}
-        />
-        <circle
-          cx={size / 2} cy={size / 2} r={r}
-          fill="none" stroke={ringColor} strokeWidth={stroke}
-          strokeLinecap="round"
-          strokeDasharray={circ}
-          strokeDashoffset={offset}
-          style={{ transition: "stroke-dashoffset 0.7s cubic-bezier(.4,0,.2,1)" }}
-        />
-      </svg>
-      <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
-        <span style={{ fontSize: textSize, fontWeight: 900, fontFamily: "var(--font-mono)", color: ringColor, lineHeight: 1 }}>{label ?? `${Math.round(pctClamped)}%`}</span>
-        {sublabel && <span style={{ fontSize: Math.round(textSize * 0.55), fontWeight: 700, color: "var(--muted)", marginTop: 1 }}>{sublabel}</span>}
-      </div>
-    </div>
-  );
-});
-
-// ─────────────────────────────────────────────
-// ThresholdsModal — configurar umbrales de riesgo del curso (#13)
-// ─────────────────────────────────────────────
-function ThresholdsModal({ current, base, isOverridden, onSave, onReset, onClose }) {
-  const [crit, setCrit] = useState(Number(current?.critical ?? 50));
-  const [watch, setWatch] = useState(Number(current?.watch ?? 70));
-  const valid = watch >= crit;
-  return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      aria-label="Configurar umbrales de riesgo"
-      onClick={onClose}
-      style={{
-        position: "fixed", inset: 0, zIndex: 10000,
-        background: "rgba(13,17,23,0.65)", backdropFilter: "blur(4px)",
-        display: "flex", alignItems: "center", justifyContent: "center",
-        padding: 20,
-      }}
-    >
-      <div
-        onClick={(e) => e.stopPropagation()}
-        style={{
-          width: "min(440px, 100%)", background: "var(--card)",
-          border: "1px solid var(--border)", borderRadius: 16,
-          boxShadow: "var(--shadow-lg)", padding: "20px 22px",
-          fontFamily: "var(--font)",
-        }}
-      >
-        <div style={{ fontSize: 16, fontWeight: 800, color: "var(--text)", marginBottom: 4 }}>
-          Umbrales de riesgo del curso
-        </div>
-        <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 16 }}>
-          Define los porcentajes a partir de los cuales un estudiante se considera <b>en observación</b> o <b>crítico</b>. Se aplica solo a este curso.
-        </div>
-
-        <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-          <label style={{ display: "block" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, fontWeight: 700, color: COLORS.critical, marginBottom: 4 }}>
-              <span>Crítico (&lt; %)</span><span style={{ fontFamily: "var(--font-mono)" }}>{crit}%</span>
-            </div>
-            <input type="range" min={0} max={100} value={crit} onChange={(e) => setCrit(Number(e.target.value))} style={{ width: "100%" }} />
-          </label>
-          <label style={{ display: "block" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, fontWeight: 700, color: COLORS.watch, marginBottom: 4 }}>
-              <span>Observación (&lt; %)</span><span style={{ fontFamily: "var(--font-mono)" }}>{watch}%</span>
-            </div>
-            <input type="range" min={0} max={100} value={watch} onChange={(e) => setWatch(Number(e.target.value))} style={{ width: "100%" }} />
-          </label>
-        </div>
-
-        {!valid && (
-          <div style={{ marginTop: 10, fontSize: 11, color: COLORS.critical, fontWeight: 600 }}>
-            El umbral de observación debe ser ≥ al crítico.
-          </div>
-        )}
-
-        <div style={{ fontSize: 10, color: "var(--muted)", marginTop: 12 }}>
-          Por defecto del sistema: crítico {base?.critical ?? 50}% · observación {base?.watch ?? 70}%
-        </div>
-
-        <div style={{ display: "flex", gap: 8, marginTop: 18, justifyContent: "flex-end" }}>
-          {isOverridden && (
-            <button
-              onClick={onReset}
-              style={{
-                padding: "8px 14px", borderRadius: 8, border: "1px solid var(--border)",
-                background: "var(--bg)", color: "var(--muted)", fontSize: 12,
-                fontWeight: 700, cursor: "pointer", fontFamily: "var(--font)",
-              }}
-            >
-              Restablecer
-            </button>
-          )}
-          <button
-            onClick={onClose}
-            style={{
-              padding: "8px 14px", borderRadius: 8, border: "1px solid var(--border)",
-              background: "var(--bg)", color: "var(--text)", fontSize: 12,
-              fontWeight: 700, cursor: "pointer", fontFamily: "var(--font)",
-            }}
-          >
-            Cancelar
-          </button>
-          <button
-            onClick={() => onSave({ critical: crit, watch })}
-            disabled={!valid}
-            style={{
-              padding: "8px 14px", borderRadius: 8, border: "none",
-              background: valid ? "var(--brand)" : "var(--border)",
-              color: "#fff", fontSize: 12, fontWeight: 800,
-              cursor: valid ? "pointer" : "not-allowed", fontFamily: "var(--font)",
-            }}
-          >
-            Guardar
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function Card({ title, right, children, className = "", style = {}, accent }) {
-  return (
-    <div
-      className={`kpi-card ${className}`}
-      style={{
-        ...style,
-        borderRadius: "var(--radius-lg)",
-        boxShadow: "var(--shadow)",
-        border: `1px solid var(--border)`,
-        position: "relative",
-        overflow: "hidden",
-      }}
-    >
-      {accent && (
-        <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 3, background: `var(--${accent})`, borderRadius: "var(--radius-lg) var(--radius-lg) 0 0" }} />
-      )}
-      {(title || right) && (
-        <div
-          style={{
-            display: "flex", alignItems: "center", justifyContent: "space-between",
-            marginBottom: 16, gap: 12,
-            paddingTop: accent ? 4 : 0,
-          }}
-        >
-          <div style={{ fontSize: 14, fontWeight: 800, color: "var(--text)", letterSpacing: "-0.02em", lineHeight: 1.3 }}>
-            {title}
-          </div>
-          <div style={{ flexShrink: 0 }}>{right}</div>
-        </div>
-      )}
-      {children}
-    </div>
-  );
-}
-
-function Stat({ label, value, sub, valueColor }) {
-  return (
-    <div>
-      {label ? (
-        <div style={{
-          fontSize: 10, color: "var(--muted)", fontWeight: 800,
-          textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 4,
-        }}>
-          {label}
-        </div>
-      ) : null}
-      <div style={{
-        fontSize: 30, color: valueColor || "var(--text)", fontWeight: 900,
-        lineHeight: 1, letterSpacing: "-0.04em", fontFamily: "var(--font)",
-      }}>
-        {value}
-      </div>
-      {sub ? <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 5, fontWeight: 500, lineHeight: 1.4 }}>{sub}</div> : null}
-    </div>
-  );
-}
-
-function Divider() {
-  return <div style={{ height: 1, background: "var(--border)", width: "100%", margin: "4px 0" }} />;
-}
-
-function ProgressBar({ value, color, showLabel = false, animate = true }) {
-  const pct = Math.max(0, Math.min(100, Number(value ?? 0)));
-  const mountedRef = React.useRef(false);
-  const [didMount, setDidMount] = React.useState(false);
-
-  React.useEffect(() => {
-    if (!mountedRef.current) {
-      mountedRef.current = true;
-      setDidMount(true);
-    }
-  }, []);
-
-  const shouldAnimate = animate && didMount;
-
-  return (
-    <div style={{ position: "relative" }}>
-      <div style={{ height: 8, borderRadius: 999, background: "rgba(148,163,184,0.15)", border: "1px solid var(--border)", overflow: "hidden" }}>
-        <div
-          className={shouldAnimate ? "fill-bar" : ""}
-          style={{
-            "--target-w": `${pct}%`,
-            width: shouldAnimate ? undefined : `${pct}%`,
-            height: "100%",
-            background: color || COLORS.brand,
-            borderRadius: 999,
-            transition: shouldAnimate ? undefined : "none",
-          }}
-        />
-      </div>
-      {showLabel && (
-        <div style={{ position: "absolute", right: 0, top: -18, fontSize: 11, fontWeight: 700, color: "var(--muted)" }}>
-          {fmtPct(pct)}
-        </div>
-      )}
-    </div>
-  );
-}
-
-// Tooltip portal container — renders outside any overflow/transform ancestor
-const _tooltipRoot = (() => {
-  if (typeof document === "undefined") return null;
-  let el = document.getElementById("cesa-tooltip-portal");
-  if (!el) {
-    el = document.createElement("div");
-    el.id = "cesa-tooltip-portal";
-    el.style.cssText = "position:fixed;top:0;left:0;width:0;height:0;overflow:visible;z-index:999999;pointer-events:none;";
-    document.body.appendChild(el);
-  }
-  return el;
-})();
-
-function InfoTooltip({ text }) {
-  const [open, setOpen] = React.useState(false);
-  const triggerRef = React.useRef(null);
-  const tooltipRef = React.useRef(null);
-  const [pos, setPos] = React.useState({ top: -9999, left: -9999 });
-
-  if (!String(text || "").trim()) return null;
-
-  const TW = 260; // tooltip width
-  const GAP = 7;
-
-  const calcPos = React.useCallback(() => {
-    if (!triggerRef.current) return;
-    const r = triggerRef.current.getBoundingClientRect();
-    // center horizontally over the ? button
-    let left = r.left + r.width / 2 - TW / 2;
-    left = Math.max(10, Math.min(left, window.innerWidth - TW - 10));
-
-    // measure real height after render, default 72px estimate
-    const h = (tooltipRef.current?.offsetHeight) || 72;
-    const spaceAbove = r.top;
-    const spaceBelow = window.innerHeight - r.bottom;
-    let top;
-    if (spaceAbove >= h + GAP + 10 || spaceAbove >= spaceBelow) {
-      top = r.top - h - GAP;
-    } else {
-      top = r.bottom + GAP;
-    }
-    setPos({ top, left });
-  }, []);
-
-  React.useEffect(() => {
-    if (!open) return;
-    calcPos();
-    // re-measure after paint (tooltip may have rendered with wrong height)
-    const raf = requestAnimationFrame(calcPos);
-    window.addEventListener("scroll", calcPos, true);
-    window.addEventListener("resize", calcPos);
-    return () => {
-      cancelAnimationFrame(raf);
-      window.removeEventListener("scroll", calcPos, true);
-      window.removeEventListener("resize", calcPos);
-    };
-  }, [open, calcPos]);
-
-  // Portal content
-  const tooltipNode = open && _tooltipRoot
-    ? ReactDOM.createPortal(
-        <div
-          ref={tooltipRef}
-          role="tooltip"
-          style={{
-            position: "fixed",
-            top: pos.top,
-            left: pos.left,
-            width: TW,
-            background: "var(--card)",
-            border: "1px solid var(--border)",
-            boxShadow: "0 8px 32px rgba(0,0,0,0.18), 0 2px 8px rgba(0,0,0,0.10)",
-            borderRadius: 10,
-            padding: "9px 12px",
-            color: "var(--text)",
-            fontSize: 12,
-            fontWeight: 500,
-            lineHeight: 1.5,
-            pointerEvents: "none",
-            animation: "fadeUp 0.15s ease both",
-          }}
-        >
-          {text}
-        </div>,
-        _tooltipRoot
-      )
-    : null;
-
-  return (
-    <>
-      <span
-        ref={triggerRef}
-        style={{ display: "inline-flex", flex: "0 0 auto", verticalAlign: "middle" }}
-        onMouseEnter={() => { setOpen(true); }}
-        onMouseLeave={() => setOpen(false)}
-        onFocus={() => setOpen(true)}
-        onBlur={() => setOpen(false)}
-        onClick={(e) => { e.stopPropagation(); setOpen(v => !v); }}
-      >
-        <span
-          role="button"
-          tabIndex={0}
-          aria-label="Ver descripción"
-          style={{
-            display: "inline-flex", width: 16, height: 16, borderRadius: 999,
-            alignItems: "center", justifyContent: "center",
-            border: "1px solid var(--border2)", color: "var(--muted)",
-            fontSize: 10, fontWeight: 900, cursor: "help",
-            background: "var(--card)", lineHeight: 1,
-            transition: "border-color 0.15s, color 0.15s",
-          }}
-          onMouseEnter={e => { e.currentTarget.style.borderColor = "var(--brand)"; e.currentTarget.style.color = "var(--brand)"; }}
-          onMouseLeave={e => { e.currentTarget.style.borderColor = "var(--border2)"; e.currentTarget.style.color = "var(--muted)"; }}
-        >
-          ?
-        </span>
-      </span>
-      {tooltipNode}
-    </>
-  );
-}
-
-function SortTh({ label, active, dir, onClick, title }) {
-  return (
-    <th
-      onClick={onClick}
-      title={title}
-      style={{
-        padding: "10px 12px",
-        cursor: "pointer",
-        userSelect: "none",
-        whiteSpace: "nowrap",
-        fontSize: 10,
-        fontWeight: 800,
-        textTransform: "uppercase",
-        letterSpacing: "0.1em",
-        color: active ? "var(--brand)" : "var(--muted)",
-        transition: "color 0.15s",
-      }}
-    >
-      {label} {active ? (dir === "asc" ? "↑" : "↓") : ""}
-    </th>
-  );
-}
-
-function CoverageBars({ donePct, pendingPct, overduePct, openPct }) {
-  const d  = Math.max(0, Math.min(100, Number(donePct   ?? 0)));
-  const p  = Math.max(0, Math.min(100, Number(pendingPct ?? 0)));
-  const ov = Math.max(0, Math.min(100, Number(overduePct ?? 0)));
-  // openPct puede pasarse explícitamente; si no, se calcula como residuo
-  const op = openPct != null
-    ? Math.max(0, Math.min(100, Number(openPct)))
-    : Math.max(0, 100 - d - p - ov);
-
-  const BarRow = ({ label, value, color, tooltip }) => (
-    <div style={{ display: "flex", flexDirection: "column", gap: 5 }} title={tooltip}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <div style={{
-          fontSize: 11, color: "var(--muted)", fontWeight: 700,
-          textTransform: "uppercase", letterSpacing: "0.04em",
-          display: "flex", alignItems: "center", gap: 5,
-        }}>
-          <span style={{ width: 7, height: 7, borderRadius: "50%", background: color, display: "inline-block", flexShrink: 0 }} />
-          {label}
-        </div>
-        <div style={{ fontSize: 12, color: "var(--text)", fontWeight: 800, fontFamily: "var(--font-mono)" }}>
-          {value.toFixed(1)}%
-        </div>
-      </div>
-      <ProgressBar value={value} color={color} animate={false} />
-    </div>
-  );
-
-  return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-      <div style={{ fontSize: 11, color: "var(--muted)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em" }}>
-        Índice de cumplimiento evaluativo
-      </div>
-      <BarRow label="Calificado" value={d} color={COLORS.ok}
-        tooltip="Ítems con nota numérica publicada en el gradebook." />
-      <BarRow label="Pendiente calificación" value={p} color={COLORS.brand}
-        tooltip="El estudiante entregó pero el docente aún no ha publicado nota numérica." />
-      {op > 0.5 && (
-        <BarRow label="Sin entregar (abierto)" value={op} color={COLORS.pending}
-          tooltip="Sin nota, sin señal de entrega, y la fecha de vencimiento aún no ha llegado." />
-      )}
-      <BarRow
-        label="Vencido sin registro"
-        value={ov}
-        color={ov > 0 ? COLORS.critical : "rgba(148,163,184,0.4)"}
-        tooltip="Sin nota, sin entrega registrada, y la fecha de vencimiento ya pasó. Requiere acción docente."
-      />
-    </div>
-  );
-}
-
-
-
-// ─────────────────────────────────────────────────────────────────────────────
-// OnboardingTutorial — Tutorial de primera vez para el docente
-// Aparece solo una vez (controlado por localStorage "gemelo_onboarded")
-// ─────────────────────────────────────────────────────────────────────────────
-const ONBOARDING_STEPS = [
-  {
-    id: "welcome",
-    title: "Bienvenido a G.D",
-    icon: "🎓",
-    desc: "Tu asistente académico inteligente para CESA. Monitorea el desempeño de tus estudiantes en tiempo real, identifica riesgos y toma decisiones de acompañamiento basadas en datos.",
-    highlight: null,
-    voice: (name) => `Bienvenido a G.D${name ? ", " + name : ""}. Tu asistente académico inteligente para el seguimiento de tus estudiantes.`,
-  },
-  {
-    id: "dashboard",
-    title: "Dashboard del curso",
-    icon: "📊",
-    desc: "Ve el panorama completo: nota promedio, estudiantes en riesgo, distribución de calificaciones, cumplimiento evaluativo y resultados de aprendizaje evaluados con rúbricas.",
-    highlight: "dashboard",
-    voice: () => "El Dashboard te da el panorama completo de tu curso. Aquí ves el promedio, los estudiantes en riesgo y el cumplimiento evaluativo.",
-  },
-  {
-    id: "priority",
-    title: "Estudiantes prioritarios",
-    icon: "🔴",
-    desc: "Identifica automáticamente quiénes necesitan atención urgente: nota crítica, baja cobertura o ítems vencidos sin calificar. Haz clic en un estudiante para ver su gemelo digital completo.",
-    highlight: "priority",
-    voice: () => "La sección de estudiantes prioritarios te muestra quiénes necesitan atención urgente, con nota crítica o pendientes sin calificar.",
-  },
-  {
-    id: "calendar",
-    title: "Calendario de entregas",
-    icon: "📅",
-    desc: "Visualiza todas las fechas de entrega del curso. Al abrir el detalle de un estudiante, el calendario muestra su estado individual por actividad: entregada ✓, vencida ✗ o pendiente.",
-    highlight: null,
-    voice: () => "El Calendario de entregas muestra todas las fechas del curso. Puedes ver el estado de cada actividad por estudiante.",
-  },
-  {
-    id: "routes",
-    title: "Rutas de atención",
-    icon: "🛤️",
-    desc: "Cada estudiante tiene una ruta de intervención asignada automáticamente: activar evidencia, recuperación, ajuste dirigido o mantener desempeño. Úsalas para priorizar tus acciones.",
-    highlight: "routes",
-    voice: () => "Las Rutas de atención te indican qué acción tomar con cada estudiante, desde activar evidencias hasta planes de recuperación.",
-  },
-  {
-    id: "ai",
-    title: "Asistente IA con voz",
-    icon: "🤖",
-    desc: "Consulta en lenguaje natural: '¿Quiénes están en riesgo alto?', '¿Cuál es el promedio?'. También puedes hablar con el micrófono y obtener respuestas en segundos.",
-    highlight: "assistant",
-    voice: () => "El Asistente de Inteligencia Artificial responde tus preguntas en lenguaje natural. Puedes escribir o usar el micrófono para consultar el estado de tu curso.",
-  },
-  {
-    id: "courses",
-    title: "Cursos y roles",
-    icon: "📚",
-    desc: "Usa 'Mis cursos' en la barra superior para cambiar entre tus cursos activos. Si tienes doble rol (docente y estudiante), desde la pantalla de inicio puedes elegir cómo acceder.",
-    highlight: null,
-    voice: () => "Puedes cambiar entre tus cursos en cualquier momento usando el botón Mis cursos. Si tienes doble rol, elige tu vista desde la pantalla de inicio. ¡Listo para comenzar!",
-  },
-];
-
-// Novedades recientes de la plataforma
-const UPDATES_STEPS = [
-  {
-    id: "rebrand_gd",
-    title: "Nueva identidad: G.D",
-    icon: "🆔",
-    tag: "Nuevo",
-    desc: "La plataforma adopta una identidad más compacta: 'Gemelo Digital' ahora se muestra como 'G.D' en toda la interfaz, narraciones de voz y reportes PDF. Versión V.260428 (28-04-2026).",
-  },
-  {
-    id: "pdf_informe",
-    title: "Descargar Informe PDF Institucional",
-    icon: "📄",
-    tag: "Nuevo",
-    desc: "El botón 'Descargar informe' en la retroalimentación de evidencias genera un PDF institucional CESA con la entrega, la nota semaforizada (cuadro de color al lado del nombre de la entrega), la rúbrica utilizada, el documento subido y el comentario general del docente.",
-  },
-  {
-    id: "fix_priority_names",
-    title: "Estudiantes prioritarios: nombres correctos",
-    icon: "🔧",
-    tag: "Mejorado",
-    desc: "Se corrigió la regresión donde los estudiantes prioritarios mostraban su número de ID en lugar del nombre. Ahora los snapshots sincronizan también la lista de clase para resolver siempre el nombre legible.",
-  },
-  {
-    id: "coordinator",
-    title: "Panel Coordinador",
-    icon: "🏛️",
-    tag: "Nuevo",
-    desc: "Coordinadores y administradores tienen un panel dedicado para visualizar el desempeño de todos los cursos de un período académico: notas, cobertura y riesgo por asignatura.",
-  },
-  {
-    id: "student_overview",
-    title: "Rendimiento General del Estudiante",
-    icon: "📊",
-    tag: "SuperAdmin",
-    desc: "Los SuperAdministradores pueden ver el desempeño completo de cualquier estudiante a través de todas sus asignaturas: notas, cobertura, riesgo y entregas por curso.",
-  },
-  {
-    id: "my_summary",
-    title: "Mi Resumen (Portal Estudiante)",
-    icon: "📋",
-    tag: "Nuevo",
-    desc: "Los estudiantes ahora tienen un botón '📊 Mi resumen' en su portal que consolida su desempeño en todos los cursos activos del semestre en una sola vista.",
-  },
-  {
-    id: "calendar_status",
-    title: "Calendario con Estado de Entregas",
-    icon: "📅",
-    tag: "Mejorado",
-    desc: "El calendario ahora muestra el estado individual de cada actividad para el estudiante seleccionado: ✓ verde para entregadas y calificadas, ✗ rojo para vencidas sin entrega.",
-  },
-  {
-    id: "superadmin",
-    title: "Herramientas SuperAdmin",
-    icon: "🔑",
-    tag: "SuperAdmin",
-    desc: "Los SuperAdministradores pueden suplantar usuarios (docentes o estudiantes), buscar cursos por período académico con selector de semestres, y consultar reportes cruzados.",
-  },
-];
-
-function UpdatesModal({ onClose }) {
-  const [step, setStep] = React.useState(0);
-  const current = UPDATES_STEPS[step];
-  const isLast = step === UPDATES_STEPS.length - 1;
-  const TAG_COLORS = { "Nuevo": "#16a34a", "Mejorado": "var(--brand)", "SuperAdmin": "#7c3aed" };
-
-  return (
-    <div style={{
-      position: "fixed", inset: 0, zIndex: 9999,
-      background: "rgba(0,0,0,0.72)",
-      display: "flex", alignItems: "center", justifyContent: "center",
-      fontFamily: "var(--font)", padding: 20,
-      backdropFilter: "blur(4px)",
-    }}>
-      <div style={{
-        background: "var(--card)", borderRadius: 20,
-        padding: "36px 40px", maxWidth: 500, width: "100%",
-        boxShadow: "0 24px 80px rgba(0,0,0,0.3)",
-        position: "relative",
-      }}>
-        <button
-          onClick={onClose}
-          style={{ position: "absolute", top: 14, right: 14, background: "none", border: "none", fontSize: 18, cursor: "pointer", color: "var(--muted)", padding: 4, lineHeight: 1 }}
-        >✕</button>
-
-        <div style={{ textAlign: "center", marginBottom: 20 }}>
-          <span style={{ fontSize: 11, fontWeight: 800, color: "var(--brand)", textTransform: "uppercase", letterSpacing: "0.1em" }}>
-            🆕 Novedades · G.D
-          </span>
-        </div>
-
-        <div style={{ display: "flex", gap: 6, marginBottom: 24, justifyContent: "center" }}>
-          {UPDATES_STEPS.map((_, i) => (
-            <div key={i} onClick={() => setStep(i)} style={{
-              width: i === step ? 22 : 8, height: 8, borderRadius: 99,
-              background: i === step ? "var(--brand)" : i < step ? "#16a34a" : "var(--border)",
-              transition: "all 0.3s ease", cursor: "pointer",
-            }} />
-          ))}
-        </div>
-
-        <div style={{ textAlign: "center", fontSize: 44, marginBottom: 12, lineHeight: 1 }}>
-          {current.icon}
-        </div>
-
-        <div style={{ textAlign: "center", marginBottom: 10 }}>
-          <span style={{
-            display: "inline-block",
-            fontSize: 10, fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.08em",
-            padding: "3px 10px", borderRadius: 99,
-            background: (TAG_COLORS[current.tag] || "var(--brand)") + "1a",
-            color: TAG_COLORS[current.tag] || "var(--brand)",
-            border: "1px solid " + (TAG_COLORS[current.tag] || "var(--brand)") + "40",
-          }}>
-            {current.tag}
-          </span>
-        </div>
-
-        <h2 style={{ fontSize: 21, fontWeight: 900, color: "var(--text)", textAlign: "center", margin: "0 0 12px", letterSpacing: "-0.02em" }}>
-          {current.title}
-        </h2>
-
-        <p style={{ fontSize: 14, color: "var(--muted)", lineHeight: 1.65, textAlign: "center", margin: "0 0 24px" }}>
-          {current.desc}
-        </p>
-
-        <div style={{ fontSize: 11, color: "var(--muted)", textAlign: "center", marginBottom: 16, fontWeight: 600 }}>
-          {step + 1} de {UPDATES_STEPS.length}
-        </div>
-
-        <div style={{ display: "flex", gap: 10 }}>
-          {step > 0 && (
-            <button
-              onClick={() => setStep(s => s - 1)}
-              style={{ flex: 1, padding: "11px 0", borderRadius: 10, border: "1px solid var(--border)", background: "transparent", fontSize: 13, fontWeight: 700, color: "var(--muted)", cursor: "pointer" }}
-            >← Anterior</button>
-          )}
-          <button
-            onClick={() => isLast ? onClose() : setStep(s => s + 1)}
-            style={{ flex: 2, padding: "11px 0", borderRadius: 10, border: "none", background: "var(--brand)", color: "#fff", fontSize: 13, fontWeight: 800, cursor: "pointer", boxShadow: "0 4px 14px rgba(11,95,255,0.3)" }}
-          >
-            {isLast ? "¡Entendido! ✓" : "Siguiente →"}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function OnboardingTutorial({ userName, onFinish }) {
-  const [step, setStep] = React.useState(0);
-  const [speaking, setSpeaking] = React.useState(false);
-  const current = ONBOARDING_STEPS[step];
-  const isLast = step === ONBOARDING_STEPS.length - 1;
-
-  const speak = React.useCallback((text) => {
-    elSpeak(
-      text,
-      () => setSpeaking(true),
-      () => setSpeaking(false),
-    );
-  }, []);
-
-  // Auto-speak on step change
-  React.useEffect(() => {
-    const text = current.voice(userName);
-    // Small delay for better UX
-    const t = setTimeout(() => speak(text), 300);
-    return () => { clearTimeout(t); window.speechSynthesis?.cancel(); };
-  }, [step]);
-
-  const handleNext = () => {
-    if (isLast) {
-      window.speechSynthesis?.cancel();
-      localStorage.setItem("gemelo_onboarded", "1");
-      onFinish();
-    } else {
-      setStep(s => s + 1);
-    }
-  };
-
-  const handleSkip = () => {
-    window.speechSynthesis?.cancel();
-    localStorage.setItem("gemelo_onboarded", "1");
-    onFinish();
-  };
-
-  return (
-    <div style={{
-      position: "fixed", inset: 0, zIndex: 9999,
-      background: "rgba(0,0,0,0.72)",
-      display: "flex", alignItems: "center", justifyContent: "center",
-      fontFamily: "var(--font)", padding: 20,
-      backdropFilter: "blur(4px)",
-    }}>
-      <div style={{
-        background: "var(--card)", borderRadius: 20,
-        padding: "36px 40px", maxWidth: 520, width: "100%",
-        boxShadow: "0 24px 80px rgba(0,0,0,0.3)",
-        position: "relative",
-      }}>
-        {/* Progress dots */}
-        <div style={{ display: "flex", gap: 6, marginBottom: 24, justifyContent: "center" }}>
-          {ONBOARDING_STEPS.map((_, i) => (
-            <div key={i} style={{
-              width: i === step ? 22 : 8, height: 8, borderRadius: 99,
-              background: i === step ? "var(--brand)" : i < step ? "var(--ok)" : "var(--border)",
-              transition: "all 0.3s ease",
-            }} />
-          ))}
-        </div>
-
-        {/* Icon */}
-        <div style={{ textAlign: "center", fontSize: 48, marginBottom: 16, lineHeight: 1 }}>
-          {current.icon}
-        </div>
-
-        {/* Title */}
-        <h2 style={{ fontSize: 22, fontWeight: 900, color: "var(--text)", textAlign: "center", margin: "0 0 12px", letterSpacing: "-0.02em" }}>
-          {current.title}
-        </h2>
-
-        {/* Description */}
-        <p style={{ fontSize: 14, color: "var(--muted)", lineHeight: 1.65, textAlign: "center", margin: "0 0 28px" }}>
-          {current.desc}
-        </p>
-
-        {/* Voice indicator */}
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, marginBottom: 24, height: 24 }}>
-          {speaking ? (
-            <>
-              {[1,2,3,4,5].map(n => (
-                <div key={n} style={{
-                  width: 4, borderRadius: 2,
-                  background: "var(--brand)",
-                  animation: "waveAI 1.1s ease-in-out infinite",
-                  animationDelay: `${n * 0.1}s`,
-                  height: `${8 + n * 4}px`,
-                }} />
-              ))}
-              <span style={{ fontSize: 11, color: "var(--brand)", fontWeight: 700, marginLeft: 6 }}>Hablando…</span>
-            </>
-          ) : (
-            <button
-              onClick={() => speak(current.voice(userName))}
-              style={{ background: "none", border: "1px solid var(--border)", borderRadius: 99, padding: "4px 14px", fontSize: 11, fontWeight: 700, color: "var(--muted)", cursor: "pointer" }}
-            >
-              🔊 Repetir
-            </button>
-          )}
-        </div>
-
-        {/* Step counter */}
-        <div style={{ fontSize: 11, color: "var(--muted)", textAlign: "center", marginBottom: 16, fontWeight: 600 }}>
-          {step + 1} de {ONBOARDING_STEPS.length}
-        </div>
-
-        {/* Buttons */}
-        <div style={{ display: "flex", gap: 10 }}>
-          <button
-            onClick={handleSkip}
-            style={{ flex: 1, padding: "11px 0", borderRadius: 10, border: "1px solid var(--border)", background: "transparent", fontSize: 13, fontWeight: 700, color: "var(--muted)", cursor: "pointer" }}
-          >
-            Saltar tutorial
-          </button>
-          <button
-            onClick={handleNext}
-            style={{ flex: 2, padding: "11px 0", borderRadius: 10, border: "none", background: "var(--brand)", color: "#fff", fontSize: 13, fontWeight: 800, cursor: "pointer", boxShadow: "0 4px 14px rgba(11,95,255,0.3)" }}
-          >
-            {isLast ? "¡Comenzar! 🚀" : "Siguiente →"}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// LoginScreen — Pantalla de acceso cuando el usuario no está autenticado
-// ─────────────────────────────────────────────────────────────────────────────
-function LoginScreen({ orgUnitId }) {
-  const loginUrl = apiUrl(
-    orgUnitId && orgUnitId > 0
-      ? `/auth/brightspace/login?org_unit_id=${orgUnitId}`
-      : "/auth/brightspace/login"
-  );
-
-  return (
-    <div style={{
-      minHeight: "100vh", background: "var(--bg)",
-      display: "flex", alignItems: "center", justifyContent: "center",
-      fontFamily: "var(--font)", padding: 20,
-    }}>
-      <div style={{
-        background: "var(--card)", border: "1px solid var(--border)",
-        borderRadius: "var(--radius-lg)", padding: "40px 48px",
-        textAlign: "center", maxWidth: 440, width: "100%",
-        boxShadow: "var(--shadow-lg)",
-      }}>
-        {/* Logo */}
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 12, marginBottom: 28 }}>
-          <div style={{
-            width: 48, height: 48, borderRadius: 13,
-            background: "var(--brand)", display: "flex",
-            alignItems: "center", justifyContent: "center",
-            color: "#fff", fontSize: 15, fontWeight: 900, letterSpacing: "-0.03em",
-          }}>CESA</div>
-          <div style={{ textAlign: "left" }}>
-            <div style={{ fontSize: 16, fontWeight: 900, color: "var(--text)", letterSpacing: "-0.02em" }}>
-              G.D
-            </div>
-            <div style={{ fontSize: 11, fontWeight: 600, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.08em" }}>
-              Vista Docente · V.260428
-            </div>
-          </div>
-        </div>
-
-        {/* Divider */}
-        <div style={{ height: 1, background: "var(--border)", margin: "0 0 28px" }} />
-
-        {/* Heading */}
-        <h2 style={{ fontSize: 22, fontWeight: 900, color: "var(--text)", letterSpacing: "-0.02em", margin: "0 0 8px" }}>
-          Bienvenido
-        </h2>
-        <p style={{ fontSize: 14, color: "var(--muted)", lineHeight: 1.6, margin: "0 0 28px" }}>
-          Para acceder a tu tablero, inicia sesión con tu cuenta CESA de Brightspace.
-          Serás redirigido a Microsoft para autenticarte.
-        </p>
-
-        {/* CTA Button */}
-        <a
-          href={loginUrl}
-          style={{
-            display: "flex", alignItems: "center", justifyContent: "center", gap: 10,
-            width: "100%", padding: "13px 20px",
-            background: "var(--brand)", color: "#fff",
-            borderRadius: 12, textDecoration: "none",
-            fontSize: 14, fontWeight: 800,
-            boxShadow: "0 4px 16px rgba(11,95,255,0.3)",
-            transition: "opacity 0.15s",
-          }}
-          onMouseEnter={e => e.currentTarget.style.opacity = "0.88"}
-          onMouseLeave={e => e.currentTarget.style.opacity = "1"}
-        >
-          {/* Microsoft logo simplified */}
-          <svg width="18" height="18" viewBox="0 0 21 21" fill="none">
-            <rect x="0"  y="0"  width="10" height="10" fill="#F25022"/>
-            <rect x="11" y="0"  width="10" height="10" fill="#7FBA00"/>
-            <rect x="0"  y="11" width="10" height="10" fill="#00A4EF"/>
-            <rect x="11" y="11" width="10" height="10" fill="#FFB900"/>
-          </svg>
-          Iniciar sesión con Microsoft
-        </a>
-
-        {/* Info */}
-        <p style={{ fontSize: 11, color: "var(--muted)", marginTop: 18, lineHeight: 1.5 }}>
-          Solo los instructores con cursos activos en Brightspace pueden acceder.
-          Si tienes problemas, contacta a soporte CESA.
-        </p>
-
-        {/* From LTI note */}
-        <div style={{
-          marginTop: 20, padding: "10px 14px", borderRadius: 10,
-          background: "var(--brand-light)", border: "1px solid var(--brand-light2)",
-        }}>
-          <p style={{ fontSize: 11, color: "var(--brand)", fontWeight: 700, margin: 0 }}>
-            💡 También puedes acceder directamente desde tu curso en Brightspace
-            usando el enlace de la herramienta G.D.
-          </p>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function CesaLoader({ title = "CESA · G.D V.260428", subtitle = "Cargando tablero..." }) {
-  React.useEffect(() => {
-    injectStyles();
-  }, []);
-
-  return (
-    <div className="cesa-loader-wrap">
-      <div className="cesa-loader-card">
-        <div>
-          <div className="cesa-loader-title">{title}</div>
-          <div className="cesa-loader-sub">{subtitle}</div>
-        </div>
-        <div className="cesa-loader-center">
-          <div className="cesa-water-text" aria-label="Cargando">
-            <span className="cesa-water-text__outline">CESA</span>
-            <span className="cesa-water-text__fill" aria-hidden="true">
-              CESA
-            </span>
-            <span className="cesa-water-text__wave" aria-hidden="true" />
-          </div>
-        </div>
-        <div className="cesa-loader-foot">Conectando con Brightspace y consolidando evidencias académicas…</div>
-      </div>
-    </div>
-  );
-}
-
-// Lista compacta de asignaciones sin RA — usada dentro del AlertsPanel
-function UnlinkedItemsList({ items }) {
-  const [open, setOpen] = React.useState(false);
-  const list = Array.isArray(items) ? items : [];
-  if (!list.length) return null;
-
-  return (
-    <div style={{ marginTop: 8 }}>
-      <button
-        className="btn"
-        style={{ fontSize: 11, padding: "4px 10px", gap: 5 }}
-        onClick={(e) => { e.stopPropagation(); setOpen((v) => !v); }}
-      >
-        {open ? "▴" : "▾"} Ver actividades sin RA ({list.length})
-      </button>
-      {open && (
-        <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 5 }}>
-          {list.map((it, i) => (
-            <div
-              key={it.gradeObjectId ?? i}
-              style={{
-                display: "flex", alignItems: "center", justifyContent: "space-between",
-                padding: "7px 10px", borderRadius: 8,
-                border: "1px solid var(--border)", background: "var(--bg)",
-                gap: 8,
-              }}
-            >
-              <div style={{ flex: 1, minWidth: 0, fontSize: 12, fontWeight: 600, color: "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                {it.name || `Ítem ${it.gradeObjectId}`}
-              </div>
-              <div style={{ display: "flex", gap: 6, flexShrink: 0, alignItems: "center" }}>
-                {it.weightPct != null && (
-                  <span className="tag" style={{ background: "var(--watch-bg)", color: "#9A3412", fontSize: 10 }}>
-                    {Number(it.weightPct).toFixed(1)}% peso
-                  </span>
-                )}
-                <span style={{ fontSize: 10, color: "var(--muted)", fontFamily: "var(--font-mono)" }}>
-                  sin RA
-                </span>
-              </div>
-            </div>
-          ))}
-          <div style={{ fontSize: 11, color: "var(--muted)", padding: "4px 2px", fontStyle: "italic" }}>
-            💡 Vincula estas actividades a una rúbrica con RA en Brightspace para incluirlas en el análisis de competencias.
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-function AlertsPanel({ alerts }) {
-  const list = Array.isArray(alerts) ? alerts : [];
-  const [open, setOpen] = React.useState(false);
-  if (!list.length) return null;
-
-  const sevRank = (s) => {
-    const x = normStatus(s);
-    if (x === "critico") return 0;
-    if (x === "en desarrollo" || x === "en seguimiento" || x === "observacion") return 1;
-    return 2;
-  };
-
-  const sorted = list.slice().sort((a, b) => sevRank(a.severity) - sevRank(b.severity));
-  const countBySev = (sev) => sorted.filter((x) => normStatus(x.severity) === sev).length;
-  const cCrit = countBySev("critico");
-  const cObs = sorted.filter((x) => ["en desarrollo", "en seguimiento", "observacion"].includes(normStatus(x.severity))).length;
-  const cSol = countBySev("solido");
-
-  return (
-    <Card>
-      <div
-        role="button"
-        tabIndex={0}
-        onClick={() => setOpen((v) => !v)}
-        onKeyDown={(e) => {
-          if (e.key === "Enter" || e.key === " ") setOpen((v) => !v);
-        }}
-        style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          gap: 12,
-          cursor: "pointer",
-          userSelect: "none",
-        }}
-      >
-        <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <span style={{ fontSize: 16 }}>🔭</span>
-            <span style={{ fontSize: 13, fontWeight: 800, color: "var(--text)" }}>Radar docente</span>
-            <span className="tag">{sorted.length}</span>
-          </div>
-          <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-            {cCrit > 0 && (
-              <span className="badge" style={{ background: "var(--critical-bg)", color: "#B42318" }}>
-                <span style={{ width: 6, height: 6, borderRadius: "50%", background: COLORS.critical, display: "inline-block" }} />
-                Críticos: {cCrit}
-              </span>
-            )}
-            {cObs > 0 && (
-              <span className="badge" style={{ background: "var(--watch-bg)", color: "#9A3412" }}>
-                <span style={{ width: 6, height: 6, borderRadius: "50%", background: COLORS.watch, display: "inline-block" }} />
-                Seguimiento: {cObs}
-              </span>
-            )}
-            {cSol > 0 && (
-              <span className="badge" style={{ background: "var(--ok-bg)", color: "#1B5E20" }}>
-                <span style={{ width: 6, height: 6, borderRadius: "50%", background: COLORS.ok, display: "inline-block" }} />
-                Óptimos: {cSol}
-              </span>
-            )}
-          </div>
-        </div>
-        <button className="btn" style={{ padding: "6px 12px", fontSize: 12 }}>
-          {open ? "Ocultar ▴" : "Ver ▾"}
-        </button>
-      </div>
-
-      {open && (
-        <div style={{ marginTop: 14, display: "flex", flexDirection: "column", gap: 10 }}>
-          {sorted.map((a) => (
-            <div
-              key={a.id || `${a.title}-${Math.random()}`}
-              style={{
-                border: "1px solid var(--border)",
-                borderRadius: 12,
-                padding: 14,
-                background: "var(--card)",
-                display: "flex",
-                flexDirection: "column",
-                gap: 8,
-              }}
-            >
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
-                <div style={{ fontWeight: 800, color: "var(--text)", fontSize: 13 }}>{a.title || "Alerta"}</div>
-                <StatusBadge status={a.severity} />
-              </div>
-              {a.message && <div style={{ fontSize: 12, color: "var(--muted)", lineHeight: 1.5 }}>{a.message}</div>}
-              {a.kpis && Object.keys(a.kpis).length > 0 && (
-                <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 2 }}>
-                  {Object.entries(a.kpis).map(([k, v]) => (
-                    <span
-                      key={k}
-                      style={{
-                        fontSize: 11,
-                        background: "var(--bg)",
-                        border: "1px solid var(--border)",
-                        borderRadius: 6,
-                        padding: "2px 8px",
-                        fontFamily: "var(--font-mono)",
-                        color: "var(--muted)",
-                      }}
-                    >
-                      {k}: <strong style={{ color: "var(--text)" }}>{typeof v === "number" ? (Number.isInteger(v) ? v : v.toFixed(1)) : String(v)}</strong>
-                    </span>
-                  ))}
-                </div>
-              )}
-              {/* Items sin RA — lista expandible */}
-              {Array.isArray(a.items) && a.items.length > 0 && (
-                <UnlinkedItemsList items={a.items} />
-              )}
-            </div>
-          ))}
-        </div>
-      )}
-    </Card>
-  );
-}
-
-function Drawer({ open, onClose, title, subtitle, extraHeader, children }) {
-  React.useEffect(() => {
-    const handler = (e) => { if (e.key === "Escape") onClose(); };
-    if (open) document.addEventListener("keydown", handler);
-    return () => document.removeEventListener("keydown", handler);
-  }, [open, onClose]);
-
-  // Add a class to <body> when drawer is open so the @media print CSS
-  // can hide the background dashboard and only print the drawer content.
-  React.useEffect(() => {
-    if (!open) return;
-    document.body.classList.add("drawer-is-open");
-    return () => document.body.classList.remove("drawer-is-open");
-  }, [open]);
-
-  if (!open) return null;
-
-  return (
-    <div
-      className="drawer-print-mode"
-      style={{ position: "fixed", inset: 0, background: "rgba(13,17,23,0.5)", display: "flex", justifyContent: "flex-end", zIndex: 200, backdropFilter: "blur(3px)" }}
-      onClick={onClose}
-    >
-      <div
-        className="drawer-enter"
-        style={{ width: "min(700px, 97vw)", height: "100%", background: "var(--card)", overflow: "auto", borderLeft: "1px solid var(--border)", color: "var(--text)", display: "flex", flexDirection: "column", gap: 0 }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        {/* Sticky header */}
-        <div style={{ position: "sticky", top: 0, zIndex: 10, background: "var(--card)", borderBottom: "1px solid var(--border)", padding: "0 20px" }}>
-          {/* Breadcrumb */}
-          <div style={{ display: "flex", alignItems: "center", gap: 6, paddingTop: 14, paddingBottom: 6 }}>
-            <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 11, fontWeight: 700, color: "var(--muted)", padding: 0, display: "flex", alignItems: "center", gap: 4 }}>
-              ← Estudiantes
-            </button>
-            <span style={{ color: "var(--border2)", fontSize: 11 }}>›</span>
-            <span style={{ fontSize: 11, fontWeight: 700, color: "var(--brand)" }}>Expediente académico</span>
-          </div>
-          {/* Title row */}
-          <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12, paddingBottom: 14 }}>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontSize: 18, fontWeight: 900, color: "var(--text)", letterSpacing: "-0.02em", lineHeight: 1.15 }}>{title}</div>
-              {subtitle && <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 3, fontWeight: 500 }}>{subtitle}</div>}
-              {extraHeader && <div style={{ marginTop: 6 }}>{extraHeader}</div>}
-            </div>
-            <button className="btn" onClick={onClose} style={{ flexShrink: 0, marginTop: 2 }}>✕ Cerrar</button>
-          </div>
-        </div>
-        {/* Content */}
-        <div style={{ padding: "16px 20px 28px", flex: 1 }}>
-          {children}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function ProjectionBlock({ projection, thresholds }) {
-  if (!projection || !Array.isArray(projection.scenarios) || !projection.scenarios.length) return null;
-
-  if (projection.isFinal) {
-    return (
-      <Card title="Proyección final" right={<span className="tag">Cobertura 100%</span>}>
-        <Stat label="Nota final" value={fmtGrade10FromPct(projection.finalPct)} valueColor={colorForPct(projection.finalPct, thresholds)} />
-        <div style={{ marginTop: 8, fontSize: 12, color: "var(--muted)" }}>
-          La cobertura del 100% indica que esta es la nota definitiva del curso.
-        </div>
-      </Card>
-    );
-  }
-
-  const scenarioMeta = {
-    risk: { label: "Escenario riesgo", sub: "si el resto baja", cls: "scenario-risk", icon: "📉" },
-    base: { label: "Escenario base", sub: "desempeño actual", cls: "scenario-base", icon: "📊" },
-    improve: { label: "Escenario mejora", sub: "si el resto sube", cls: "scenario-improve", icon: "📈" },
-  };
-
-  return (
-    <Card title="Proyección de nota final" right={<span className="tag">{fmtPct(projection.coveragePct)} calificado</span>}>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10 }}>
-        {projection.scenarios.map((s) => {
-          const meta = scenarioMeta[s.id] || { label: s.id, sub: "", cls: "scenario-base", icon: "📊" };
-          return (
-            <div key={s.id} className={`scenario-card ${meta.cls}`}>
-              <div style={{ fontSize: 18 }}>{meta.icon}</div>
-              <div style={{ fontSize: 11, color: "var(--muted)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em" }}>{meta.label}</div>
-              <div style={{ fontSize: 24, fontWeight: 900, letterSpacing: "-0.02em", color: colorForPct(s.projectedFinalPct, thresholds) }}>
-                {fmtGrade10FromPct(s.projectedFinalPct)}
-              </div>
-              <div style={{ fontSize: 11, color: "var(--muted)" }}>
-                {meta.sub} · asume {fmtPct(s.assumptionPendingPct)} pendiente
-              </div>
-            </div>
-          );
-        })}
-      </div>
-    </Card>
-  );
-}
-
-// Notificación de ítems sin RA vinculado
-function NoRaMappingNotice({ evidences, units }) {
-  // Evidences with grades but whose gradeObjectId doesn't appear in any unit's evidence list
-  const gradedEvIds = new Set(
-    (Array.isArray(evidences) ? evidences : [])
-      .filter((e) => e.scorePct != null)
-      .map((e) => String(e.gradeObjectId))
-  );
-
-  // Collect all gradeObjectIds that ARE linked to a RA unit
-  const linkedIds = new Set();
-  for (const u of (Array.isArray(units) ? units : [])) {
-    for (const ev of (u.evidence || [])) {
-      if (ev.folderId != null) linkedIds.add(String(ev.folderId));
-    }
-  }
-
-  // Items with grade but no RA link
-  const unlinked = (Array.isArray(evidences) ? evidences : []).filter(
-    (e) => e.scorePct != null && !linkedIds.has(String(e.gradeObjectId))
-  );
-
-  if (!unlinked.length) return null;
-
-  const [open, setOpen] = React.useState(false);
-
-  return (
-    <div style={{
-      marginTop: 8,
-      border: "1px solid var(--watch-bg)",
-      borderColor: "#FED7AA",
-      borderRadius: 10,
-      background: "var(--watch-bg)",
-      overflow: "hidden",
-    }}>
-      <div
-        role="button"
-        tabIndex={0}
-        onClick={() => setOpen((v) => !v)}
-        onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") setOpen((v) => !v); }}
-        style={{
-          display: "flex", alignItems: "center", justifyContent: "space-between",
-          padding: "10px 14px", cursor: "pointer", userSelect: "none", gap: 10,
-        }}
-      >
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <span style={{ fontSize: 14 }}>⚠️</span>
-          <div>
-            <div style={{ fontSize: 12, fontWeight: 800, color: "#9A3412" }}>
-              {unlinked.length} asignación{unlinked.length !== 1 ? "es" : ""} calificada{unlinked.length !== 1 ? "s" : ""} sin Resultado de Aprendizaje
-            </div>
-            <div style={{ fontSize: 11, color: "var(--muted)" }}>
-              Estas evidencias tienen nota pero no están vinculadas a ningún RA en la rúbrica
-            </div>
-          </div>
-        </div>
-        <span style={{ fontSize: 11, fontWeight: 700, color: "var(--muted)", flexShrink: 0 }}>{open ? "▴" : "▾"}</span>
-      </div>
-      {open && (
-        <div style={{ borderTop: "1px solid #FED7AA", padding: "10px 14px", display: "flex", flexDirection: "column", gap: 6 }}>
-          {unlinked.map((e, i) => (
-            <div key={i} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "6px 10px", background: "var(--card)", borderRadius: 8, border: "1px solid var(--border)" }}>
-              <div style={{ fontSize: 12, fontWeight: 600, color: "var(--text)", flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                {e.name || `Ítem ${e.gradeObjectId}`}
-              </div>
-              <div style={{ display: "flex", gap: 8, flexShrink: 0, alignItems: "center" }}>
-                <span className="tag" style={{ background: "var(--watch-bg)", color: "#9A3412" }}>
-                  {fmtPct(e.weightPct)} peso
-                </span>
-                <span style={{ fontFamily: "var(--font-mono)", fontSize: 13, fontWeight: 800, color: colorForPct(e.scorePct, null) }}>
-                  {e.scorePct != null ? (e.scorePct / 10).toFixed(1) : "—"}
-                </span>
-              </div>
-            </div>
-          ))}
-          <div style={{ fontSize: 11, color: "var(--muted)", padding: "4px 2px" }}>
-            💡 Para que aparezcan en el análisis de RA, vincula estas asignaciones a una rúbrica con criterios mapeados en Brightspace.
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-function QualityFlagsBlock({ flags }) {
-  const list = Array.isArray(flags) ? flags.filter((f) => f?.type) : [];
-  const [open, setOpen] = React.useState(false);
-  if (!list.length) return null;
-
-  const relevant = list.filter((f) => f.type !== "role_not_enabled");
-  if (!relevant.length) return null;
-
-  return (
-    <Card title={null}>
-      <div
-        role="button"
-        tabIndex={0}
-        onClick={() => setOpen((v) => !v)}
-        onKeyDown={(e) => {
-          if (e.key === "Enter" || e.key === " ") setOpen((v) => !v);
-        }}
-        style={{ display: "flex", alignItems: "center", justifyContent: "space-between", cursor: "pointer", userSelect: "none" }}
-      >
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <span style={{ fontSize: 14 }}>🔍</span>
-          <span style={{ fontSize: 13, fontWeight: 800, color: "var(--text)" }}>Flags de calidad del modelo</span>
-          <span className="tag" style={{ background: "var(--watch-bg)", color: "var(--watch)" }}>
-            {relevant.length}
-          </span>
-        </div>
-        <span style={{ fontSize: 12, color: "var(--muted)", fontWeight: 700 }}>{open ? "▴" : "▾"}</span>
-      </div>
-      {open && (
-        <div style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 6 }}>
-          {relevant.map((f, i) => (
-            <div key={i} className="qc-flag">
-              <strong>{f.type}</strong>
-              {f.message && <span style={{ marginLeft: 8, opacity: 0.8 }}>— {f.message}</span>}
-              {f.rubricId && <span style={{ marginLeft: 8, opacity: 0.6 }}>rubric:{f.rubricId}</span>}
-              {f.unitCode && <span style={{ marginLeft: 8, opacity: 0.6 }}>unit:{f.unitCode}</span>}
-            </div>
-          ))}
-        </div>
-      )}
-    </Card>
-  );
-}
-
-function PendingItemsBlock({ pendingItems, missingValues }) {
-  const items = Array.isArray(pendingItems) ? pendingItems : [];
-  const missing = Array.isArray(missingValues) ? missingValues : [];
-  if (!items.length && !missing.length) return null;
-
-  const [open, setOpen] = React.useState(false);
-  const topPending = items.slice(0, 5);
-
-  return (
-    <Card title={null}>
-      <div
-        role="button"
-        tabIndex={0}
-        onClick={() => setOpen((v) => !v)}
-        onKeyDown={(e) => {
-          if (e.key === "Enter" || e.key === " ") setOpen((v) => !v);
-        }}
-        style={{ display: "flex", alignItems: "center", justifyContent: "space-between", cursor: "pointer", userSelect: "none" }}
-      >
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <span style={{ fontSize: 14 }}>⏳</span>
-          <span style={{ fontSize: 13, fontWeight: 800, color: "var(--text)" }}>Evidencias pendientes</span>
-          <span className="tag">{items.length + missing.length}</span>
-        </div>
-        <span style={{ fontSize: 12, color: "var(--muted)", fontWeight: 700 }}>{open ? "▴" : "▾"}</span>
-      </div>
-
-      {open && (
-        <div style={{ marginTop: 12 }}>
-          {topPending.length > 0 && (
-            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-              <div style={{ fontSize: 11, fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.05em" }}>
-                Sin calificar (por peso)
-              </div>
-              {topPending.map((it, i) => (
-                <div
-                  key={i}
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "space-between",
-                    padding: "8px 10px",
-                    border: "1px solid var(--border)",
-                    borderRadius: 8,
-                    gap: 10,
-                  }}
-                >
-                  <div style={{ fontSize: 12, fontWeight: 700, color: "var(--text)", flex: 1, minWidth: 0 }}>
-                    {it.name || `Ítem ${it.gradeObjectId}`}
-                  </div>
-                  <span className="tag" style={{ background: "var(--watch-bg)", color: "#9A3412", flexShrink: 0 }}>
-                    {fmtPct(it.weightPct)} peso
-                  </span>
-                </div>
-              ))}
-              {items.length > 5 && <div style={{ fontSize: 12, color: "var(--muted)", textAlign: "center", padding: "4px 0" }}>+ {items.length - 5} más</div>}
-            </div>
-          )}
-          {missing.length > 0 && (
-            <div style={{ marginTop: items.length > 0 ? 12 : 0 }}>
-              <div style={{ fontSize: 11, fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 6 }}>
-                No liberados en gradebook ({missing.length})
-              </div>
-              <div style={{ fontSize: 12, color: "var(--muted)" }}>Ítems sin valor visible para el estudiante. Revisar configuración de visibilidad.</div>
-            </div>
-          )}
-        </div>
-      )}
-    </Card>
-  );
-}
-
-function EvidencesTimeline({ evidences, thresholds }) {
-  const list = Array.isArray(evidences) ? evidences.filter((e) => e.scorePct !== null && e.scorePct !== undefined) : [];
-  if (!list.length) return null;
-  const [open, setOpen] = React.useState(false);
-
-  const chartData = list.map((e) => ({
-    name: (e.name || "").slice(0, 20),
-    pct: Number(e.scorePct ?? 0),
-  }));
-
-  return (
-    <Card title={null}>
-      <div
-        role="button"
-        tabIndex={0}
-        onClick={() => setOpen((v) => !v)}
-        onKeyDown={(e) => {
-          if (e.key === "Enter" || e.key === " ") setOpen((v) => !v);
-        }}
-        style={{ display: "flex", alignItems: "center", justifyContent: "space-between", cursor: "pointer", userSelect: "none" }}
-      >
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <span style={{ fontSize: 14 }}>📋</span>
-          <span style={{ fontSize: 13, fontWeight: 800, color: "var(--text)" }}>Historial de evidencias</span>
-          <span className="tag">{list.length} calificadas</span>
-        </div>
-        <span style={{ fontSize: 12, color: "var(--muted)", fontWeight: 700 }}>{open ? "▴" : "▾"}</span>
-      </div>
-
-      {open && (
-        <div style={{ marginTop: 14 }}>
-          <div style={{ width: "100%", height: 160 }}>
-            <ResponsiveContainer>
-              <LineChart data={chartData} margin={{ left: -10, right: 10 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
-                <XAxis dataKey="name" tick={{ fontSize: 10, fill: "var(--muted)" }} />
-                <YAxis domain={[0, 100]} tickFormatter={(v) => `${v}%`} tick={{ fontSize: 10, fill: "var(--muted)" }} />
-                <Tooltip formatter={(v) => [`${Number(v).toFixed(1)}%`, "Desempeño"]} />
-                <ReferenceLine y={Number(thresholds?.watch || 70)} stroke={COLORS.watch} strokeDasharray="4 4" label={{ value: "70%", fill: COLORS.watch, fontSize: 10 }} />
-                <ReferenceLine y={Number(thresholds?.critical || 50)} stroke={COLORS.critical} strokeDasharray="4 4" label={{ value: "50%", fill: COLORS.critical, fontSize: 10 }} />
-                <Line type="monotone" dataKey="pct" stroke={COLORS.brand} strokeWidth={2} dot={{ fill: COLORS.brand, r: 4 }} activeDot={{ r: 6 }} />
-              </LineChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
-      )}
-    </Card>
-  );
-}
-
-// ─────────────────────────────────────────────────────────
-// VoiceAssistant — Panel completo con chat, voz y TTS
-// ─────────────────────────────────────────────────────────
-function VoiceAssistant({ studentRows, overview, raDashboard, courseInfo, thresholds }) {
-  const [msgs, setMsgs] = React.useState(() => [{
-    id: 0, role: "bot", fromVoice: false,
-    text: `Listo. Tengo cargados los datos de <strong>${courseInfo?.Name || "este curso"}</strong>. Puedo analizar riesgo, evidencias y desempeño por RA. Escríbeme o usa el micrófono 🎙️.`,
-  }]);
-  const [input, setInput] = React.useState("");
-  const [aiStatus, setAiStatus] = React.useState("idle");
-  const [voiceOut, setVoiceOut] = React.useState(true);
-  const [speed, setSpeed]   = React.useState(1.2);
-  const [activeSpeakId, setActiveSpeakId] = React.useState(null);
-  const [liveText, setLiveText] = React.useState("");
-  const chatRef  = React.useRef(null);
-  const synthRef = React.useRef(null);
-  const recRef   = React.useRef(null);
-  const inputRef = React.useRef(null);
-
-  React.useEffect(() => {
-    if (chatRef.current) chatRef.current.scrollTop = chatRef.current.scrollHeight;
-  }, [msgs, aiStatus]);
-
-  // ── Pre-compute course data ──
-  const withGrades = (Array.isArray(studentRows) ? studentRows : []).filter((s) => s.currentPerformancePct != null);
-  const avg = withGrades.length
-    ? (withGrades.reduce((a, s) => a + Number(s.currentPerformancePct) / 10, 0) / withGrades.length).toFixed(2)
-    : null;
-  const altos  = (Array.isArray(studentRows) ? studentRows : []).filter((s) => computeRiskFromPct(s.currentPerformancePct) === "alto");
-  const medios = (Array.isArray(studentRows) ? studentRows : []).filter((s) => computeRiskFromPct(s.currentPerformancePct) === "medio");
-  const zeros  = (Array.isArray(studentRows) ? studentRows : []).filter((s) => s.currentPerformancePct == null);
-  const top    = withGrades.filter((s) => s.currentPerformancePct / 10 >= 8);
-  const courseName = courseInfo?.Name || "el curso";
-
-  // ── Banco de sugerencias (rotación aleatoria cada apertura) ──
-  const SUGGESTION_BANK = [
-    { icon: "🔴", label: "¿Quiénes están en riesgo alto?" },
-    { icon: "📊", label: "¿Cuál es la nota promedio?" },
-    { icon: "📉", label: "¿Quién tiene la nota más baja?" },
-    { icon: "⚠️", label: "¿Hay estudiantes sin nota?" },
-    { icon: "🏆", label: "¿Cuáles son los top 3?" },
-    { icon: "🎯", label: "¿Qué RA está más crítico?" },
-    { icon: "📋", label: "Dame un resumen del curso" },
-    { icon: "🟡", label: "¿Quiénes están en riesgo medio?" },
-    { icon: "📦", label: "¿Cuántos aprobaron (≥7.0)?" },
-    { icon: "🔍", label: "¿Cuál es la cobertura promedio?" },
-    { icon: "⏳", label: "¿Cuántos tienen pendientes sin calificar?" },
-    { icon: "🛤️", label: "¿Qué rutas de intervención hay?" },
-    { icon: "📅", label: "¿Cómo va el ritmo de contenidos?" },
-    { icon: "🧮", label: "¿Cuántos están por debajo de 5.0?" },
-    { icon: "🚀", label: "¿Quiénes mejoraron su desempeño?" },
-    { icon: "🎓", label: "¿Hay estudiantes sin actividad reciente?" },
-  ];
-  // Seleccionar 4 aleatorias estables por montaje
-  const [visibleChips, setVisibleChipsState] = React.useState(() => {
-    const shuffled = [...SUGGESTION_BANK].sort(() => Math.random() - 0.5);
-    return shuffled.slice(0, 6);
-  });
-  const CHIPS = visibleChips;
-
-  // ── Command processor — respuestas cortas y precisas ──
-  // Regla de orden: más específico SIEMPRE antes que más genérico
-  function processCmd(cmd) {
-    const c = cmd.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
-    const n = studentRows.length;
-
-    // ── Ritmo de contenidos (antes de "contenido" genérico)
-    if (c.includes("ritmo") || c.includes("ritmo de contenido")) {
-      const kpis = overview?.contentKpis;
-      if (!kpis) return "Sin datos de ritmo de contenidos disponibles.";
-      return `Contenidos creados: <strong>${kpis.createdCount ?? "—"}</strong> · Mínimo esperado: <strong>${kpis.minExpected ?? "—"}</strong> · Cumplimiento: <strong>${kpis.progressRatio != null ? Math.round(kpis.progressRatio*100)+"%" : "—"}</strong>.`;
-    }
-
-    // ── Actividad reciente (antes de cualquier otra rama)
-    if (c.includes("actividad reciente") || c.includes("sin actividad") || c.includes("inactiv")) {
-      if (!zeros.length) return "Todos los estudiantes han tenido actividad registrada.";
-      return `Sin actividad registrada: <strong>${zeros.length}</strong>:<br>${zeros.slice(0,5).map(s => `‣ ${s.displayName.split(",")[0]}`).join("<br>")}${zeros.length > 5 ? `<br>… y ${zeros.length - 5} más` : ""}`;
-    }
-
-    // ── RA / Resultados de aprendizaje (ANTES de "critico" genérico y "menor")
-    if (c.includes("que ra") || c.includes("cual ra") || c.includes("ra critico") || c.includes("ra mas") ||
-        c.includes("resultado de aprendizaje") || c.includes("resultados de aprendizaje") ||
-        c.includes("competencia") || (c.includes("ra") && (c.includes("critico") || c.includes("bajo") || c.includes("peor")))) {
-      const ras = Array.isArray(raDashboard?.ras) ? raDashboard.ras.filter(r => r.studentsWithData > 0) : [];
-      if (!ras.length) return "Sin datos de RA aún. Se requieren evaluaciones con rúbricas calificadas.";
-      const sorted = [...ras].sort((a,b) => a.avgPct - b.avgPct);
-      return `${sorted.map(r => `${r.avgPct < 50 ? "[Crítico]" : r.avgPct < 70 ? "[Observación]" : "[OK]"} <strong>${r.code}:</strong> ${fmtPct(r.avgPct)}`).join("<br>")}.<br>Foco: <strong>${sorted[0].code}</strong> (menor desempeño).`;
-    }
-
-    // ── Por debajo de 5 (ANTES de "menor" o "bajo" genérico que también captura "nota más baja")
-    if (c.includes("debajo de 5") || c.includes("menor a 5") || c.includes("menor de 5") ||
-        c.includes("5.0") || c.includes("reprobado") || c.includes("cuantos") && c.includes("5")) {
-      const rep = withGrades.filter(s => s.currentPerformancePct / 10 < 5);
-      return `Con nota menor a 5.0: <strong>${rep.length} de ${n}</strong>.${rep.length ? "<br>" + rep.slice(0,4).map(s=>`‣ ${s.displayName.split(",")[0]} (${fmtGrade10FromPct(s.currentPerformancePct)})`).join("<br>") : ""}`;
-    }
-
-    // ── Nota más baja / quién tiene la peor nota
-    if ((c.includes("nota") && (c.includes("mas baja") || c.includes("baja") || c.includes("peor") || c.includes("menor nota"))) ||
-        c.includes("nota minima") || (c.includes("quien") && c.includes("baj"))) {
-      const worst = [...withGrades].sort((a, b) => a.currentPerformancePct - b.currentPerformancePct)[0];
-      if (!worst) return "Sin calificaciones registradas aún.";
-      return `Nota más baja: <strong>${worst.displayName}</strong> con <strong>${fmtGrade10FromPct(worst.currentPerformancePct)}</strong>.`;
-    }
-
-    // ── Riesgo alto (ANTES de riesgo genérico)
-    if (c.includes("riesgo alto") || c.includes("alto riesgo") ||
-        (c.includes("riesgo") && (c.includes("quienes") || c.includes("quién") || c.includes("quienes estan"))) ) {
-      if (!altos.length) return "Ningún estudiante en riesgo alto actualmente.";
-      return `Riesgo alto (${altos.length}):<br>${altos.slice(0, 6).map(s => `‣ ${s.displayName.split(",")[0]} — ${fmtGrade10FromPct(s.currentPerformancePct)}`).join("<br>")}${altos.length > 6 ? `<br>… y ${altos.length - 6} más` : ""}`;
-    }
-
-    // ── Riesgo medio
-    if (c.includes("riesgo medio") || c.includes("medio riesgo")) {
-      if (!medios.length) return "Ningún estudiante en riesgo medio actualmente.";
-      return `Riesgo medio (${medios.length}):<br>${medios.slice(0, 5).map(s => `‣ ${s.displayName.split(",")[0]} — ${fmtGrade10FromPct(s.currentPerformancePct)}`).join("<br>")}${medios.length > 5 ? `<br>… y ${medios.length - 5} más` : ""}`;
-    }
-
-    // ── Riesgo general
-    if (c.includes("riesgo") || c.includes("risk")) {
-      const ok = n - altos.length - medios.length - zeros.length;
-      return `Riesgo en <strong>${courseName}</strong>:<br>Alto: ${altos.length} · Medio: ${medios.length} · OK: ${ok} · Sin nota: ${zeros.length}.<br>${altos.length > 0 ? `Prioridad: ${altos.slice(0,3).map(s => s.displayName.split(",")[0]).join(", ")}.` : ""}`;
-    }
-
-    // ── Alertas críticas
-    if (c.includes("alerta")) {
-      const crit = altos.filter(s => s.currentPerformancePct != null && s.currentPerformancePct < 50);
-      return `Sin nota: <strong>${zeros.length}</strong> · Nota menor a 5: <strong>${crit.length}</strong>.<br>${crit.length ? crit.slice(0,3).map(s => `‣ ${s.displayName.split(",")[0]} (${fmtGrade10FromPct(s.currentPerformancePct)})`).join("<br>") : ""}`;
-    }
-
-    // ── Top estudiantes
-    if (c.includes("top") || c.includes("mejor") || c.includes("destacado") || (c.includes("cuales") && c.includes("top"))) {
-      const sorted = [...withGrades].sort((a, b) => b.currentPerformancePct - a.currentPerformancePct).slice(0, 3);
-      if (!sorted.length) return "Sin calificaciones disponibles aún.";
-      return `Top 3:<br>${sorted.map((s, i) => `${i+1}. ${s.displayName.split(",")[0]} — ${fmtGrade10FromPct(s.currentPerformancePct)}`).join("<br>")}`;
-    }
-
-    // ── Resumen del curso
-    if (c.includes("resumen") || c.includes("informe") || c.includes("reporte") || c.includes("como va") || c.includes("dame un")) {
-      return `<strong>${courseName}</strong><br>Estudiantes: ${n} · Promedio: ${avg ?? "—"}/10<br>Alto: ${altos.length} · Medio: ${medios.length} · Sin nota: ${zeros.length}`;
-    }
-
-    // ── Sin nota
-    if (c.includes("sin nota") || c.includes("sin evidencia") || c.includes("ruta 0")) {
-      if (!zeros.length) return "Todos los estudiantes tienen nota registrada.";
-      return `Sin nota: <strong>${zeros.length}</strong>:<br>${zeros.slice(0,5).map(s => `‣ ${s.displayName.split(",")[0]}`).join("<br>")}${zeros.length > 5 ? `<br>… y ${zeros.length - 5} más` : ""}`;
-    }
-
-    // ── Aprobados
-    if (c.includes("aprobado") || c.includes("pasando") || c.includes("aprobaron") || c.includes("aprobaron")) {
-      const ap = withGrades.filter(s => s.currentPerformancePct / 10 >= 7);
-      return `Aprobados (nota mayor o igual a 7.0): <strong>${ap.length} de ${n}</strong> (${n ? Math.round(ap.length/n*100) : 0}%).`;
-    }
-
-    // ── Cobertura
-    if (c.includes("cobertura") || (c.includes("50") && c.includes("cobertura"))) {
-      const avgCov = overview?.courseGradebook?.avgCoveragePct;
-      const lowCov = (Array.isArray(studentRows) ? studentRows : []).filter(s => s.coveragePct != null && s.coveragePct < 50);
-      return `Cobertura promedio: <strong>${fmtPct(avgCov)}</strong>.${lowCov.length ? `<br>${lowCov.length} est. con cobertura menor al 50%.` : ""}`;
-    }
-
-    // ── Promedio (último catch-all de nota)
-    if (c.includes("promedio") || c.includes("nota promedio") || c.includes("cual es la nota")) {
-      return `Promedio del curso: <strong>${avg ?? "—"}/10</strong> (${withGrades.length} estudiantes con nota).`;
-    }
-
-    // ── RA general (logro por RA)
-    if (c.includes("ra") || c.includes("logro") || c.includes("aprendizaje")) {
-      const ras = Array.isArray(raDashboard?.ras) ? raDashboard.ras.filter(r => r.studentsWithData > 0) : [];
-      if (!ras.length) return "Sin datos de RA aún. Se requieren evaluaciones con rúbricas calificadas.";
-      const sorted = [...ras].sort((a,b) => a.avgPct - b.avgPct);
-      return `${sorted.map(r => `${r.avgPct < 50 ? "[Crítico]" : r.avgPct < 70 ? "[Obs]" : "[OK]"} <strong>${r.code}:</strong> ${fmtPct(r.avgPct)}`).join(" · ")}<br>Foco: <strong>${sorted[0].code}</strong>.`;
-    }
-
-    // ── Rutas de intervención
-    if (c.includes("ruta") || c.includes("intervencion") || c.includes("prescripcion") || c.includes("plan activo")) {
-      const routeCounts = { route_coverage: 0, route_high_risk: 0, route_watch: 0, route_ok: 0 };
-      (Array.isArray(studentRows) ? studentRows : []).forEach(s => {
-        const rid = s.route?.id || "";
-        if (routeCounts[rid] !== undefined) routeCounts[rid]++;
-      });
-      const total = Object.values(routeCounts).reduce((a,b) => a+b, 0);
-      if (!total) return "No hay datos de rutas disponibles aún.";
-      return `Rutas activas:<br>` +
-        `<strong>Ruta 0</strong> (Activar evidencia): ${routeCounts.route_coverage} est.<br>` +
-        `<strong>Ruta 1</strong> (Recuperación): ${routeCounts.route_high_risk} est.<br>` +
-        `<strong>Ruta 2</strong> (Ajuste dirigido): ${routeCounts.route_watch} est.<br>` +
-        `<strong>Ruta 3</strong> (Mantener desempeño): ${routeCounts.route_ok} est.`;
-    }
-
-    return `No encontré esa consulta. Prueba: riesgo alto, riesgo medio, promedio, sin nota, top estudiantes, resultados de aprendizaje, aprobados, cobertura, rutas.`;
-  }
-
-  // ── TTS — usa ElevenLabs (alta calidad) con fallback a Web Speech API ──
-  function speakText(html, msgId) {
-    setAiStatus("speaking"); setActiveSpeakId(msgId);
-    elSpeak(
-      html,
-      () => { setAiStatus("speaking"); setActiveSpeakId(msgId); },
-      () => { setAiStatus("idle");     setActiveSpeakId(null); },
-    );
-  }
-
-  function stopSpeaking() {
-    elStop();
-    setAiStatus("idle"); setActiveSpeakId(null);
-  }
-
-  // ── Send message ──
-  function sendMsg(text, fromVoice = false) {
-    const t = (text || input).trim();
-    if (!t) return;
-    setInput("");
-    const uid = Date.now();
-    setMsgs((prev) => [...prev, { id: uid, role: "user", fromVoice, text: t }]);
-    setAiStatus("thinking");
-    setTimeout(() => {
-      const resp = processCmd(t);
-      const bid = Date.now() + 1;
-      setMsgs((prev) => [...prev, { id: bid, role: "bot", fromVoice: false, text: resp }]);
-      setAiStatus("idle");
-      if (voiceOut) speakText(resp, bid);
-    }, 500 + Math.random() * 300);
-  }
-
-  // ── Mic ──
-  const voiceOk = typeof window !== "undefined" &&
-    !!(window.SpeechRecognition || window.webkitSpeechRecognition);
-
-  function toggleMic() {
-    if (aiStatus === "speaking") stopSpeaking();
-    if (aiStatus === "listening") {
-      recRef.current?.stop();
-      setAiStatus("idle"); setLiveText("");
-      return;
-    }
-    if (!voiceOk) return;
-    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-    const rec = new SR();
-    rec.lang = "es-CO"; rec.continuous = false; rec.interimResults = true;
-    rec.onstart  = () => { setAiStatus("listening"); setLiveText(""); };
-    rec.onend    = () => { if (aiStatus === "listening") { setAiStatus("idle"); setLiveText(""); } };
-    rec.onerror  = () => { setAiStatus("idle"); setLiveText(""); };
-    rec.onresult = (e) => {
-      const t = Array.from(e.results).map((r) => r[0].transcript).join("");
-      setLiveText(t);
-      if (e.results[e.results.length - 1].isFinal) {
-        rec.stop(); setAiStatus("thinking"); setLiveText("");
-        setTimeout(() => sendMsg(t, true), 300);
-      }
-    };
-    recRef.current = rec; rec.start();
-  }
-
-  const SM = {
-    idle:      { icon: "🎓", label: "Listo para instrucciones", sub: "Escribe o usa el micrófono", color: "var(--muted)" },
-    listening: { icon: "🎙️", label: "Escuchando…", sub: liveText || "Habla en español", color: "var(--critical)" },
-    thinking:  { icon: "⚙️", label: "Analizando datos…", sub: "Procesando tu consulta", color: "var(--brand)" },
-    speaking:  { icon: "🔊", label: "Respondiendo en voz…", sub: "Haz clic en ⏹ para detener", color: "var(--ok)" },
-  };
-  const sm = SM[aiStatus] || SM.idle;
-
-  return (
-    <div className="ai-panel">
-      {/* Header */}
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 10 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <div style={{ width: 10, height: 10, borderRadius: "50%", background: "var(--brand)", boxShadow: "0 0 8px var(--brand)", animation: aiStatus !== "idle" ? "pulse 1.4s ease infinite" : "none" }} />
-          <div style={{ fontSize: 14, fontWeight: 800, color: "var(--text)" }}>Asistente IA Académica</div>
-          <span className="tag" style={{ background: "var(--brand-light)", color: "var(--brand)", fontSize: 10 }}>V.260428 · 16/04/2026</span>
-        </div>
-        <div style={{ fontSize: 12, color: "var(--muted)" }}>
-          {studentRows.length} estudiantes · {courseInfo?.Name || "Curso activo"}
-        </div>
-      </div>
-
-      {/* Status bar */}
-      <div className={`ai-status-outer ${aiStatus !== "idle" ? aiStatus : ""}`}>
-        <div className="ai-status-icon" style={{ fontSize: 18 }}>{sm.icon}</div>
-        <div style={{ flex: 1 }}>
-          <div style={{ fontSize: 11, fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.06em", color: sm.color }}>{sm.label}</div>
-          <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 2 }}>{sm.sub}</div>
-        </div>
-        {(aiStatus === "listening" || aiStatus === "speaking") && (
-          <div className="ai-wave">
-            {[1,2,3,4,5].map((n) => (
-              <div key={n} className="ai-wave-bar" style={{
-                background: aiStatus === "listening" ? "var(--critical)" : "var(--ok)"
-              }} />
-            ))}
-          </div>
-        )}
-      </div>
-
-      {/* Sugerencias rotativas */}
-      <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 2 }}>
-          <span style={{ fontSize: 10, fontWeight: 800, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.07em" }}>Sugerencias</span>
-          <button
-            onClick={() => {
-              const shuffled = [...SUGGESTION_BANK].sort(() => Math.random() - 0.5).slice(0, 6);
-              setVisibleChipsState(shuffled);
-            }}
-            style={{ background: "none", border: "none", cursor: "pointer", fontSize: 11, color: "var(--muted)", padding: "2px 4px", borderRadius: 4 }}
-            title="Nuevas sugerencias"
-          >↻ nuevas</button>
-        </div>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 5 }}>
-          {visibleChips.map((c) => (
-            <button
-              key={c.label}
-              className="ai-chip-btn"
-              onClick={() => sendMsg(c.label)}
-              style={{ textAlign: "left", fontSize: 11, padding: "6px 9px", borderRadius: 8, lineHeight: 1.35 }}
-            >
-              <span style={{ marginRight: 5 }}>{c.icon}</span>{c.label}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* Chat */}
-      <div className="ai-chat" ref={chatRef}>
-        {msgs.map((m) => (
-          <div key={m.id} className={`ai-bubble-wrap ${m.role}`}>
-            <div className="ai-meta">
-              {m.role === "bot" ? "Asistente" : "Tú"}
-              {m.fromVoice && <span className="ai-voice-badge">🎙️ voz</span>}
-            </div>
-            <div className={`ai-bubble ${m.role}`} dangerouslySetInnerHTML={{ __html: sanitizeHtml(m.text) }} />
-            {m.role === "bot" && (
-              <button
-                className={`ai-speak-btn${activeSpeakId === m.id ? " active" : ""}`}
-                onClick={() => activeSpeakId === m.id ? stopSpeaking() : speakText(m.text, m.id)}
-              >
-                {activeSpeakId === m.id ? "⏸ Detener" : "🔊 Escuchar"}
-              </button>
-            )}
-          </div>
-        ))}
-        {aiStatus === "thinking" && (
-          <div className="ai-bubble-wrap bot">
-            <div className="ai-meta">Asistente</div>
-            <div className="ai-bubble bot">
-              <div className="ai-typing">
-                <div className="ai-typing-dot" /><div className="ai-typing-dot" /><div className="ai-typing-dot" />
-              </div>
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* Input row */}
-      <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-        <button
-          className={`voice-btn${aiStatus === "listening" ? " listening" : ""}`}
-          onClick={voiceOk ? toggleMic : undefined}
-          title={voiceOk ? (aiStatus === "listening" ? "Detener" : "Hablar por voz") : "Micrófono no disponible en este navegador"}
-          style={{ height: 40, width: 40, fontSize: 17, flexShrink: 0, opacity: voiceOk ? 1 : 0.4, cursor: voiceOk ? "pointer" : "not-allowed" }}
-        >
-          {aiStatus === "listening" ? "⏹" : "🎙️"}
-        </button>
-        <input
-          ref={inputRef}
-          className="ai-input"
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMsg(); } }}
-          placeholder={aiStatus === "listening" ? "🎙️ Escuchando…" : "Pregunta sobre el curso…"}
-          style={{ height: 40 }}
-        />
-        <button className="ai-send-btn" onClick={() => sendMsg()} style={{ height: 40, padding: "0 14px", fontSize: 13 }}>↵</button>
-      </div>
-
-      {/* Controls row */}
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
-        <button
-          className={`ai-toggle${voiceOut ? " active" : ""}`}
-          onClick={() => { setVoiceOut((v) => !v); if (aiStatus === "speaking") stopSpeaking(); }}
-        >
-          <div className="ai-toggle-dot" />
-          <span style={{ fontSize: 11, fontWeight: 700, color: voiceOut ? "var(--ok)" : "var(--muted)" }}>
-            {voiceOut ? "🔊 Voz activada" : "🔇 Voz desactivada"}
-          </span>
-        </button>
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <span style={{ fontSize: 10, color: "var(--muted)", fontWeight: 700 }}>TTS:</span>
-          <select
-            value={speed}
-            onChange={(e) => setSpeed(Number(e.target.value))}
-            style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 8, padding: "4px 8px", fontSize: 11, color: "var(--text)", fontFamily: "var(--font-mono)", outline: "none" }}
-          >
-            <option value={0.8}>Lenta</option>
-            <option value={1.0}>Normal</option>
-            <option value={1.2}>Rápida</option>
-            <option value={1.5}>Muy rápida</option>
-          </select>
-          <button className={`ai-stop-btn${aiStatus === "speaking" ? " visible" : ""}`} onClick={stopSpeaking}>⏹ Detener</button>
-        </div>
-      </div>
-
-      {/* Guide cards */}
-      <div className="ai-guide-grid">
-        {[
-          { icon: "🎙️", color: "var(--brand)", title: "Entrada de Voz", desc: "Presiona el micrófono y habla en español. La transcripción se procesa automáticamente." },
-          { icon: "🔊", color: "var(--ok)", title: "Salida de Voz", desc: "Activa la voz y el asistente leerá cada respuesta. Usa '🔊 Escuchar' en mensajes anteriores." },
-          { icon: "⚡", color: "var(--watch)", title: "Datos Reales", desc: "Todas las respuestas usan los datos del curso en tiempo real — notas, cobertura, riesgo y RAs." },
-        ].map((g) => (
-          <div key={g.title} style={{ background: "var(--bg)", border: "1px solid var(--border)", borderRadius: 10, padding: 14 }}>
-            <div style={{ fontSize: 20, marginBottom: 8 }}>{g.icon}</div>
-            <div style={{ fontSize: 10, fontWeight: 800, color: g.color, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 6 }}>{g.title}</div>
-            <div style={{ fontSize: 12, color: "var(--muted)", lineHeight: 1.5 }}>{g.desc}</div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-// ─────────────────────────────────────────────────────────
-// Voice command helpers
-// ─────────────────────────────────────────────────────────
-function normalizeVoiceText(text) {
-  return String(text || "")
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[̀-ͯ]/g, "")
-    .trim();
-}
-
-function includesAny(text, patterns) {
-  return patterns.some((p) => text.includes(p));
-}
-
-function parseVoiceCommand(rawText) {
-  const text = normalizeVoiceText(rawText);
-  if (!text) return { type: "unknown", message: "No se reconoció ningún comando." };
-
-  if (includesAny(text, ["resultado de aprendizaje","resultados de aprendizaje","prioridad academica","competencias","subcompetencias","logro por ra"])) {
-    return { type: "navigate_section", section: "learning-outcomes", message: "Mostrando resultados de aprendizaje." };
-  }
-  if (includesAny(text, ["estudiantes prioritarios","prioritarios","mayor riesgo","riesgo mas alto","riesgo alto","en riesgo"])) {
-    return { type: "highest_risk_student", message: "Buscando el estudiante con mayor riesgo académico." };
-  }
-  if (includesAny(text, ["resultado mas bajo","peor resultado","nota mas baja","menor nota","estudiante mas bajo","peor desempe"])) {
-    return { type: "lowest_result_student", message: "Buscando el estudiante con menor desempeño." };
-  }
-  if (includesAny(text, ["estudiantes en riesgo","solo riesgo","muestrame los de riesgo","filtrar riesgo"])) {
-    return { type: "filter_students_risk", message: "Filtrando estudiantes en riesgo." };
-  }
-  if (includesAny(text, ["evidencias","abre evidencias","mostrar evidencias"])) {
-    return { type: "open_drawer_tab", tab: "evidencias", message: "Abriendo evidencias." };
-  }
-  if (includesAny(text, ["unidades","subcompetencias","abre unidades"])) {
-    return { type: "open_drawer_tab", tab: "unidades", message: "Abriendo unidades." };
-  }
-  if (includesAny(text, ["intervencion","prescripcion"])) {
-    return { type: "open_drawer_tab", tab: "prescripcion", message: "Abriendo intervención personalizada." };
-  }
-  if (includesAny(text, ["calidad","flags","calidad del modelo"])) {
-    return { type: "open_drawer_tab", tab: "calidad", message: "Abriendo calidad del modelo." };
-  }
-  if (includesAny(text, ["resumen","volver al resumen"])) {
-    return { type: "open_drawer_tab", tab: "resumen", message: "Abriendo resumen del estudiante." };
-  }
-  if (includesAny(text, ["aprobados","aprobado","pasando"])) {
-    return { type: "filter_approved", message: "Mostrando estudiantes aprobados (≥7.0)." };
-  }
-
-  const buscarMatch = text.match(/(?:busca|buscar|abrir|abre|mostrar|muestrame)\s+a?\s*([a-zà-ü\s]+)$/i);
-  if (buscarMatch?.[1] && buscarMatch[1].trim().length >= 3) {
-    return { type: "find_student_by_name", name: buscarMatch[1].trim(), message: `Buscando a ${buscarMatch[1].trim()}.` };
-  }
-  if (includesAny(text, ["estudiantes","lista de estudiantes"])) {
-    return { type: "navigate_section", section: "students", message: "Mostrando listado de estudiantes." };
-  }
-  if (text.length >= 3) {
-    return { type: "text_search", text: rawText, message: `Buscando: ${rawText}` };
-  }
-  return { type: "unknown", message: "No se entendió el comando. Prueba: 'estudiante con resultado más bajo' o 'resultados de aprendizaje'." };
-}
-
-function findLowestResultStudent(rows) {
-  const valid = (Array.isArray(rows) ? rows : []).filter(
-    (s) => !s?.isLoading && s?.currentPerformancePct != null && !Number.isNaN(Number(s.currentPerformancePct))
-  );
-  if (!valid.length) return null;
-  return valid.slice().sort((a, b) => Number(a.currentPerformancePct) - Number(b.currentPerformancePct))[0];
-}
-
-function findHighestRiskStudent(rows) {
-  const valid = (Array.isArray(rows) ? rows : []).filter((s) => !s?.isLoading);
-  if (!valid.length) return null;
-  const riskRank = (s) => {
-    const risk = computeRiskFromPct(s?.currentPerformancePct);
-    if (risk === "alto") return 0;
-    if (risk === "medio") return 1;
-    if (risk === "bajo") return 2;
-    return 3;
-  };
-  return valid.slice().sort((a, b) => {
-    const rd = riskRank(a) - riskRank(b);
-    if (rd !== 0) return rd;
-    return Number(a?.currentPerformancePct ?? 999) - Number(b?.currentPerformancePct ?? 999);
-  })[0];
-}
-
-function findStudentByName(rows, name) {
-  const q = normalizeVoiceText(name);
-  return (Array.isArray(rows) ? rows : []).find((s) => normalizeVoiceText(s?.displayName).includes(q)) || null;
-}
-
-// ─────────────────────────────────────────────────────────
-// CoursePanel — lista de cursos del docente
-// ─────────────────────────────────────────────────────────
-function CoursePanel({ courses, loadingCourses, currentId, onSelect, onClose }) {
-  const [search, setSearch] = React.useState("");
-
-  const filtered = React.useMemo(() => {
-    const q = search.trim().toLowerCase();
-    if (!q) return courses;
-    return courses.filter(
-      (c) =>
-        String(c.name || "").toLowerCase().includes(q) ||
-        String(c.code || "").toLowerCase().includes(q)
-    );
-  }, [courses, search]);
-
-  // Separate by role first, then by active state
-  const instructorCourses = filtered.filter(c => !isStudentRole(c.roleName));
-  const studentCourses = filtered.filter(c => isStudentRole(c.roleName));
-
-  const renderSection = (title, list, color, icon) => {
-    if (list.length === 0) return null;
-    const active = list.filter(c => c.isActive !== false);
-    const inactive = list.filter(c => c.isActive === false);
-    return (
-      <div style={{ marginBottom: 8 }}>
-        <div style={{
-          padding: "10px 16px 6px",
-          display: "flex", alignItems: "center", gap: 8,
-          borderTop: "1px solid var(--border)",
-        }}>
-          <span style={{ fontSize: 13 }}>{icon}</span>
-          <span style={{ fontSize: 11, fontWeight: 800, color: color, textTransform: "uppercase", letterSpacing: "0.06em" }}>
-            {title}
-          </span>
-          <span className="tag" style={{ background: color + "1A", color: color, marginLeft: "auto" }}>{list.length}</span>
-        </div>
-        {active.length > 0 && (
-          <>
-            {active.map((c) => (
-              <CourseItem key={c.id} course={c} isActive={true} isCurrent={c.id === currentId} onSelect={onSelect} accent={color} />
-            ))}
-          </>
-        )}
-        {inactive.length > 0 && (
-          <>
-            <div style={{ padding: "8px 16px 4px", fontSize: 9, fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.06em" }}>
-              Históricos
-            </div>
-            {inactive.map((c) => (
-              <CourseItem key={c.id} course={c} isActive={false} isCurrent={c.id === currentId} onSelect={onSelect} accent={color} />
-            ))}
-          </>
-        )}
-      </div>
-    );
-  };
-
-  return (
-    <div className="course-panel-overlay" onClick={onClose}>
-      <div className="course-panel" onClick={(e) => e.stopPropagation()}>
-        {/* Header */}
-        <div style={{
-          padding: "16px 20px",
-          borderBottom: "1px solid var(--border)",
-          display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12,
-        }}>
-          <div>
-            <div style={{ fontSize: 15, fontWeight: 800, color: "var(--text)" }}>Mis cursos</div>
-            <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 2 }}>
-              {loadingCourses
-                ? "Cargando…"
-                : `${instructorCourses.length} como profesor · ${studentCourses.length} como estudiante`}
-            </div>
-          </div>
-          <button className="btn" onClick={onClose} style={{ padding: "6px 12px", fontSize: 12 }}>
-            ✕ Cerrar
-          </button>
-        </div>
-
-        {/* Search */}
-        <div style={{ padding: "12px 16px", borderBottom: "1px solid var(--border)" }}>
-          <input
-            autoFocus
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Buscar por nombre o código…"
-            type="text"
-            style={{
-              width: "100%",
-              border: "1px solid var(--border)",
-              borderRadius: 10, padding: "8px 12px",
-              fontWeight: 600, background: "var(--bg)",
-              color: "var(--text)", fontSize: 13,
-              outline: "none",
-            }}
-          />
-        </div>
-
-        {/* List */}
-        <div style={{ flex: 1, overflowY: "auto" }}>
-          {loadingCourses ? (
-            <div style={{ padding: 40, textAlign: "center", color: "var(--muted)", fontSize: 13 }}>
-              <div className="pulse-dot" style={{ background: "var(--brand)", width: 10, height: 10, margin: "0 auto 12px" }} />
-              Consultando Brightspace…
-            </div>
-          ) : filtered.length === 0 ? (
-            <div style={{ padding: 40, textAlign: "center", color: "var(--muted)", fontSize: 13 }}>
-              Sin resultados para "{search}"
-            </div>
-          ) : (
-            <>
-              {renderSection("Como Profesor", instructorCourses, "var(--brand)", "📊")}
-              {renderSection("Como Estudiante", studentCourses, "var(--ok)", "🎓")}
-            </>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function CourseItem({ course, isActive, isCurrent, onSelect, accent }) {
-  const startYear = course.startDate ? new Date(course.startDate).getFullYear() : null;
-  const endYear   = course.endDate   ? new Date(course.endDate).getFullYear()   : null;
-  const period = startYear && endYear && startYear !== endYear
-    ? `${startYear}–${endYear}` : startYear ? String(startYear) : null;
-
-  const isStudent = isStudentRole(course.roleName);
-  const accentColor = accent || (isStudent ? "var(--ok)" : "var(--brand)");
-
-  const handleClick = () => {
-    if (isStudent) {
-      // Student courses redirect to the student portal
-      sessionStorage.setItem("gemelo_pending_org", String(course.id));
-      window.location.href = window.location.origin + "/portal";
-    } else {
-      onSelect(course.id);
-    }
-  };
-
-  return (
-    <div
-      role="button"
-      tabIndex={0}
-      className={`course-item${isCurrent ? " active" : ""}`}
-      onClick={handleClick}
-      onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") handleClick(); }}
-      style={isCurrent ? { borderLeft: `3px solid ${accentColor}` } : undefined}
-    >
-      <div
-        className="course-item-dot"
-        style={{ background: isActive ? accentColor : "var(--muted)" }}
-      />
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{
-          fontSize: 13, fontWeight: 700, color: "var(--text)",
-          overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
-        }}>
-          {course.name || `Curso ${course.id}`}
-        </div>
-        <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 2, flexWrap: "wrap" }}>
-          {course.code && (
-            <span style={{ fontSize: 11, fontFamily: "var(--font-mono)", color: "var(--muted)", fontWeight: 600 }}>
-              {course.code}
-            </span>
-          )}
-          {period && (
-            <span style={{ fontSize: 11, color: "var(--muted)" }}>{period}</span>
-          )}
-        </div>
-      </div>
-      <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 4, flexShrink: 0 }}>
-        {isCurrent && (
-          <span className="tag" style={{ fontSize: 10, padding: "2px 6px", background: accentColor + "1A", color: accentColor }}>Activo</span>
-        )}
-        <span style={{ fontSize: 11, fontFamily: "var(--font-mono)", color: "var(--muted)" }}>
-          {course.id}
-        </span>
-      </div>
-    </div>
-  );
-}
-
-function StudentCard({ s, onOpen, weakestMacro }) {
-  const gradeColor = colorForPct(s.currentPerformancePct, null);
-  const covColor   = colorForPct(s.coveragePct, null);
-  return (
-    <div
-      role="button"
-      tabIndex={0}
-      onClick={() => onOpen(s)}
-      onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") onOpen(s); }}
-      className="kpi-card fade-up"
-      style={{ cursor: "pointer", borderRadius: 16, padding: "14px 14px 12px" }}
-    >
-      {/* Header row */}
-      <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 12 }}>
-        {/* Avatar */}
-        <StudentAvatar userId={s.userId} name={s.displayName} size={40} />
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontWeight: 800, color: "var(--text)", fontSize: 14, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.displayName}</div>
-          <div style={{ fontSize: 10, color: "var(--muted)", fontFamily: "var(--font-mono)", marginTop: 1 }}>ID {s.userId}</div>
-        </div>
-        <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 4 }}>
-          <StatusBadge status={s.isLoading ? "cargando" : s.risk} />
-          {s.hasPrescription && <span className="tag" style={{ fontSize: 9 }}>📋 Plan activo</span>}
-        </div>
-      </div>
-
-      {/* Rings + stats row */}
-      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
-        <CircularRing pct={s.currentPerformancePct ?? 0} size={56} stroke={5} color={gradeColor} label={fmtGrade10FromPct(s.currentPerformancePct)} fontSize={11} />
-        <CircularRing pct={s.coveragePct ?? 0} size={56} stroke={5} color={covColor} label={fmtPct(s.coveragePct)} fontSize={10} />
-        <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 4 }}>
-          <div style={{ fontSize: 10, color: "var(--muted)", fontWeight: 700 }}>NOTA · COBERTURA</div>
-          {(s.mostCriticalMacro || weakestMacro) && (
-            <div style={{ fontSize: 11, color: "var(--muted)" }}>
-              RA crítico: <span style={{ fontWeight: 800, fontFamily: "var(--font-mono)", color: "var(--text)" }}>
-                {s.mostCriticalMacro?.code ?? weakestMacro?.code}{!s.mostCriticalMacro && <span style={{ fontSize: 9, opacity: 0.5 }}>~</span>}
-              </span>
-            </div>
-          )}
-          {s.route?.title && (
-            <div style={{ fontSize: 10, color: "var(--muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.route.title}</div>
-          )}
-        </div>
-      </div>
-
-      <button
-        className="btn"
-        style={{ width: "100%", fontSize: 12, padding: "7px 0", borderRadius: 10, textAlign: "center" }}
-        onClick={(e) => { e.stopPropagation(); onOpen(s); }}
-      >
-        Ver gemelo digital →
-      </button>
-    </div>
-  );
-}
-
-// ──────────────────────────────────────────────
-
-// CoursePanorama removed — cards moved inline
-
-// ─────────────────────────────────────────────────────────────────────────────
-// GradeDistributionCard — Barra de distribución de notas (inline en dashboard)
-// ─────────────────────────────────────────────────────────────────────────────
-function GradeDistributionCard({ studentRows, thresholds }) {
-  const rows = Array.isArray(studentRows) ? studentRows : [];
-  const withGrades = rows.filter(s => s.currentPerformancePct != null);
-  const bands = [
-    { label: "9–10", color: "#12B76A", min: 9,   max: 10 },
-    { label: "8–9",  color: "#32D583", min: 8,   max: 9  },
-    { label: "7–8",  color: "#6CE9A6", min: 7,   max: 8  },
-    { label: "6–7",  color: "#FCD385", min: 6,   max: 7  },
-    { label: "5–6",  color: "#F79009", min: 5,   max: 6  },
-    { label: "<5",   color: "#D92D20", min: 0,   max: 5  },
-  ].map(b => ({
-    ...b,
-    count: withGrades.filter(s => {
-      const g = s.currentPerformancePct / 10;
-      return b.min === 0 ? g < 5 : g >= b.min && g < b.max;
-    }).length,
-  }));
-  const maxBand = Math.max(...bands.map(b => b.count), 1);
-  const bajos  = rows.filter(s => computeRiskFromPct(s.currentPerformancePct) === "bajo");
-  const medios = rows.filter(s => computeRiskFromPct(s.currentPerformancePct) === "medio");
-  const altos  = rows.filter(s => computeRiskFromPct(s.currentPerformancePct) === "alto");
-  const zeros  = rows.filter(s => s.currentPerformancePct == null);
-
-  return (
-    <Card title={<span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>Distribución de notas <InfoTooltip text="Histograma de notas de los estudiantes en rangos de 1 punto. Los colores reflejan el estado: rojo=crítico (<5), amarillo=seguimiento (5-7), verde=óptimo (≥7). Excluye columnas 'Corte' para evitar doble conteo." /></span>} accent="brand">
-      <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
-        {bands.map(b => (
-          <div key={b.label} style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <span style={{ fontSize: 10, fontWeight: 800, fontFamily: "var(--font-mono)", color: "var(--muted)", width: 30, flexShrink: 0 }}>{b.label}</span>
-            <div style={{ flex: 1, height: 10, borderRadius: 5, background: "var(--bg)", overflow: "hidden" }}>
-              <div style={{ height: "100%", width: `${b.count ? Math.max(8, Math.round((b.count / maxBand) * 100)) : 0}%`, background: b.color, borderRadius: 5, transition: "width 0.7s cubic-bezier(.4,0,.2,1)" }} />
-            </div>
-            <span style={{ fontSize: 11, fontWeight: 900, fontFamily: "var(--font-mono)", color: b.count ? b.color : "var(--muted)", width: 20, textAlign: "right", flexShrink: 0 }}>{b.count}</span>
-          </div>
-        ))}
-      </div>
-      <div style={{ marginTop: 12, paddingTop: 10, borderTop: "1px solid var(--border)", display: "flex", justifyContent: "space-around" }}>
-        {[
-          { label: "OK",       count: bajos.length,  color: "var(--ok)"       },
-          { label: "Medio",    count: medios.length,  color: "var(--watch)"    },
-          { label: "Alto",     count: altos.length,   color: "var(--critical)" },
-          { label: "Sin nota", count: zeros.length,   color: "var(--muted)"    },
-        ].map(r => (
-          <div key={r.label} style={{ textAlign: "center" }}>
-            <div style={{ fontWeight: 900, fontFamily: "var(--font-mono)", color: r.color, fontSize: 20, lineHeight: 1 }}>{r.count}</div>
-            <div style={{ fontSize: 10, color: "var(--muted)", fontWeight: 700, marginTop: 3 }}>{r.label}</div>
-          </div>
-        ))}
-      </div>
-    </Card>
-  );
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// RoutesView — Vista completa de rutas de intervención
-// ─────────────────────────────────────────────────────────────────────────────
-const ROUTE_DEFS = {
-  route_coverage: {
-    id: "route_coverage",
-    num: 0,
-    title: "Ruta 0 — Activar evidencia",
-    color: "var(--critical)",
-    bg: "var(--critical-bg)",
-    border: "var(--critical-border)",
-    icon: "📋",
-    description: "El estudiante tiene muy poca cobertura de evaluación. La prioridad es identificar evidencias sin calificar y activarlas antes de que el semestre avance.",
-    objective: "Subir cobertura por encima del 40% en los próximos 7 días.",
-    actions: [
-      "Identificar 1 evidencia crítica sin nota y publicarla esta semana",
-      "Acordar fecha concreta de entrega con el estudiante",
-      "Verificar que el estudiante tenga acceso al material del curso",
-    ],
-    success: "Cobertura superior al 40% confirmada en gradebook.",
-  },
-  route_high_risk: {
-    id: "route_high_risk",
-    num: 1,
-    title: "Ruta 1 — Recuperación",
-    color: "var(--watch)",
-    bg: "var(--watch-bg)",
-    border: "var(--watch-border)",
-    icon: "🚨",
-    description: "El estudiante está en riesgo alto. Su nota actual está por debajo del umbral crítico. Se requiere intervención inmediata con plan estructurado de corto plazo.",
-    objective: "Subir nota por encima del umbral crítico en 2 semanas.",
-    actions: [
-      "Reunión 1:1 de 15 minutos para acordar objetivo semanal",
-      "Actividad de refuerzo o re-entrega enfocada en el error principal",
-      "Retroalimentación concreta + checklist de mejora",
-    ],
-    success: "Nota supera el umbral crítico en la siguiente evidencia.",
-  },
-  route_watch: {
-    id: "route_watch",
-    num: 2,
-    title: "Ruta 2 — Ajuste dirigido",
-    color: "var(--brand)",
-    bg: "var(--brand-light)",
-    border: "var(--brand-light2, #D6E4FF)",
-    icon: "🎯",
-    description: "El estudiante está en riesgo medio. Su desempeño es insuficiente en algún resultado de aprendizaje específico. El ajuste debe ser puntual y enfocado.",
-    objective: "Subir el RA crítico por encima del umbral de observación.",
-    actions: [
-      "Microtarea guiada (30–45 min) sobre el punto débil identificado",
-      "Ejemplo resuelto + plantilla de entrega para orientar al estudiante",
-      "Seguimiento en la próxima evidencia del RA crítico",
-    ],
-    success: "RA crítico supera el 70% en la siguiente evaluación.",
-  },
-  route_ok: {
-    id: "route_ok",
-    num: 3,
-    title: "Ruta 3 — Mantener desempeño",
-    color: "var(--ok)",
-    bg: "var(--ok-bg)",
-    border: "var(--ok-border)",
-    icon: "✅",
-    description: "El estudiante tiene buen desempeño. La gestión aquí es de sostenimiento y motivación para que mantenga el ritmo hasta el cierre del semestre.",
-    objective: "Sostener nota por encima del umbral de observación.",
-    actions: [
-      "Reconocer el logro con retroalimentación positiva específica",
-      "Mantener entregas a tiempo para no perder cobertura",
-      "Extensión opcional: reto avanzado para profundizar competencias",
-    ],
-    success: "Nota se mantiene por encima del umbral de observación al cierre.",
-  },
-};
-
-function RoutesView({ studentRows, overview, courseInfo, thresholds, onSelectStudent, isMobile }) {
-  const [selectedRoute, setSelectedRoute] = React.useState(null);
-  const rows = Array.isArray(studentRows) ? studentRows : [];
-
-  const byRoute = {};
-  Object.keys(ROUTE_DEFS).forEach(id => { byRoute[id] = []; });
-  rows.forEach(s => {
-    const rid = s.route?.id;
-    if (rid && byRoute[rid]) byRoute[rid].push(s);
-  });
-
-  const totalAssigned = Object.values(byRoute).reduce((a, arr) => a + arr.length, 0);
-
-  return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
-      {/* Page header */}
-      <div>
-        <div style={{ fontSize: 10, fontWeight: 800, color: "var(--brand)", textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: 4 }}>
-          G.D · Rutas de atención
-        </div>
-        <h1 style={{ fontSize: isMobile ? 20 : 26, fontWeight: 900, color: "var(--text)", letterSpacing: "-0.02em", lineHeight: 1.1 }}>
-          {courseInfo?.Name || "Curso activo"}
-        </h1>
-        <div style={{ fontSize: 13, color: "var(--muted)", marginTop: 4, fontWeight: 500 }}>
-          {totalAssigned} estudiantes asignados · {Object.values(byRoute).filter(arr => arr.length > 0).length} rutas activas
-        </div>
-      </div>
-
-      {/* Route cards grid */}
-      <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 14 }}>
-        {Object.values(ROUTE_DEFS).map(route => {
-          const students = byRoute[route.id] || [];
-          const isSelected = selectedRoute === route.id;
-          return (
-            <div key={route.id}
-              onClick={() => setSelectedRoute(isSelected ? null : route.id)}
-              style={{
-                border: `1.5px solid ${isSelected ? route.color : "var(--border)"}`,
-                borderRadius: 16,
-                background: isSelected ? route.bg : "var(--card)",
-                cursor: "pointer",
-                transition: "all 0.18s ease",
-                overflow: "hidden",
-              }}
-              onMouseEnter={e => { if (!isSelected) { e.currentTarget.style.borderColor = route.color; e.currentTarget.style.background = route.bg; }}}
-              onMouseLeave={e => { if (!isSelected) { e.currentTarget.style.borderColor = "var(--border)"; e.currentTarget.style.background = "var(--card)"; }}}
-            >
-              {/* Route header */}
-              <div style={{ padding: "14px 16px 12px", borderBottom: "1px solid var(--border)" }}>
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                    <div style={{ width: 36, height: 36, borderRadius: 10, background: route.color + "22", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18, flexShrink: 0 }}>
-                      {route.icon}
-                    </div>
-                    <div>
-                      <div style={{ fontSize: 13, fontWeight: 800, color: route.color }}>{route.title}</div>
-                      <div style={{ fontSize: 10, color: "var(--muted)", fontWeight: 600, marginTop: 1 }}>{route.objective}</div>
-                    </div>
-                  </div>
-                  <div style={{ textAlign: "center", flexShrink: 0 }}>
-                    <div style={{ fontSize: 28, fontWeight: 900, fontFamily: "var(--font-mono)", color: route.color, lineHeight: 1 }}>{students.length}</div>
-                    <div style={{ fontSize: 9, fontWeight: 800, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.06em" }}>est.</div>
-                  </div>
-                </div>
-                <p style={{ fontSize: 12, color: "var(--muted)", lineHeight: 1.5, margin: 0 }}>{route.description}</p>
-              </div>
-
-              {/* Actions */}
-              <div style={{ padding: "10px 16px" }}>
-                <div style={{ fontSize: 10, fontWeight: 800, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 7 }}>Acciones docentes</div>
-                <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-                  {route.actions.map((a, i) => (
-                    <div key={i} style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
-                      <span style={{ fontSize: 11, fontWeight: 900, color: route.color, flexShrink: 0, marginTop: 1 }}>{i + 1}.</span>
-                      <span style={{ fontSize: 12, color: "var(--text)", lineHeight: 1.45 }}>{a}</span>
-                    </div>
-                  ))}
-                </div>
-                <div style={{ marginTop: 10, padding: "6px 10px", borderRadius: 8, background: route.color + "14", fontSize: 11, color: route.color, fontWeight: 700 }}>
-                  Criterio de éxito: {route.success}
-                </div>
-              </div>
-
-              {/* Student list (when selected) */}
-              {isSelected && students.length > 0 && (
-                <div style={{ padding: "0 16px 14px" }}>
-                  <div style={{ height: 1, background: "var(--border)", marginBottom: 10 }} />
-                  <div style={{ fontSize: 10, fontWeight: 800, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 7 }}>
-                    Estudiantes en esta ruta ({students.length})
-                  </div>
-                  <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-                    {students.map(s => (
-                      <div key={s.userId}
-                        onClick={e => { e.stopPropagation(); onSelectStudent?.(s); }}
-                        style={{ display: "flex", alignItems: "center", gap: 10, padding: "7px 10px", borderRadius: 9, background: "var(--card)", border: "1px solid var(--border)", cursor: "pointer" }}
-                        onMouseEnter={e => e.currentTarget.style.borderColor = route.color}
-                        onMouseLeave={e => e.currentTarget.style.borderColor = "var(--border)"}
-                      >
-                        <div style={{ width: 28, height: 28, borderRadius: "50%", background: route.color + "22", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 900, color: route.color, flexShrink: 0 }}>
-                          {(s.displayName || "?").charAt(0)}
-                        </div>
-                        <div style={{ flex: 1, minWidth: 0 }}>
-                          <div style={{ fontSize: 12, fontWeight: 700, color: "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.displayName}</div>
-                          {s.route?.summary && <div style={{ fontSize: 10, color: "var(--muted)" }}>{s.route.summary}</div>}
-                        </div>
-                        <div style={{ flexShrink: 0, textAlign: "right" }}>
-                          <div style={{ fontSize: 13, fontWeight: 900, fontFamily: "var(--font-mono)", color: colorForPct(s.currentPerformancePct, thresholds) }}>{fmtGrade10FromPct(s.currentPerformancePct)}</div>
-                          <div style={{ fontSize: 9, color: "var(--muted)" }}>{fmtPct(s.coveragePct)}</div>
-                        </div>
-                        <span style={{ color: "var(--muted)", fontSize: 12 }}>→</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-              {isSelected && students.length === 0 && (
-                <div style={{ padding: "10px 16px 14px", fontSize: 12, color: "var(--muted)", fontStyle: "italic" }}>
-                  Ningún estudiante asignado a esta ruta actualmente.
-                </div>
-              )}
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
-// AppSidebar — Fixed left navigation
-// ──────────────────────────────────────────────
-function AppSidebar({ activeTab, setActiveTab, currentCourseName, mobileOpen, onClose }) {
-  const NAV = [
-    { id: "dashboard",  icon: "📊", label: "Dashboard" },
-    { id: "routes",     icon: "🛤️", label: "Rutas de atención" },
-    { id: "predictions", icon: "🔮", label: "Predicción de notas" },
-    { id: "evidences",  icon: "📑", label: "Evidencias" },
-    { id: "assistant",  icon: "🤖", label: "Asistente IA" },
-  ];
-  const NAV_BOTTOM = [
-    { id: "help", icon: "💬", label: "Soporte" },
-  ];
-
-  return (
-    <>
-      {mobileOpen && (
-        <div className="sidebar-backdrop" onClick={onClose} />
-      )}
-      <aside className={`app-sidebar${mobileOpen ? " mobile-open" : ""}`}>
-        {/* Logo */}
-        <div className="sidebar-logo">
-          <div className="sidebar-logo-icon" style={{ fontSize: 12, letterSpacing: "0.01em" }}>CESA</div>
-          <div className="sidebar-logo-text">
-            <div className="sidebar-logo-name">CESA · G.D</div>
-            <div className="sidebar-logo-sub">Vista Docente</div>
-          </div>
-        </div>
-
-        {/* Nav */}
-        <nav className="sidebar-nav">
-          <div className="sidebar-section-label">Vistas</div>
-          {NAV.map((item) => (
-            <button
-              key={item.id}
-              className={`sidebar-nav-item${activeTab === item.id ? " active" : ""}`}
-              onClick={() => { setActiveTab(item.id); onClose?.(); }}
-            >
-              <span className="snav-icon">{item.icon}</span>
-              <span>{item.label}</span>
-              <span className="sidebar-nav-dot" />
-            </button>
-          ))}
-        </nav>
-
-        {/* Footer — current course */}
-        <div className="sidebar-footer">
-          {currentCourseName && (
-            <div className="sidebar-course-pill">
-              <div className="sidebar-course-label">Curso activo</div>
-              <div className="sidebar-course-name" style={{ maxWidth: 160, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                {currentCourseName}
-              </div>
-            </div>
-          )}
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "6px 2px" }}>
-            <span style={{ fontSize: 9, fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.08em" }}>G.D</span>
-            <span style={{ fontSize: 9, fontWeight: 700, color: "var(--muted)", background: "var(--bg)", padding: "2px 7px", borderRadius: 99, border: "1px solid var(--border)" }}>V.260428</span>
-          </div>
-        </div>
-      </aside>
-    </>
-  );
-}
-
-// ──────────────────────────────────────────────
-// AppTopbar — Fixed top bar
-// ──────────────────────────────────────────────
-function AppTopbar({
-  isMobile, onOpenSidebar, darkMode, setDarkMode,
-  compact, toggleCompact,
-  locale, toggleLocale,
-  orgUnitInput, setOrgUnitInput, setOrgUnitId,
-  handleOpenCoursePanel,
-  authUser, isDualRole, onGoHome,
-  onOpenPalette, onOpenCoordinator,
-  isSuperAdmin, studentRows, onImpersonate,
-}) {
-  const [showImpersonateMenu, setShowImpersonateMenu] = useState(false);
-  const [impersonateSearch, setImpersonateSearch] = useState("");
-  return (
-    <header className="app-topbar">
-      {/* Left */}
-      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-        {isMobile && (
-          <button
-            className="topbar-icon-btn"
-            onClick={onOpenSidebar}
-            title="Menú"
-            style={{ fontSize: 18 }}
-          >
-            ☰
-          </button>
-        )}
-
-        {/* Course search */}
-        <div className="topbar-search">
-          <span style={{ color: "var(--muted)", fontSize: 14 }}>🔍</span>
-          <input
-            value={orgUnitInput}
-            onChange={(e) => setOrgUnitInput(e.target.value)}
-            placeholder="ID de curso…"
-            type="number"
-            onKeyDown={(e) => {
-              if (e.key === "Enter") {
-                const v = Number(orgUnitInput);
-                if (v > 0) setOrgUnitId(v);
-              }
-            }}
-          />
-        </div>
-      </div>
-
-      {/* Right */}
-      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-        {onOpenPalette && (
-          <button
-            className="btn"
-            onClick={onOpenPalette}
-            title="Paleta de comandos (Ctrl+K)"
-            aria-label="Abrir paleta de comandos"
-            style={{ padding: "7px 12px", fontSize: 12, borderRadius: 10, gap: 8 }}
-          >
-            <span>🔎</span>
-            {!isMobile && <>
-              <span>Comandos</span>
-              <span style={{
-                fontSize: 9, fontWeight: 800, padding: "2px 5px", borderRadius: 4,
-                background: "var(--bg)", border: "1px solid var(--border)", color: "var(--muted)",
-              }}>⌘K</span>
-            </>}
-          </button>
-        )}
-        {(isDualRole || isSuperAdmin) && (
-          <button
-            className="btn"
-            onClick={onGoHome}
-            title="Volver al inicio"
-            aria-label="Volver al inicio"
-            style={{ padding: "7px 12px", fontSize: 12, borderRadius: 10 }}
-          >
-            🏠 {isMobile ? "" : "Inicio"}
-          </button>
-        )}
-        <button
-          className="btn btn-primary"
-          onClick={handleOpenCoursePanel}
-          style={{ padding: "7px 14px", fontSize: 12, borderRadius: 10 }}
-        >
-          📚 {isMobile ? "" : "Mis cursos"}
-        </button>
-
-        {onOpenCoordinator && (
-          <button
-            className="topbar-icon-btn"
-            onClick={onOpenCoordinator}
-            title="Vista de coordinación (agregada)"
-            aria-label="Abrir panel de coordinación"
-          >
-            🏛
-          </button>
-        )}
-        {onImpersonate && (
-          <div style={{ position: "relative" }}>
-            <button
-              className="btn"
-              onClick={() => setShowImpersonateMenu((v) => !v)}
-              title="Ver como profesor o estudiante"
-              style={{
-                padding: "7px 12px", fontSize: 12, borderRadius: 10,
-                background: "rgba(255, 170, 0, 0.12)",
-                color: "#b27300",
-                border: "1px solid rgba(255, 170, 0, 0.3)",
-              }}
-            >
-              👁 {isMobile ? "" : "Ver como..."}
-            </button>
-            {showImpersonateMenu && (
-              <div
-                onClick={(e) => e.stopPropagation()}
-                style={{
-                  position: "absolute", top: "calc(100% + 6px)", right: 0, zIndex: 200,
-                  width: 320, maxHeight: 400, background: "var(--card)",
-                  border: "1px solid var(--border)", borderRadius: 12,
-                  boxShadow: "var(--shadow-lg)", display: "flex", flexDirection: "column",
-                  overflow: "hidden",
-                }}
-              >
-                <div style={{ padding: "12px 14px", borderBottom: "1px solid var(--border)" }}>
-                  <div style={{ fontSize: 12, fontWeight: 800, color: "var(--text)", marginBottom: 6 }}>
-                    👁 Impersonar usuario
-                  </div>
-                  <input
-                    value={impersonateSearch}
-                    onChange={(e) => setImpersonateSearch(e.target.value)}
-                    placeholder="Buscar estudiante..."
-                    autoFocus
-                    style={{
-                      width: "100%", padding: "8px 10px", fontSize: 12,
-                      border: "1px solid var(--border)", borderRadius: 8,
-                      background: "var(--bg)", color: "var(--text)",
-                      fontFamily: "var(--font)", outline: "none",
-                    }}
-                  />
-                </div>
-                <div style={{ flex: 1, overflowY: "auto", padding: "4px 0", maxHeight: 300 }}>
-                  {(Array.isArray(studentRows) ? studentRows : [])
-                    .filter((s) => {
-                      if (!impersonateSearch.trim()) return true;
-                      const q = impersonateSearch.toLowerCase();
-                      return (s.displayName || "").toLowerCase().includes(q) ||
-                             String(s.userId).includes(q);
-                    })
-                    .slice(0, 30)
-                    .map((s) => (
-                      <button
-                        key={s.userId}
-                        onClick={() => {
-                          onImpersonate({ userId: s.userId, name: s.displayName });
-                          setShowImpersonateMenu(false);
-                          setImpersonateSearch("");
-                        }}
-                        style={{
-                          display: "flex", alignItems: "center", gap: 8,
-                          width: "100%", padding: "8px 14px", border: "none",
-                          background: "transparent", cursor: "pointer",
-                          fontSize: 12, fontFamily: "var(--font)",
-                          color: "var(--text)", textAlign: "left",
-                        }}
-                        onMouseEnter={(e) => { e.currentTarget.style.background = "var(--brand-light)"; }}
-                        onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}
-                      >
-                        <div style={{
-                          width: 28, height: 28, borderRadius: "50%",
-                          background: "var(--brand-light)", display: "flex",
-                          alignItems: "center", justifyContent: "center",
-                          fontSize: 11, fontWeight: 800, color: "var(--brand)", flexShrink: 0,
-                        }}>{(s.displayName || "?").charAt(0).toUpperCase()}</div>
-                        <div style={{ flex: 1, minWidth: 0 }}>
-                          <div style={{ fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                            {s.displayName}
-                          </div>
-                          <div style={{ fontSize: 10, color: "var(--muted)" }}>ID {s.userId}</div>
-                        </div>
-                        <span style={{ fontSize: 10, fontWeight: 700, color: "#b27300" }}>Ver como</span>
-                      </button>
-                    ))
-                  }
-                  {(Array.isArray(studentRows) ? studentRows : []).length === 0 && (
-                    <div style={{ padding: "16px 14px", textAlign: "center", color: "var(--muted)", fontSize: 11 }}>
-                      Carga un curso primero para ver estudiantes
-                    </div>
-                  )}
-                </div>
-                <div style={{ padding: "8px 14px", borderTop: "1px solid var(--border)", fontSize: 10, color: "var(--muted)", textAlign: "center" }}>
-                  Vista previa del portal del estudiante
-                </div>
-              </div>
-            )}
-          </div>
-        )}
-        <button
-          className="topbar-icon-btn"
-          onClick={toggleLocale}
-          title={locale === "es" ? "Switch to English" : "Cambiar a español"}
-          aria-label="Cambiar idioma"
-          style={{ fontSize: 10, fontWeight: 800 }}
-        >
-          {locale === "es" ? "ES" : "EN"}
-        </button>
-        <button
-          className="topbar-icon-btn"
-          onClick={toggleCompact}
-          title={compact ? "Modo normal" : "Modo compacto (más densidad)"}
-          aria-label={compact ? "Desactivar modo compacto" : "Activar modo compacto"}
-          style={compact ? { borderColor: "var(--brand)", color: "var(--brand)" } : undefined}
-        >
-          {compact ? "◱" : "◰"}
-        </button>
-        <button
-          className="topbar-icon-btn"
-          onClick={() => setDarkMode((v) => !v)}
-          title="Cambiar tema"
-          aria-label="Cambiar tema claro/oscuro"
-        >
-          {darkMode ? "☀️" : "🌙"}
-        </button>
-        <button
-          className="topbar-icon-btn"
-          onClick={() => window.print()}
-          title="Imprimir vista actual"
-          aria-label="Imprimir vista actual"
-        >
-          🖨
-        </button>
-
-        {/* User avatar with initials */}
-        <div style={{ position: "relative", display: "flex", alignItems: "center", gap: 6 }}>
-          <div
-            className="topbar-avatar"
-            title={authUser?.user_name || "Docente"}
-            style={{ cursor: "default" }}
-          >
-            {authUser?.user_name ? authUser.user_name.trim().charAt(0).toUpperCase() : "D"}
-          </div>
-          {authUser?.user_name && (
-            <span style={{ fontSize: 11, fontWeight: 700, color: "var(--muted)", maxWidth: 120, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-              {authUser.user_name.split(" ").slice(0,2).join(" ")}
-            </span>
-          )}
-          <button
-            onClick={async () => {
-              try {
-                const _sid2 = localStorage.getItem("gemelo_sid");
-                const _lh = _sid2 ? { "Authorization": `Bearer ${_sid2}` } : {};
-                await fetch(apiUrl("/auth/logout"), { method: "POST", credentials: "include", headers: _lh });
-              } catch {}
-              localStorage.removeItem("gemelo_sid");
-              sessionStorage.clear();
-              window.location.href = window.location.origin + "/";
-            }}
-            title="Cerrar sesión"
-            style={{ background: "none", border: "1px solid var(--border)", borderRadius: 7, padding: "4px 8px", fontSize: 10, fontWeight: 700, color: "var(--muted)", cursor: "pointer" }}
-          >
-            Salir
-          </button>
-        </div>
-      </div>
-    </header>
-  );
-}
-
-// ──────────────────────────────────────────────
-// FloatingAI — Help menu (tutorial + updates + AI assistant)
-// ──────────────────────────────────────────────
-function FloatingAI({ onOpenTutorial, onOpenAssistant }) {
-  const [open, setOpen] = React.useState(false);
-  const [showUpdates, setShowUpdates] = React.useState(false);
-
-  const menuItems = [
-    {
-      icon: "📖",
-      title: "Tutorial",
-      desc: "Guía paso a paso de la plataforma",
-      onClick: () => { setOpen(false); onOpenTutorial?.(); },
-    },
-    {
-      icon: "🆕",
-      title: "Actualizaciones",
-      desc: `${UPDATES_STEPS.length} novedades recientes`,
-      badge: UPDATES_STEPS.length,
-      onClick: () => { setOpen(false); setShowUpdates(true); },
-    },
-    {
-      icon: "🤖",
-      title: "Asistente IA",
-      desc: "Consultas en lenguaje natural",
-      onClick: () => { setOpen(false); onOpenAssistant?.(); },
-    },
-  ];
-
-  return (
-    <>
-      {showUpdates && <UpdatesModal onClose={() => setShowUpdates(false)} />}
-      <div className="ai-fab">
-        {open && (
-          <div className="ai-fab-panel" style={{ width: 250, maxHeight: "none" }}>
-            <div className="ai-fab-panel-header" style={{ padding: "10px 13px" }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
-                <span style={{ fontSize: 14 }}>❓</span>
-                <span style={{ fontSize: 12, fontWeight: 800 }}>Centro de ayuda</span>
-              </div>
-              <button
-                onClick={() => setOpen(false)}
-                style={{ background: "rgba(255,255,255,0.2)", border: "none", color: "#fff", borderRadius: 6, width: 24, height: 24, cursor: "pointer", fontSize: 12, display: "flex", alignItems: "center", justifyContent: "center" }}
-              >✕</button>
-            </div>
-
-            <div style={{ padding: "10px 9px 12px", display: "flex", flexDirection: "column", gap: 6 }}>
-              {menuItems.map((item) => (
-                <button
-                  key={item.title}
-                  onClick={item.onClick}
-                  style={{
-                    display: "flex", alignItems: "center", gap: 10,
-                    padding: "12px 14px", borderRadius: 10,
-                    border: "1.5px solid var(--border)",
-                    background: "var(--bg)", cursor: "pointer",
-                    textAlign: "left", fontFamily: "var(--font)",
-                    transition: "all 0.13s", position: "relative",
-                  }}
-                  onMouseEnter={e => { e.currentTarget.style.borderColor = "var(--brand)"; e.currentTarget.style.background = "var(--brand-light)"; }}
-                  onMouseLeave={e => { e.currentTarget.style.borderColor = "var(--border)"; e.currentTarget.style.background = "var(--bg)"; }}
-                >
-                  <span style={{ fontSize: 22, flexShrink: 0 }}>{item.icon}</span>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: 12, fontWeight: 800, color: "var(--text)" }}>{item.title}</div>
-                    <div style={{ fontSize: 10, color: "var(--muted)", marginTop: 1 }}>{item.desc}</div>
-                  </div>
-                  {item.badge != null && (
-                    <span style={{
-                      fontSize: 9, fontWeight: 900, background: "#16a34a", color: "#fff",
-                      padding: "2px 6px", borderRadius: 99, flexShrink: 0,
-                    }}>
-                      {item.badge}
-                    </span>
-                  )}
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
-
-        <button
-          className={`ai-fab-btn${open ? " active" : ""}`}
-          onClick={() => setOpen(v => !v)}
-          title="Centro de ayuda"
-        >
-          <span style={{ color: "#fff", fontSize: open ? 20 : 22, fontWeight: 900 }}>{open ? "✕" : "?"}</span>
-        </button>
-      </div>
-    </>
-  );
-}
-
-/**
- * =========================
- * Main App
- * =========================
- */
 export default function TeacherDashboard() {
   useEffect(() => {
     injectStyles();
+  }, []);
+
+  // Marca a este usuario como "staff" (docente/admin) → sí recibe correos.
+  useEffect(() => {
+    apiPost("/gemelo/audience", { audience: "staff" }).catch(() => {});
   }, []);
 
   // Read initialOrgUnitId from AuthContext — AuthContext claims sessionStorage
@@ -3948,11 +146,8 @@ export default function TeacherDashboard() {
           setOrgUnitInput(String(_hashOu));
         }
 
-        // Llamar /auth/me con sid como query param (bypass cross-domain cookie)
-        const _meUrl = _sid
-          ? apiUrl(`/auth/me?sid=${encodeURIComponent(_sid)}`)
-          : apiUrl("/auth/me");
-        const res = await fetch(_meUrl, {
+        // Llamar /auth/me (el sid va solo en el header Bearer, nunca en la URL)
+        const res = await fetch(apiUrl("/auth/me"), {
           credentials: "include",
           headers: _sid ? { "Authorization": `Bearer ${_sid}` } : {},
         });
@@ -4002,6 +197,11 @@ export default function TeacherDashboard() {
 
   // Scroll to section when voice command navigates
   useEffect(() => {
+    // La tabla de estudiantes ahora vive en su propia pestaña
+    if (activeSection === "students") {
+      setActiveTab("students");
+      return;
+    }
     const map = {
       overview:          overviewRef,
       priority:          priorityRef,
@@ -4012,6 +212,7 @@ export default function TeacherDashboard() {
     if (ref?.current) {
       ref.current.scrollIntoView({ behavior: "smooth", block: "start" });
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeSection]);
 
   const [orgUnitId, setOrgUnitId] = useState(() => {
@@ -4066,6 +267,8 @@ export default function TeacherDashboard() {
   const [studentsList, setStudentsList] = useState(null);
   const [studentRows, setStudentRows] = useState([]);
   const [raDashboard, setRaDashboard] = useState(null);
+  // Pestaña activa en "Prioridad académica": RA por rúbrica/asignación vs por quiz.
+  const [raTab, setRaTab] = useState("rubrica");
 
   // Last data fetch timestamp + refresh trigger
   const [lastUpdate, setLastUpdate] = useState(null);
@@ -4108,8 +311,6 @@ export default function TeacherDashboard() {
     setShowCoursePanel(false);
   }, []);
 
-  // Compact mode
-  const { compact, toggleCompact } = useCompactMode();
 
   // Command palette (Ctrl+K)
   const [paletteOpen, setPaletteOpen] = useState(false);
@@ -4119,6 +320,8 @@ export default function TeacherDashboard() {
 
   // SuperAdmin impersonation: view a student's portal
   const [impersonateStudent, setImpersonateStudent] = useState(null); // { userId, name }
+  // Solo superadmin: alternar entre vista profesor y vista estudiante del curso actual
+  const [adminView, setAdminView] = useState("teacher"); // "teacher" | "student"
 
   // Quick filter (active filter chip applied to the students table)
   // Values: null, "risk_high", "risk_medium", "no_coverage", "overdue", "pending_grade", "approved"
@@ -4178,8 +381,19 @@ export default function TeacherDashboard() {
 
   const [drawerTab, setDrawerTab] = useState("resumen");
 
-  // ── Main navigation tabs ──────────────────────────────
-  const [activeTab, setActiveTab] = useState("dashboard"); // "dashboard" | "assistant"
+  // ── Main navigation tabs (persisted in URL) ──────────
+  const VALID_TABS = ["dashboard", "students", "calendar", "trends", "routes", "predictions", "evidences", "learning-outcomes", "assistant", "help"];
+  const [searchParams, setSearchParams] = useSearchParams();
+  const tabFromUrl = searchParams.get("tab");
+  const activeTab = VALID_TABS.includes(tabFromUrl) ? tabFromUrl : "dashboard";
+  const setActiveTab = useCallback((next) => {
+    setSearchParams((prev) => {
+      const p = new URLSearchParams(prev);
+      if (!next || next === "dashboard") p.delete("tab");
+      else p.set("tab", next);
+      return p;
+    }, { replace: false });
+  }, [setSearchParams]);
   const [sidebarOpen, setSidebarOpen] = useState(false); // mobile sidebar
 
   // ── Course panel ───────────────────────────────────────
@@ -4198,8 +412,8 @@ export default function TeacherDashboard() {
       // enrolled es la fuente principal: incluye TODOS los cursos con roleName
       // my-course-offerings como fallback (solo cursos como instructor)
       const [enrolledData, myData] = await Promise.allSettled([
-        apiGet(`/brightspace/courses/enrolled?active_only=false&limit=200`),
-        apiGet(`/brightspace/my-course-offerings?active_only=false&limit=50`),
+        apiGetCached(`/brightspace/courses/enrolled?active_only=false&limit=200`, { ttl: 300_000 }),
+        apiGetCached(`/brightspace/my-course-offerings?active_only=false&limit=50`, { ttl: 300_000 }),
       ]);
 
       const enrolledItems = enrolledData.status === "fulfilled"
@@ -4487,11 +701,12 @@ export default function TeacherDashboard() {
 
     (async () => {
       try {
+        if (forceFresh) invalidateApiCache(`/gemelo/course/${orgUnitId}/`);
         const [ovRes, stRes, raRes, loRes] = await Promise.allSettled([
-          apiGet(overviewUrl, { signal: controller.signal }),
-          apiGet(`/gemelo/course/${orgUnitId}/students?include=summary`, { signal: controller.signal }),
-          apiGet(`/gemelo/course/${orgUnitId}/ra/dashboard`, { signal: controller.signal }),
-          apiGet(`/gemelo/course/${orgUnitId}/learning-outcomes`, { signal: controller.signal }),
+          apiGetCached(overviewUrl, { signal: controller.signal, force: forceFresh }),
+          apiGetCached(`/gemelo/course/${orgUnitId}/students?include=summary`, { signal: controller.signal, force: forceFresh }),
+          apiGetCached(`/gemelo/course/${orgUnitId}/ra/dashboard`, { signal: controller.signal, force: forceFresh }),
+          apiGetCached(`/gemelo/course/${orgUnitId}/learning-outcomes`, { signal: controller.signal, force: forceFresh }),
         ]);
 
         if (!isMounted) return;
@@ -4509,22 +724,33 @@ export default function TeacherDashboard() {
           const payload = loRes.value;
           setLearningOutcomesPayload(payload);
 
-          const sets = Array.isArray(payload?.outcomeSets) ? payload.outcomeSets : [];
+          // Recorre recursivamente cualquier arbol de outcomes de Brightspace
+          // (algunos cursos, como 41634, definen los RAs como subOutcomes
+          // anidados; el walker plano anterior los pasaba por alto).
           const map = {};
-          for (const set of sets) {
-            for (const o of set?.Outcomes || []) {
-              const desc = String(o?.Description || "").trim();
-              const m = desc.match(/^([A-Za-z0-9_.-]+)\s*-\s*(.+)$/);
+          const walk = (node) => {
+            if (!node) return;
+            if (Array.isArray(node)) { node.forEach(walk); return; }
+            if (typeof node !== "object") return;
+
+            const desc = String(node.Description ?? node.description ?? "").trim();
+            if (desc) {
+              const m = desc.match(/^([A-Za-z0-9_.-]+)\s*[-–—:]\s*(.+)$/);
               if (m) {
                 const code = String(m[1]).toUpperCase();
-                map[code] = {
-                  code,
-                  description: desc,
-                  title: String(m[2] || "").trim(),
-                };
+                if (!map[code]) {
+                  map[code] = { code, description: desc, title: String(m[2] || "").trim() };
+                }
               }
             }
-          }
+            const children =
+              node.Outcomes || node.outcomes ||
+              node.SubOutcomes || node.subOutcomes ||
+              node.ChildOutcomes || node.childOutcomes ||
+              node.Children || node.children;
+            if (children) walk(children);
+          };
+          walk(payload?.outcomeSets ?? payload);
           setOutcomesMap(map);
         }
 
@@ -4620,12 +846,22 @@ export default function TeacherDashboard() {
           for (const s of (ov?.studentsAtRisk || [])) {
             if (s.userId != null) atRiskMap[Number(s.userId)] = s;
           }
+          // mostCriticalMacro por estudiante (TODOS, no solo en riesgo) — así la
+          // tarjeta muestra el RA crítico real del estudiante y coincide con su detalle.
+          const macroMap = ov?.studentsMostCriticalMacro || {};
 
-          if (Object.keys(atRiskMap).length > 0) {
+          if (Object.keys(atRiskMap).length > 0 || Object.keys(macroMap).length > 0) {
             setStudentRows((prev) =>
               prev.map((row) => {
                 const ar = atRiskMap[row.userId];
-                if (!ar) return row;
+                const ownMacro = macroMap[row.userId] ?? macroMap[String(row.userId)] ?? null;
+                if (!ar) {
+                  // No en riesgo: solo enriquecer el RA crítico individual si existe.
+                  if (!ownMacro) return row;
+                  const merged = { ...row, mostCriticalMacro: ownMacro };
+                  merged.route = suggestRouteForStudent(merged, thr);
+                  return merged;
+                }
                 const perf = ar.currentPerformancePct ?? null;
                 const merged = {
                   ...row,
@@ -4635,8 +871,8 @@ export default function TeacherDashboard() {
                   notSubmittedWeightPct: Number(ar.overdueUnscoredWeightPct ?? ar.notSubmittedWeightPct ?? 0),
                   overdueWeightPct:      Number(ar.overdueUnscoredWeightPct ?? ar.notSubmittedWeightPct ?? 0),
                   pendingSubmittedWeightPct: Number(ar.pendingUngradedWeightPct ?? ar.pendingSubmittedWeightPct ?? 0),
-                  // mostCriticalMacro now included from backend studentsAtRisk
-                  mostCriticalMacro: ar.mostCriticalMacro ?? row.mostCriticalMacro ?? null,
+                  // mostCriticalMacro: preferir el del estudiante en riesgo, luego el mapa global
+                  mostCriticalMacro: ar.mostCriticalMacro ?? ownMacro ?? row.mostCriticalMacro ?? null,
                 };
                 merged.route = suggestRouteForStudent(merged, thr);
                 return merged;
@@ -4653,9 +889,11 @@ export default function TeacherDashboard() {
         for (const s of (ov?.studentsAtRisk || [])) {
           if (s.userId != null) atRiskMap2[Number(s.userId)] = s;
         }
+        const macroMap2 = ov?.studentsMostCriticalMacro || {};
         setStudentRows((prev) =>
           prev.map((row) => {
             const ar = atRiskMap2[row.userId];
+            const ownMacro2 = macroMap2[row.userId] ?? macroMap2[String(row.userId)] ?? null;
             const perf = ar?.currentPerformancePct ?? null;
             const merged = {
               ...row,
@@ -4666,14 +904,16 @@ export default function TeacherDashboard() {
               notSubmittedWeightPct: Number(ar?.overdueUnscoredWeightPct ?? ar?.notSubmittedWeightPct ?? 0),
               overdueWeightPct:      Number(ar?.overdueUnscoredWeightPct ?? ar?.notSubmittedWeightPct ?? 0),
               pendingSubmittedWeightPct: Number(ar?.pendingUngradedWeightPct ?? ar?.pendingSubmittedWeightPct ?? 0),
-              mostCriticalMacro: ar?.mostCriticalMacro ?? row.mostCriticalMacro ?? null,
+              mostCriticalMacro: ar?.mostCriticalMacro ?? ownMacro2 ?? row.mostCriticalMacro ?? null,
             };
             merged.route = suggestRouteForStudent(merged, thr);
             return merged;
           })
         );
       } catch (e) {
-        if (controller.signal.aborted || !isMounted) return;
+        // Ignorar aborts (propios o de un consumidor compartido en apiGetCached):
+        // no son errores reales del curso, solo cancelaciones de montaje/unmount.
+        if (controller.signal.aborted || !isMounted || e?.name === "AbortError") return;
         setErr(String(e?.message || e));
         setLoading(false);
       }
@@ -4700,8 +940,8 @@ export default function TeacherDashboard() {
     (async () => {
       try {
         const [courseRes, contentRes] = await Promise.allSettled([
-          apiGet(`/brightspace/course/${orgUnitId}`, { signal: controller.signal }),
-          apiGet(`/brightspace/course/${orgUnitId}/content/root`, { signal: controller.signal }),
+          apiGetCached(`/brightspace/course/${orgUnitId}`, { signal: controller.signal, ttl: 300_000 }),
+          apiGetCached(`/brightspace/course/${orgUnitId}/content/root`, { signal: controller.signal, ttl: 300_000 }),
         ]);
 
         if (!alive) return;
@@ -4750,7 +990,7 @@ export default function TeacherDashboard() {
 
     (async () => {
       try {
-        const g = await apiGet(`/gemelo/course/${orgUnitId}/student/${selectedStudent.userId}`, {
+        const g = await apiGetCached(`/gemelo/course/${orgUnitId}/student/${selectedStudent.userId}`, {
           signal: controller.signal,
         });
         if (!alive) return;
@@ -4884,8 +1124,30 @@ export default function TeacherDashboard() {
         coveragePct: Number(r.coveragePct ?? 0),
         studentsWithData: Number(r.studentsWithData ?? 0),
         totalStudents: Number(r.totalStudents ?? 0),
+        alignedToAssignment: r.alignedToAssignment !== false,
+        note: r.note || null,
       };
     });
+  }
+
+  // Fallback: no vino raDashboard.ras pero sí hay outcomes. Preferimos
+  // usar los códigos reales (Z1O1DOR3, A1O3EAR2…) que trae el backend
+  // en outcomeCodeMap → outcomesMap; sólo caemos a RA1..RAN si no hay
+  // códigos detectables.
+  const outcomeEntries = Object.values(outcomesMap || {}).filter((o) => o?.code);
+  if (outcomeEntries.length) {
+    const w = 100 / outcomeEntries.length;
+    return outcomeEntries.map((o) => ({
+      code: String(o.code).toUpperCase(),
+      name: o.title || o.description || o.code,
+      description: o.description || o.title || o.code,
+      avgPct: 0,
+      weightPct: w,
+      status: null,
+      coveragePct: 0,
+      studentsWithData: 0,
+      totalStudents: 0,
+    }));
   }
 
   if (descList.length) {
@@ -4905,6 +1167,32 @@ export default function TeacherDashboard() {
 
   return [];
 }, [raDashboard, learningOutcomesPayload, outcomesMap]);
+
+// RA evaluados por QUIZ (pestaña lateral). El backend ya devuelve el promedio
+// por outcome alineado a quizzes; aquí sólo lo adaptamos a la forma de fila.
+const quizOutcomesData = useMemo(() => {
+  const qo = Array.isArray(raDashboard?.quizOutcomes) ? raDashboard.quizOutcomes : [];
+  const outcomeMap = {};
+  Object.values(outcomesMap || {}).forEach((o) => {
+    if (o?.code) outcomeMap[String(o.code).toUpperCase()] = o;
+  });
+  return qo.map((r, idx) => {
+    const code = String(r.code || `RA${idx + 1}`).toUpperCase();
+    const match = outcomeMap[code];
+    return {
+      code,
+      name: match?.title || r.title || r.label || code,
+      description: match?.description || r.title || r.label || code,
+      avgPct: Number(r.avgPct ?? 0),
+      weightPct: null,
+      status: null,
+      coveragePct: Number(r.coveragePct ?? 0),
+      studentsWithData: Number(r.studentsWithData ?? 0),
+      totalStudents: Number(r.totalStudents ?? 0),
+      source: "quiz",
+    };
+  });
+}, [raDashboard, outcomesMap]);
 
 const weakestAssignment = useMemo(() => {
   const allEvidence = [];
@@ -4966,8 +1254,14 @@ const weakestAssignment = useMemo(() => {
 
   if (!valid.length) return null;
 
-  valid.sort((a, b) => a.avgPct - b.avgPct);
-  return valid[0];
+  // Preferir RAs que SÍ se han usado (con datos/cobertura). Un RA en 0% sin
+  // estudiantes evaluados es "no usado", no un desempeño real de 0; mostrar el
+  // más bajo entre los usados. Solo si ninguno tiene datos, caer a todos.
+  const used = valid.filter((m) => m.studentsWithData > 0 || m.coveragePct > 0);
+  const pool = used.length ? used : valid;
+
+  pool.sort((a, b) => a.avgPct - b.avgPct);
+  return pool[0];
 }, [learningOutcomesData]);
 
   const assignmentRiskData = useMemo(() => {
@@ -5356,13 +1650,15 @@ const contentKpis = useMemo(() => {
     const cmds = [];
     // Navigation
     cmds.push({ id: "nav_dashboard", group: "Navegar", icon: "📊", label: "Ir al Dashboard", hint: "1", action: () => setActiveTab("dashboard") });
+    cmds.push({ id: "nav_students", group: "Navegar", icon: "👥", label: "Estudiantes", hint: "4", action: () => setActiveTab("students") });
+    cmds.push({ id: "nav_calendar", group: "Navegar", icon: "📅", label: "Calendario de entregas", hint: "5", action: () => setActiveTab("calendar") });
+    cmds.push({ id: "nav_trends", group: "Navegar", icon: "📈", label: "Tendencias del curso", hint: "6", action: () => setActiveTab("trends") });
     cmds.push({ id: "nav_routes", group: "Navegar", icon: "🛤️", label: "Rutas de atención", hint: "2", action: () => setActiveTab("routes") });
     cmds.push({ id: "nav_assistant", group: "Navegar", icon: "🤖", label: "Asistente IA", hint: "3", action: () => setActiveTab("assistant") });
     // Actions
     cmds.push({ id: "act_courses", group: "Acciones", icon: "📚", label: "Cambiar de curso", action: () => handleOpenCoursePanel() });
     cmds.push({ id: "act_refresh", group: "Acciones", icon: "⟳", label: "Refrescar datos", hint: "R", action: handleRefresh });
     cmds.push({ id: "act_print", group: "Acciones", icon: "🖨", label: "Imprimir vista actual", action: () => window.print() });
-    cmds.push({ id: "act_compact", group: "Acciones", icon: compact ? "◱" : "◰", label: compact ? "Desactivar modo compacto" : "Activar modo compacto", action: toggleCompact });
     cmds.push({ id: "act_dark", group: "Acciones", icon: darkMode ? "☀️" : "🌙", label: darkMode ? "Modo claro" : "Modo oscuro", action: () => setDarkMode(v => !v) });
     cmds.push({ id: "act_group", group: "Acciones", icon: "📑", label: groupByRisk ? "Desagrupar tabla" : "Agrupar tabla por riesgo", action: () => setGroupByRisk(v => !v) });
     // Filters
@@ -5385,7 +1681,7 @@ const contentKpis = useMemo(() => {
     });
     return cmds;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [studentRows, compact, darkMode, groupByRisk]);
+  }, [studentRows, darkMode, groupByRisk]);
 
   // Global keyboard shortcuts
   useKeyboardShortcuts([
@@ -5395,11 +1691,14 @@ const contentKpis = useMemo(() => {
     { keys: "1", handler: () => setActiveTab("dashboard"), description: "Dashboard" },
     { keys: "2", handler: () => setActiveTab("routes"), description: "Rutas" },
     { keys: "3", handler: () => setActiveTab("assistant"), description: "Asistente" },
+    { keys: "4", handler: () => setActiveTab("students"), description: "Estudiantes" },
+    { keys: "5", handler: () => setActiveTab("calendar"), description: "Calendario" },
+    { keys: "6", handler: () => setActiveTab("trends"), description: "Tendencias" },
     { keys: "r", handler: handleRefresh, description: "Refrescar" },
     { keys: "c", handler: handleOpenCoursePanel, description: "Cambiar curso" },
     { keys: "?", handler: () => setPaletteOpen(true), description: "Ayuda" },
     { keys: "shift+/", handler: () => setPaletteOpen(true), description: "Ayuda" },
-  ], [compact, darkMode, groupByRisk]);
+  ], [darkMode, groupByRisk]);
 
   const makeSort = (key) => ({
     active: sortKey === key,
@@ -5421,61 +1720,141 @@ const contentKpis = useMemo(() => {
   }
   if (!authUser) return <LoginScreen orgUnitId={orgUnitId} />;
 
-  // Sin curso seleccionado → mostrar selector automáticamente
+  // Sin curso seleccionado → mostrar selector automáticamente (visual de tarjetas, igual que RoleHome)
   if (!orgUnitId || orgUnitId === 0) {
+    const instructorCourses = courseList.filter(c => !isStudentRole(c.roleName));
+    const studentCourses = courseList.filter(c => isStudentRole(c.roleName));
+
+    const openCourse = (c) => {
+      if (isStudentRole(c.roleName)) {
+        sessionStorage.setItem("gemelo_pending_org", String(c.id));
+        window.location.href = window.location.origin + "/portal";
+      } else {
+        switchCourse(c.id);
+      }
+    };
+
+    const CourseCardV2 = ({ c, role }) => {
+      const isActive = c.isActive !== false;
+      const RoleIcon = role === "student" ? GraduationCap : Presentation;
+      return (
+        <button
+          onClick={() => openCourse(c)}
+          className={`course-card-v2 role-${role} ${!isActive ? "inactive" : ""}`}
+          aria-label={`Abrir curso ${c.name}`}
+        >
+          <div className="course-card-icon">
+            <RoleIcon size={22} strokeWidth={2} />
+          </div>
+          <div className="course-card-title">{c.name || `Curso ${c.id}`}</div>
+          <div className="course-card-meta">
+            <span className="course-card-id">
+              #{c.id}{c.code ? ` · ${c.code}` : ""}
+            </span>
+            {!isActive && (
+              <span style={{
+                fontSize: 9, fontWeight: 800, color: "var(--muted)",
+                background: "var(--bg)", border: "1px solid var(--border)",
+                borderRadius: 99, padding: "1px 8px", textTransform: "uppercase", letterSpacing: "0.06em",
+              }}>
+                Inactivo
+              </span>
+            )}
+          </div>
+          <span className="course-card-arrow"><ArrowRight size={18} strokeWidth={2.5} /></span>
+        </button>
+      );
+    };
+
+    const SectionHeaderV2 = ({ icon, title, count, variant = "instructor" }) => (
+      <div className="section-header-v2">
+        <div className={`section-header-icon-wrap ${variant === "student" ? "student" : ""}`}>
+          {icon}
+        </div>
+        <div>
+          <div className="section-header-title">{title}</div>
+          <div className="section-header-count">{count} curso{count !== 1 ? "s" : ""}</div>
+        </div>
+      </div>
+    );
+
     return (
-      <div style={{ minHeight: "100vh", background: "var(--bg)", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "var(--font)", padding: 20 }}>
-        <div style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: "var(--radius-lg)", padding: "36px 40px", maxWidth: 480, width: "100%", boxShadow: "var(--shadow-lg)" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 20 }}>
-            <div style={{ width: 40, height: 40, borderRadius: 10, background: "var(--brand)", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: 13, fontWeight: 900 }}>CESA</div>
+      <div style={{ minHeight: "100vh", background: "var(--bg)", fontFamily: "var(--font)" }}>
+        {/* ── Top bar ─────────────────────────────────────────────── */}
+        <header style={{
+          position: "sticky", top: 0, zIndex: 50,
+          background: "var(--card)", borderBottom: "1px solid var(--border)",
+          display: "flex", alignItems: "center", justifyContent: "space-between",
+          padding: "0 24px", height: 60,
+        }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+            <div style={{ width: 36, height: 36, borderRadius: 10, background: "linear-gradient(135deg, var(--brand) 0%, #1e40af 100%)", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: 11, fontWeight: 900, letterSpacing: "0.02em" }}>CESA</div>
             <div>
-              <div style={{ fontSize: 15, fontWeight: 900, color: "var(--text)" }}>G.D</div>
+              <div style={{ fontSize: 14, fontWeight: 900, color: "var(--text)", lineHeight: 1.15, letterSpacing: "-0.01em" }}>Gemelo Digital</div>
               <div style={{ fontSize: 11, color: "var(--muted)", fontWeight: 600 }}>
                 Hola, {authUser?.user_name?.split(" ")[0] || "docente"} — selecciona tu curso
               </div>
             </div>
           </div>
-          <div style={{ height: 1, background: "var(--border)", marginBottom: 20 }} />
-          {/* Header con total */}
-          {!loadingCourses && courseList.length > 0 && (
-            <div style={{ fontSize: 11, color: "var(--muted)", marginBottom: 6, fontWeight: 600 }}>
-              {courseSearch
-                ? `${courseList.length} resultado${courseList.length !== 1 ? "s" : ""} para "${courseSearch}"`
-                : `${courseList.length} cursos recientes · ${courseList.filter(c => c.isActive).length} activos`
-              }
+          <button
+            onClick={async () => {
+              try {
+                const _sid2 = localStorage.getItem("gemelo_sid");
+                const _lh = _sid2 ? { "Authorization": `Bearer ${_sid2}` } : {};
+                await fetch(apiUrl("/auth/logout"), { method: "POST", credentials: "include", headers: _lh });
+              } catch {}
+              localStorage.removeItem("gemelo_sid");
+              sessionStorage.clear();
+              window.location.href = window.location.origin + "/";
+            }}
+            style={{ display: "flex", alignItems: "center", gap: 6, background: "none", border: "1px solid var(--border)", borderRadius: 8, padding: "6px 14px", fontSize: 12, fontWeight: 700, color: "var(--muted)", cursor: "pointer", fontFamily: "var(--font)" }}
+          >
+            <LogOut size={14} strokeWidth={2.2} /> Cerrar sesión
+          </button>
+        </header>
+
+        {/* ── Contenido ───────────────────────────────────────────── */}
+        <main style={{ maxWidth: 1100, margin: "0 auto", padding: "28px 24px 60px" }}>
+          {/* Buscador + contador */}
+          {!loadingCourses && (courseList.length > 0 || courseSearch) && (
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, flexWrap: "wrap", marginBottom: 24 }}>
+              <div style={{ position: "relative", flex: "1 1 320px", maxWidth: 440 }}>
+                <input
+                  type="text"
+                  placeholder="Buscar por nombre, código o ID…"
+                  value={courseSearch}
+                  onChange={e => {
+                    const val = e.target.value;
+                    setCourseSearch(val);
+                    // Debounce: esperar 400ms antes de buscar en backend
+                    clearTimeout(window._courseSearchTimer);
+                    window._courseSearchTimer = setTimeout(() => {
+                      setCourseListLoaded(false);
+                      searchCourses(val);
+                    }, 400);
+                  }}
+                  style={{ width: "100%", padding: "10px 14px 10px 36px", borderRadius: 10, border: "1px solid var(--border)", background: "var(--card)", color: "var(--text)", fontSize: 13, fontFamily: "var(--font)", outline: "none", boxSizing: "border-box", boxShadow: "var(--shadow-sm)" }}
+                  onFocus={e => e.target.style.borderColor = "var(--brand)"}
+                  onBlur={e => e.target.style.borderColor = "var(--border)"}
+                />
+                <span style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", fontSize: 14, color: "var(--muted)" }}>🔍</span>
+              </div>
+              <div style={{ fontSize: 12, color: "var(--muted)", fontWeight: 600 }}>
+                {courseSearch
+                  ? `${courseList.length} resultado${courseList.length !== 1 ? "s" : ""} para "${courseSearch}"`
+                  : `${courseList.length} cursos recientes · ${courseList.filter(c => c.isActive).length} activos`
+                }
+              </div>
             </div>
           )}
-          {/* Buscador */}
-          {!loadingCourses && courseList.length > 0 && (
-            <div style={{ position: "relative", marginBottom: 10 }}>
-              <input
-                type="text"
-                placeholder="Buscar por nombre, código o ID…"
-                value={courseSearch}
-                onChange={e => {
-                  const val = e.target.value;
-                  setCourseSearch(val);
-                  // Debounce: esperar 400ms antes de buscar en backend
-                  clearTimeout(window._courseSearchTimer);
-                  window._courseSearchTimer = setTimeout(() => {
-                    setCourseListLoaded(false);
-                    searchCourses(val);
-                  }, 400);
-                }}
-                style={{ width: "100%", padding: "9px 12px 9px 34px", borderRadius: 9, border: "1px solid var(--border)", background: "var(--bg)", color: "var(--text)", fontSize: 12, fontFamily: "var(--font)", outline: "none", boxSizing: "border-box" }}
-                onFocus={e => e.target.style.borderColor = "var(--brand)"}
-                onBlur={e => e.target.style.borderColor = "var(--border)"}
-              />
-              <span style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", fontSize: 14, color: "var(--muted)" }}>🔍</span>
-            </div>
-          )}
+
           {loadingCourses ? (
-            <div style={{ textAlign: "center", padding: "20px 0", color: "var(--muted)", fontSize: 13 }}>
+            <div style={{ textAlign: "center", padding: "60px 0", color: "var(--muted)", fontSize: 13 }}>
               Cargando tus cursos…
             </div>
           ) : courseList.length === 0 ? (
-            <div style={{ textAlign: "center", padding: "24px 0" }}>
-              <div style={{ fontSize: 14, color: "var(--muted)", marginBottom: 10 }}>
+            <div style={{ textAlign: "center", padding: "60px 0" }}>
+              <div style={{ fontSize: 14, color: "var(--muted)", marginBottom: 12 }}>
                 {courseSearch ? `Sin resultados para "${courseSearch}"` : "No se encontraron cursos."}
               </div>
               {courseSearch && (
@@ -5485,92 +1864,33 @@ const contentKpis = useMemo(() => {
                     setCourseListLoaded(false);
                     searchCourses("");
                   }}
-                  style={{ background: "var(--brand)", color: "#fff", border: "none", borderRadius: 8, padding: "7px 16px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}
+                  style={{ background: "var(--brand)", color: "#fff", border: "none", borderRadius: 8, padding: "8px 18px", fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "var(--font)" }}
                 >
                   Limpiar búsqueda
                 </button>
               )}
             </div>
-          ) : (() => {
-            const instructorCourses = courseList.filter(c => !isStudentRole(c.roleName));
-            const studentCourses = courseList.filter(c => isStudentRole(c.roleName));
-
-            const CourseBtn = ({ c, color, hoverBg }) => (
-              <button key={c.id}
-                onClick={() => {
-                  if (isStudentRole(c.roleName)) {
-                    sessionStorage.setItem("gemelo_pending_org", String(c.id));
-                    window.location.href = window.location.origin + "/portal";
-                  } else {
-                    switchCourse(c.id);
-                  }
-                }}
-                aria-label={`Abrir curso ${c.name}`}
-                style={{
-                  display: "flex", alignItems: "center", justifyContent: "space-between",
-                  padding: "12px 14px", borderRadius: 10, border: `1.5px solid var(--border)`,
-                  background: "var(--bg)", cursor: "pointer", textAlign: "left",
-                  transition: "all 0.15s", fontFamily: "var(--font)", width: "100%",
-                }}
-                onMouseEnter={e => { e.currentTarget.style.borderColor = color; e.currentTarget.style.background = hoverBg; }}
-                onMouseLeave={e => { e.currentTarget.style.borderColor = "var(--border)"; e.currentTarget.style.background = "var(--bg)"; }}
-              >
-                <div>
-                  <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text)", marginBottom: 2 }}>{c.name}</div>
-                  <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                    <span style={{ fontSize: 11, color: "var(--muted)" }}>ID {c.id}{c.code ? ` · ${c.code}` : ""}</span>
-                    {!c.isActive && <span style={{ fontSize: 9, fontWeight: 800, color: "var(--muted)", background: "var(--bg)", border: "1px solid var(--border)", borderRadius: 99, padding: "1px 6px", textTransform: "uppercase" }}>Inactivo</span>}
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 32 }}>
+              {instructorCourses.length > 0 && (
+                <section>
+                  <SectionHeaderV2 icon={<Presentation size={22} strokeWidth={2.2} />} title="Como Profesor" count={instructorCourses.length} />
+                  <div className="course-grid stagger-children">
+                    {instructorCourses.map(c => <CourseCardV2 key={`i-${c.id}`} c={c} role="instructor" />)}
                   </div>
-                </div>
-                <span style={{ color, fontSize: 16, flexShrink: 0 }}>→</span>
-              </button>
-            );
-
-            return (
-              <div style={{ display: "flex", flexDirection: "column", gap: 14, maxHeight: 420, overflowY: "auto" }}>
-                {instructorCourses.length > 0 && (
-                  <div>
-                    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
-                      <span style={{ fontSize: 14 }}>📊</span>
-                      <span style={{ fontSize: 12, fontWeight: 800, color: "var(--brand)" }}>Como Profesor ({instructorCourses.length})</span>
-                    </div>
-                    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                      {instructorCourses.map(c => <CourseBtn key={`i-${c.id}`} c={c} color="var(--brand)" hoverBg="var(--brand-light)" />)}
-                    </div>
+                </section>
+              )}
+              {studentCourses.length > 0 && (
+                <section>
+                  <SectionHeaderV2 icon={<GraduationCap size={22} strokeWidth={2.2} />} title="Como Estudiante" count={studentCourses.length} variant="student" />
+                  <div className="course-grid stagger-children">
+                    {studentCourses.map(c => <CourseCardV2 key={`s-${c.id}`} c={c} role="student" />)}
                   </div>
-                )}
-                {studentCourses.length > 0 && (
-                  <div>
-                    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
-                      <span style={{ fontSize: 14 }}>🎓</span>
-                      <span style={{ fontSize: 12, fontWeight: 800, color: "var(--ok)" }}>Como Estudiante ({studentCourses.length})</span>
-                    </div>
-                    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                      {studentCourses.map(c => <CourseBtn key={`s-${c.id}`} c={c} color="var(--ok)" hoverBg="var(--ok-bg)" />)}
-                    </div>
-                  </div>
-                )}
-              </div>
-            );
-          })()}
-          <div style={{ marginTop: 16, paddingTop: 14, borderTop: "1px solid var(--border)", display: "flex", justifyContent: "flex-end" }}>
-            <button
-              onClick={async () => {
-                try {
-                  const _sid2 = localStorage.getItem("gemelo_sid");
-                  const _lh = _sid2 ? { "Authorization": `Bearer ${_sid2}` } : {};
-                  await fetch(apiUrl("/auth/logout"), { method: "POST", credentials: "include", headers: _lh });
-                } catch {}
-                localStorage.removeItem("gemelo_sid");
-                sessionStorage.clear();
-                window.location.href = window.location.origin + "/";
-              }}
-              style={{ background: "none", border: "1px solid var(--border)", borderRadius: 8, padding: "6px 14px", fontSize: 12, fontWeight: 700, color: "var(--muted)", cursor: "pointer" }}
-            >
-              Cerrar sesión
-            </button>
-          </div>
-        </div>
+                </section>
+              )}
+            </div>
+          )}
+        </main>
       </div>
     );
   }
@@ -5664,11 +1984,10 @@ const contentKpis = useMemo(() => {
       {/* ── Topbar ── */}
       <AppTopbar
         isMobile={isMobile}
-        onOpenSidebar={() => setSidebarOpen(true)}
+        sidebarOpen={sidebarOpen}
+        onOpenSidebar={() => setSidebarOpen((v) => !v)}
         darkMode={darkMode}
         setDarkMode={setDarkMode}
-        compact={compact}
-        toggleCompact={toggleCompact}
         orgUnitInput={orgUnitInput}
         setOrgUnitInput={setOrgUnitInput}
         setOrgUnitId={setOrgUnitId}
@@ -5683,10 +2002,12 @@ const contentKpis = useMemo(() => {
         isSuperAdmin={isSuperAdmin}
         studentRows={studentRows}
         onImpersonate={setImpersonateStudent}
+        adminView={adminView}
+        onAdminViewChange={isSuperAdmin ? setAdminView : undefined}
       />
 
       {/* ── Main content ── */}
-      <main className="app-main">
+      <main id="main-content" tabIndex={-1} className="app-main">
         <div className="app-content">
 
         {/* ── Routes tab ── */}
@@ -5718,12 +2039,14 @@ const contentKpis = useMemo(() => {
               </div>
             </div>
             <Card>
-              <GradePredictions
-                studentRows={studentRows}
-                onStudentClick={selectStudentById}
-                courseInfo={courseInfo}
-                variant="full"
-              />
+              <ErrorBoundary sectionName="Predicción de notas">
+                <GradePredictions
+                  studentRows={studentRows}
+                  onStudentClick={selectStudentById}
+                  courseInfo={courseInfo}
+                  variant="full"
+                />
+              </ErrorBoundary>
             </Card>
           </div>
         )}
@@ -5743,26 +2066,39 @@ const contentKpis = useMemo(() => {
               </div>
             </div>
             <Card>
-              <EvidenceReports
-                orgUnitId={orgUnitId}
-                studentRows={studentRows}
-                courseInfo={courseInfo}
-                onStudentClick={selectStudentById}
-              />
+              <ErrorBoundary sectionName="Informes de evidencias">
+                <EvidenceReports
+                  orgUnitId={orgUnitId}
+                  studentRows={studentRows}
+                  courseInfo={courseInfo}
+                  onStudentClick={selectStudentById}
+                />
+              </ErrorBoundary>
             </Card>
+          </div>
+        )}
+
+        {/* ── Resultados de aprendizaje (vincular actividades → RA) ── */}
+        {activeTab === "learning-outcomes" && (
+          <div className="fade-up tab-enter">
+            <ErrorBoundary sectionName="Resultados de aprendizaje">
+              <RaLinker orgUnitId={orgUnitId} courseName={courseInfo?.Name} />
+            </ErrorBoundary>
           </div>
         )}
 
         {/* ── Assistant tab ── */}
         {activeTab === "assistant" && (
           <div className="fade-up tab-enter">
-            <VoiceAssistant
-              studentRows={studentRows}
-              overview={overview}
-              raDashboard={raDashboard}
-              courseInfo={courseInfo}
-              thresholds={thresholds}
-            />
+            <ErrorBoundary sectionName="Asistente de voz">
+              <VoiceAssistant
+                studentRows={studentRows}
+                overview={overview}
+                raDashboard={raDashboard}
+                courseInfo={courseInfo}
+                thresholds={thresholds}
+              />
+            </ErrorBoundary>
           </div>
         )}
 
@@ -5798,16 +2134,119 @@ const contentKpis = useMemo(() => {
           </div>
         </div>
 
+        {/* ── KPIs principales del curso ── */}
+        <div
+          className="fade-up fade-up-1"
+          style={{
+            display: "grid",
+            gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(4, 1fr)",
+            gap: 16,
+            marginBottom: 16,
+          }}
+        >
+          {/* Estudiantes */}
+          <div className="kpi-card" style={{ display: "flex", alignItems: "center", gap: 14 }}>
+            <div style={{
+              width: 64, height: 64, borderRadius: "50%", flexShrink: 0,
+              background: "var(--brand-light)", display: "flex", alignItems: "center",
+              justifyContent: "center", fontSize: 26,
+            }} aria-hidden="true">👥</div>
+            <div style={{ minWidth: 0 }}>
+              <div style={{ fontSize: 11, fontWeight: 800, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.06em" }}>
+                Estudiantes
+              </div>
+              <div style={{ fontSize: 28, fontWeight: 900, color: "var(--text)", fontFamily: "var(--font-mono)", lineHeight: 1.15 }}>
+                {studentsCount || "—"}
+              </div>
+              <div style={{ fontSize: 11, color: "var(--muted)" }}>Inscritos en el curso</div>
+            </div>
+          </div>
+
+          {/* Nota promedio */}
+          <div className="kpi-card" style={{ display: "flex", alignItems: "center", gap: 14 }}>
+            <CircularRing
+              pct={avgPerfPct != null && Number(avgPerfPct) > 0 ? avgPerfPct : 0}
+              size={64}
+              stroke={7}
+              color={avgPerfPct != null && Number(avgPerfPct) > 0 ? colorForPct(avgPerfPct, thresholds) : "var(--border)"}
+              label={avgPerfPct == null || Number(avgPerfPct) === 0 ? "—" : fmtGrade10FromPct(avgPerfPct)}
+              fontSize={13}
+            />
+            <div style={{ minWidth: 0 }}>
+              <div style={{ fontSize: 11, fontWeight: 800, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.06em" }}>
+                Nota promedio
+              </div>
+              <div style={{ fontSize: 28, fontWeight: 900, color: avgPerfPct != null && Number(avgPerfPct) > 0 ? colorForPct(avgPerfPct, thresholds) : "var(--muted)", fontFamily: "var(--font-mono)", lineHeight: 1.15 }}>
+                {avgPerfPct == null || Number(avgPerfPct) === 0 ? "—" : fmtGrade10FromPct(avgPerfPct)}
+              </div>
+              <div style={{ fontSize: 11, color: "var(--muted)" }}>Escala 0–10 · gradebook</div>
+            </div>
+          </div>
+
+          {/* En riesgo */}
+          <div className="kpi-card" style={{ display: "flex", alignItems: "center", gap: 14 }}>
+            <CircularRing
+              pct={atRiskPct != null ? Math.min(100, atRiskPct) : 0}
+              size={64}
+              stroke={7}
+              color={
+                atRiskPct == null ? "var(--border)"
+                  : atRiskPct > 40 ? COLORS.critical
+                  : atRiskPct > 20 ? COLORS.watch
+                  : COLORS.ok
+              }
+              label={atRiskPct == null ? "—" : String(atRiskCount)}
+              fontSize={14}
+            />
+            <div style={{ minWidth: 0 }}>
+              <div style={{ fontSize: 11, fontWeight: 800, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.06em" }}>
+                En riesgo
+              </div>
+              <div style={{
+                fontSize: 28, fontWeight: 900, fontFamily: "var(--font-mono)", lineHeight: 1.15,
+                color: atRiskPct == null ? "var(--muted)" : atRiskPct > 40 ? COLORS.critical : atRiskPct > 20 ? COLORS.watch : COLORS.ok,
+              }}>
+                {atRiskPct == null ? "—" : atRiskCount}
+              </div>
+              <div style={{ fontSize: 11, color: "var(--muted)" }}>
+                {atRiskPct == null ? "Sin datos aún" : `${fmtPct(atRiskPct)} del curso (alto + medio)`}
+              </div>
+            </div>
+          </div>
+
+          {/* Contenidos creados */}
+          <div className="kpi-card" style={{ display: "flex", alignItems: "center", gap: 14 }}>
+            <div style={{
+              width: 64, height: 64, borderRadius: "50%", flexShrink: 0,
+              background: contentKpis?.createdCount != null ? `${contentRhythmMeta.bg}` : "var(--bg)",
+              display: "flex", alignItems: "center", justifyContent: "center", fontSize: 26,
+            }} aria-hidden="true">📚</div>
+            <div style={{ minWidth: 0 }}>
+              <div style={{ fontSize: 11, fontWeight: 800, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.06em" }}>
+                Contenidos creados
+              </div>
+              <div style={{ fontSize: 28, fontWeight: 900, color: contentKpis?.createdCount != null ? contentRhythmMeta.color : "var(--muted)", fontFamily: "var(--font-mono)", lineHeight: 1.15 }}>
+                {contentKpis?.createdCount ?? "—"}
+              </div>
+              <div style={{ fontSize: 11, color: "var(--muted)" }}>
+                {contentKpis?.minExpected != null ? `Mínimo esperado: ${contentKpis.minExpected}` : "Desde inicio del curso"}
+              </div>
+            </div>
+          </div>
+        </div>
+
         {/* ── Alertas inteligentes (fusiona Radar docente + heurísticas locales) ── */}
         <div className="fade-up fade-up-1" style={{ marginBottom: 16 }}>
-          <SmartAlerts
-            studentRows={studentRows}
-            overview={overview}
-            courseInfo={courseInfo}
-            contentKpis={contentKpis}
-            backendAlerts={overview?.alerts}
-            onStudentClick={selectStudentById}
-          />
+          <ErrorBoundary sectionName="Alertas inteligentes">
+            <SmartAlerts
+              studentRows={studentRows}
+              overview={overview}
+              courseInfo={courseInfo}
+              contentKpis={contentKpis}
+              backendAlerts={overview?.alerts}
+              onStudentClick={selectStudentById}
+            />
+          </ErrorBoundary>
         </div>
 
         {/* ── Resumen semanal IA (narrativa) ── */}
@@ -5818,13 +2257,27 @@ const contentKpis = useMemo(() => {
             description="Tu dashboard ahora tiene resumen narrativo con IA, predicción de notas finales (menú lateral), alertas inteligentes, tendencias históricas y más. Haz Ctrl+K para la paleta de comandos, o presiona ? para ver todos los atajos."
           />
           <Card title={<span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>🤖 Resumen semanal <InfoTooltip text="Resumen narrativo en lenguaje natural del estado del curso. Se genera automáticamente a partir de los datos actuales. Puedes escucharlo con TTS." /></span>} accent="brand">
-            <AINarrativeSummary
-              studentRows={studentRows}
-              overview={overview}
-              courseInfo={courseInfo}
-              raDashboard={raDashboard}
-              contentKpis={contentKpis}
-            />
+            <ErrorBoundary sectionName="Resumen semanal">
+              <AINarrativeSummary
+                studentRows={studentRows}
+                overview={overview}
+                courseInfo={courseInfo}
+                raDashboard={raDashboard}
+                contentKpis={contentKpis}
+              />
+            </ErrorBoundary>
+          </Card>
+        </div>
+
+        {/* ── Estado de asignaciones ── */}
+        <div className="fade-up fade-up-2" style={{ marginBottom: 16 }}>
+          <Card
+            title={<span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>📝 Asignaciones del curso <InfoTooltip text="Estado de las asignaciones (dropbox) que has creado en Brightspace: cuántas tienen entregas de estudiantes (con % de entrega), cuántas ya están completamente calificadas y cuántas vencieron. Ordenadas por fecha de entrega." /></span>}
+            accent="brand"
+          >
+            <ErrorBoundary sectionName="Asignaciones del curso">
+              <AssignmentsPanel orgUnitId={orgUnitId} />
+            </ErrorBoundary>
           </Card>
         </div>
 
@@ -5840,63 +2293,6 @@ const contentKpis = useMemo(() => {
         >
           <div ref={overviewRef}>
           <Card title="Gestión del curso" right={<StatusBadge status={courseStatus} />} accent="brand">
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr",
-                gap: 16,
-                marginBottom: 14,
-              }}
-            >
-              <Stat
-                label="Nota promedio (0–10)"
-                value={avgPerfPct == null || Number(avgPerfPct) === 0 ? "—" : fmtGrade10FromPct(avgPerfPct)}
-                valueColor={colorForPct(avgPerfPct, thresholds)}
-                sub={
-                  avgCov == null || Number(avgCov) === 0
-                    ? "Sin cobertura registrada"
-                    : `${fmtPct(covDone)} calificado · ${fmtPct(covPending)} pendiente`
-                }
-              />
-              <Stat
-                label="Estudiantes"
-                value={studentsCount}
-                sub={`${overview?.courseGradebook?.avgGradedItemsCount ?? 0}/${overview?.courseGradebook?.avgTotalItemsCount ?? 0} ítems prom.`}
-              />
-            </div>
-
-            <Divider />
-
-            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
-              <div
-                style={{
-                  fontSize: 11,
-                  color: "var(--muted)",
-                  fontWeight: 700,
-                  textTransform: "uppercase",
-                  letterSpacing: "0.05em",
-                }}
-              >
-                En riesgo (alto + medio)
-              </div>
-              <InfoTooltip text="Este indicador es un resultado. La gestión del curso se prioriza por acciones docentes: publicación sostenida de contenidos, oportunidad de retroalimentación y cierre evaluativo. Objetivo operativo: mínimo 1 contenido nuevo cada 2 semanas y retroalimentación posterior al vencimiento en máximo 8 días." />
-            </div>
-
-            <Stat
-              label=""
-              value={atRiskPct == null ? "—" : fmtPct(atRiskPct)}
-              valueColor={
-                atRiskPct != null && atRiskPct > 40
-                  ? COLORS.critical
-                  : atRiskPct != null && atRiskPct > 20
-                  ? COLORS.watch
-                  : COLORS.ok
-              }
-              sub={totalStudents ? `${atRiskCount} de ${totalStudents} estudiantes` : "—"}
-            />
-
-            <Divider />
-
             <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
               <div
                 style={{
@@ -5924,60 +2320,9 @@ const contentKpis = useMemo(() => {
               </div>
             </div>
 
-            <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 10 }}>
-              <div
-                style={{
-                  padding: 12,
-                  border: "1px solid var(--border)",
-                  borderRadius: 12,
-                  background: "var(--card)",
-                }}
-              >
-                <div
-                  style={{
-                    fontSize: 11,
-                    color: "var(--muted)",
-                    fontWeight: 800,
-                    letterSpacing: "0.05em",
-                    textTransform: "uppercase",
-                  }}
-                >
-                  Contenidos creados
-                </div>
-                <div style={{ fontSize: 26, fontWeight: 900, marginTop: 6 }}>
-                  {contentKpis?.createdCount == null ? "—" : contentKpis.createdCount}
-                </div>
-                <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 2 }}>
-                  Desde inicio del curso
-                </div>
-              </div>
-
-              <div
-                style={{
-                  padding: 12,
-                  border: "1px solid var(--border)",
-                  borderRadius: 12,
-                  background: "var(--card)",
-                }}
-              >
-                <div
-                  style={{
-                    fontSize: 11,
-                    color: "var(--muted)",
-                    fontWeight: 800,
-                    letterSpacing: "0.05em",
-                    textTransform: "uppercase",
-                  }}
-                >
-                  Mínimo esperado
-                </div>
-                <div style={{ fontSize: 26, fontWeight: 900, marginTop: 6 }}>
-                  {contentKpis?.minExpected == null ? "—" : contentKpis.minExpected}
-                </div>
-                <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 2 }}>
-                  Basado en avance del curso
-                </div>
-              </div>
+            <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 4 }}>
+              <strong style={{ color: "var(--text)", fontFamily: "var(--font-mono)" }}>{contentKpis?.createdCount ?? "—"}</strong> contenidos creados
+              {" · "}mínimo esperado <strong style={{ color: "var(--text)", fontFamily: "var(--font-mono)" }}>{contentKpis?.minExpected ?? "—"}</strong>
             </div>
 
             {contentKpis?.progressRatio != null && (
@@ -6027,7 +2372,11 @@ const contentKpis = useMemo(() => {
           {/* ── Riesgo académico + Distribución apilados en 1 columna ── */}
           <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
             <Card title={<span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>Riesgo académico <InfoTooltip text="Distribución de los estudiantes según su nota actual: Alto (<5.0), Medio (5.0–7.0), Bajo (≥7.0). Calculado solo con notas reales del gradebook, excluye columnas 'Corte'." /></span>} accent="pending">
-              <div style={{ width: "100%", height: 200 }}>
+              <div
+                role="img"
+                aria-label="Gráfico de pastel: distribución de estudiantes por nivel de riesgo académico"
+                style={{ width: "100%", height: 200 }}
+              >
                 <ResponsiveContainer>
                   <PieChart>
                     <Pie
@@ -6228,7 +2577,25 @@ const contentKpis = useMemo(() => {
           </div>
 
           <div ref={learningOutcomesRef}>
-          <Card title={<span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>Prioridad académica <InfoTooltip text="Resultados de Aprendizaje (RA) del curso ordenados de menor a mayor desempeño. El RA en primera posición es donde tus estudiantes están más débiles — prioriza refuerzo ahí." /></span>} accent="brand">
+          <Card
+            title={<span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>Prioridad académica <InfoTooltip text="Resultados de Aprendizaje (RA) del curso ordenados de menor a mayor desempeño. El RA en primera posición es donde tus estudiantes están más débiles — prioriza refuerzo ahí." /></span>}
+            accent="brand"
+            right={
+              <button
+                onClick={() => setActiveTab("learning-outcomes")}
+                title="Vincula o ajusta los RA de tus actividades para activar/afinar la analítica por resultado."
+                style={{
+                  display: "inline-flex", alignItems: "center", gap: 6,
+                  padding: "6px 13px", borderRadius: 8, border: "none", cursor: "pointer",
+                  background: "linear-gradient(135deg, var(--brand) 0%, #1e40af 100%)",
+                  color: "#fff", fontSize: 12, fontWeight: 800, fontFamily: "var(--font)",
+                  boxShadow: "var(--shadow-sm, 0 1px 2px rgba(0,0,0,0.1))",
+                }}
+              >
+                🔗 Vincular
+              </button>
+            }
+          >
             <div
               style={{
                 display: "flex",
@@ -6236,7 +2603,50 @@ const contentKpis = useMemo(() => {
                 gap: 8,
               }}
             >
-              {learningOutcomesData
+              {quizOutcomesData.length > 0 && (
+                <div
+                  role="tablist"
+                  style={{
+                    display: "inline-flex",
+                    alignSelf: "flex-start",
+                    gap: 2,
+                    padding: 3,
+                    borderRadius: 10,
+                    background: "var(--bg)",
+                    border: "1px solid var(--border)",
+                    marginBottom: 2,
+                  }}
+                >
+                  {[
+                    { key: "rubrica", label: "Por asignación" },
+                    { key: "quiz", label: "Por quiz" },
+                  ].map((tab) => {
+                    const active = raTab === tab.key;
+                    return (
+                      <button
+                        key={tab.key}
+                        role="tab"
+                        aria-selected={active}
+                        onClick={() => setRaTab(tab.key)}
+                        style={{
+                          border: "none",
+                          cursor: "pointer",
+                          fontSize: 11,
+                          fontWeight: 700,
+                          padding: "5px 12px",
+                          borderRadius: 8,
+                          background: active ? "var(--brand)" : "transparent",
+                          color: active ? "#fff" : "var(--muted-strong)",
+                          transition: "background 0.15s",
+                        }}
+                      >
+                        {tab.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+              {(raTab === "quiz" ? quizOutcomesData : learningOutcomesData)
                 .slice()
                 .sort((a, b) => a.avgPct - b.avgPct)
                 .map((m) => {
@@ -6280,12 +2690,14 @@ const contentKpis = useMemo(() => {
                           <div style={{ marginLeft: "auto" }}>
                             {m.studentsWithData > 0
                               ? <StatusBadge status={computedStatus} />
-                              : <span style={{ fontSize: 9, fontWeight: 800, color: "var(--muted)", background: "var(--bg)", padding: "2px 7px", borderRadius: 99, border: "1px solid var(--border)", textTransform: "uppercase", letterSpacing: "0.06em" }}>Sin uso</span>
+                              : <span style={{ fontSize: 9, fontWeight: 800, color: "var(--muted)", background: "var(--bg)", padding: "2px 7px", borderRadius: 99, border: "1px solid var(--border)", textTransform: "uppercase", letterSpacing: "0.06em" }}>{m.alignedToAssignment ? "Sin uso" : "Sin asignación"}</span>
                             }
                           </div>
                         </div>
                         <div style={{ fontSize: 10, color: "var(--muted)", marginBottom: 4 }}>
-                          Peso {m.weightPct ? `${Number(m.weightPct).toFixed(0)}%` : "—"}
+                          {m.source === "quiz"
+                            ? "Evaluado por quiz"
+                            : `Peso ${m.weightPct ? `${Number(m.weightPct).toFixed(0)}%` : "—"}`}
                         </div>
                         {m.studentsWithData > 0 && m.coveragePct != null ? (
                           <div>
@@ -6296,7 +2708,9 @@ const contentKpis = useMemo(() => {
                           </div>
                         ) : m.studentsWithData === 0 ? (
                           <div style={{ fontSize: 10, color: "var(--muted)", fontStyle: "italic", lineHeight: 1.4 }}>
-                            Sin evaluaciones vinculadas a rúbricas aún.
+                            {m.alignedToAssignment
+                              ? "Sin evaluaciones vinculadas a rúbricas aún."
+                              : (m.note || "No alineado a asignaciones (evaluado por quiz).")}
                           </div>
                         ) : null}
                       </div>
@@ -6304,12 +2718,16 @@ const contentKpis = useMemo(() => {
                   );
                 })}
 
-              {!learningOutcomesData.length && (
+              {!(raTab === "quiz" ? quizOutcomesData : learningOutcomesData).length && (
                 <div className="empty-state">
                   <span className="empty-state-icon">🎯</span>
-                  <span style={{ fontSize: 12 }}>Sin datos de RA</span>
+                  <span style={{ fontSize: 12 }}>Sin datos de RA para este curso</span>
+                  <span style={{ fontSize: 11, color: "var(--muted-strong)", textAlign: "center", lineHeight: 1.5, maxWidth: 340, marginTop: 4 }}>
+                    Los Resultados de Aprendizaje necesitan estar registrados en Brightspace <strong>y</strong> mapeados a las rúbricas del curso en la configuración del gemelo.
+                    Si el curso ya los tiene definidos en Brightspace, solicita al equipo que registre la configuración para este <code>orgUnitId</code>.
+                  </span>
                   {Number(avgCov ?? 0) > 0 && (
-                    <span style={{ fontSize: 11, color: "var(--watch)", fontWeight: 700, textAlign: "center", padding: "4px 8px", borderRadius: 8, background: "var(--watch-bg)", marginTop: 4 }}>
+                    <span style={{ fontSize: 11, color: "var(--watch)", fontWeight: 700, textAlign: "center", padding: "4px 8px", borderRadius: 8, background: "var(--watch-bg)", marginTop: 6 }}>
                       ⚠️ Hay evidencias calificadas pero sin rúbricas vinculadas a RA
                     </span>
                   )}
@@ -6321,21 +2739,67 @@ const contentKpis = useMemo(() => {
 
         </div>
 
-        {/* ── Analytics section: Trends ── */}
-        <div className="fade-up fade-up-3" style={{ marginTop: 20, marginBottom: 16 }}>
+        </>}
+
+        {/* ── Tendencias tab ── */}
+        {activeTab === "trends" && (
+        <div className="fade-up tab-enter">
+          <div style={{ marginBottom: 16 }}>
+            <div style={{ fontSize: 10, fontWeight: 800, color: "var(--brand)", textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: 4 }}>
+              G.D · Tendencias
+            </div>
+            <h1 style={{ fontSize: isMobile ? 20 : 26, fontWeight: 900, color: "var(--text)", letterSpacing: "-0.02em", lineHeight: 1.1, marginBottom: 4 }}>
+              Tendencias del curso
+            </h1>
+            <div style={{ fontSize: 13, color: "var(--muted)", fontWeight: 500 }}>
+              {courseInfo?.Name || `Curso ${orgUnitId}`}
+            </div>
+          </div>
           <Card title={<span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>Tendencias del curso <InfoTooltip text="Evolución de nota promedio, porcentaje en riesgo y cobertura a lo largo de los últimos días. Los datos se capturan automáticamente cada vez que abres el dashboard." /></span>} accent="brand">
-            <CourseTrends snapshots={courseSnapshots} />
+            <ErrorBoundary sectionName="Tendencias del curso">
+              <CourseTrends snapshots={courseSnapshots} />
+            </ErrorBoundary>
           </Card>
         </div>
+        )}
 
-        {/* ── Calendario de entregas ── */}
-        <div className="fade-up fade-up-3" style={{ marginBottom: 16 }}>
+        {/* ── Calendario tab ── */}
+        {activeTab === "calendar" && (
+        <div className="fade-up tab-enter">
+          <div style={{ marginBottom: 16 }}>
+            <div style={{ fontSize: 10, fontWeight: 800, color: "var(--brand)", textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: 4 }}>
+              G.D · Calendario
+            </div>
+            <h1 style={{ fontSize: isMobile ? 20 : 26, fontWeight: 900, color: "var(--text)", letterSpacing: "-0.02em", lineHeight: 1.1, marginBottom: 4 }}>
+              Calendario de entregas
+            </h1>
+            <div style={{ fontSize: 13, color: "var(--muted)", fontWeight: 500 }}>
+              {courseInfo?.Name || `Curso ${orgUnitId}`}
+            </div>
+          </div>
           <Card title={<span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>Calendario de entregas <InfoTooltip text="Próximas entregas del curso con detección de sobrecarga (3+ en el mismo día). Heatmap semanal al final. Toma los datos directamente del gradebook del curso." /></span>}>
-            <DueDateCalendar orgUnitId={orgUnitId} studentRows={studentRows} />
+            <ErrorBoundary sectionName="Calendario de entregas">
+              <DueDateCalendar orgUnitId={orgUnitId} studentRows={studentRows} />
+            </ErrorBoundary>
           </Card>
         </div>
+        )}
 
-        <div ref={studentsRef} className="fade-up fade-up-3" style={{ marginTop: 4 }}>
+        {/* ── Estudiantes tab ── */}
+        {activeTab === "students" && (
+        <div className="fade-up tab-enter">
+          <div style={{ marginBottom: 16 }}>
+            <div style={{ fontSize: 10, fontWeight: 800, color: "var(--brand)", textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: 4 }}>
+              G.D · Estudiantes
+            </div>
+            <h1 style={{ fontSize: isMobile ? 20 : 26, fontWeight: 900, color: "var(--text)", letterSpacing: "-0.02em", lineHeight: 1.1, marginBottom: 4 }}>
+              Listado de estudiantes
+            </h1>
+            <div style={{ fontSize: 13, color: "var(--muted)", fontWeight: 500 }}>
+              {courseInfo?.Name || `Curso ${orgUnitId}`}
+            </div>
+          </div>
+        <div ref={studentsRef}>
           <Card
             title={
               <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -6895,10 +3359,8 @@ const contentKpis = useMemo(() => {
             )}
           </Card>
         </div>
-
-
-
-        </>}
+        </div>
+        )}
 
         </div>
       </main>
@@ -7212,6 +3674,37 @@ const contentKpis = useMemo(() => {
                   const drawerCorte = drawerEvidences.filter(e => e?.isCorte === true);
                   const drawerNonCorte = drawerEvidences.filter(e => e?.isCorte !== true);
                   const drawerOverdue = drawerNonCorte.filter(e => e?.status === "overdue_unscored" || (e?.isOverdue && e?.scorePct == null));
+                  // Mapa evidenceKey → [códigos RA] derivado de las unidades
+                  // del estudiante. u.evidence[].folderId/gradeObjectId nos
+                  // conecta cada evidencia con las RAs a las que aporta.
+                  const evidenceRasMap = (() => {
+                    const m = new Map();
+                    for (const u of (drawerUnits || [])) {
+                      const code = u?.code;
+                      if (!code) continue;
+                      for (const ev of (u.evidence || [])) {
+                        const keys = [ev?.folderId, ev?.gradeObjectId, ev?.rubricId]
+                          .filter((k) => k != null)
+                          .map(String);
+                        for (const k of keys) {
+                          if (!m.has(k)) m.set(k, new Set());
+                          m.get(k).add(code);
+                        }
+                      }
+                    }
+                    return m;
+                  })();
+                  const raCodesFor = (e) => {
+                    const cands = [e?.gradeObjectId, e?.folderId, e?.rubricId]
+                      .filter((k) => k != null)
+                      .map(String);
+                    const set = new Set();
+                    for (const k of cands) {
+                      const v = evidenceRasMap.get(k);
+                      if (v) v.forEach((c) => set.add(c));
+                    }
+                    return Array.from(set);
+                  };
                   const fmtDue = (iso) => {
                     if (!iso) return "—";
                     try { const d = new Date(iso); return Number.isNaN(d.getTime()) ? "—" : d.toLocaleDateString("es-CO", { year: "numeric", month: "short", day: "2-digit" }); } catch { return "—"; }
@@ -7378,13 +3871,16 @@ const contentKpis = useMemo(() => {
                             <thead>
                               <tr style={{ borderBottom: "2px solid var(--border)" }}>
                                 <th style={{ padding: "8px 10px", fontSize: 11, fontWeight: 700, textTransform: "uppercase", color: "var(--muted)", textAlign: "left" }}>Evidencia</th>
+                                <th style={{ padding: "8px 10px", fontSize: 11, fontWeight: 700, textTransform: "uppercase", color: "var(--muted)", textAlign: "left" }}>RAs</th>
                                 <th style={{ padding: "8px 10px", fontSize: 11, fontWeight: 700, textTransform: "uppercase", color: "var(--muted)", textAlign: "right" }}>Peso</th>
                                 <th style={{ padding: "8px 10px", fontSize: 11, fontWeight: 700, textTransform: "uppercase", color: "var(--muted)", textAlign: "right" }}>Nota</th>
                                 <th style={{ padding: "8px 10px", fontSize: 11, fontWeight: 700, textTransform: "uppercase", color: "var(--muted)", textAlign: "center" }}>Estado</th>
                               </tr>
                             </thead>
                             <tbody>
-                              {drawerNonCorte.map((e, i) => (
+                              {drawerNonCorte.map((e, i) => {
+                                const evRas = raCodesFor(e);
+                                return (
                                 <tr key={i} style={{ borderBottom: "1px solid var(--border)" }}>
                                   <td style={{ padding: "8px 10px", fontSize: 12, fontWeight: 600, color: "var(--text)" }}>
                                     {e.name || `Ítem ${e.gradeObjectId}`}
@@ -7392,6 +3888,27 @@ const contentKpis = useMemo(() => {
                                       <div style={{ fontSize: 10, color: "var(--muted)", marginTop: 2 }}>
                                         🗓 {fmtDue(e.dueDate)}
                                       </div>
+                                    )}
+                                  </td>
+                                  <td style={{ padding: "8px 10px" }}>
+                                    {evRas.length > 0 ? (
+                                      <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+                                        {evRas.map((code) => {
+                                          const info = outcomesMap?.[code];
+                                          return (
+                                            <span
+                                              key={code}
+                                              className="tag"
+                                              title={info?.title || info?.description || code}
+                                              style={{ fontSize: 10, padding: "2px 6px" }}
+                                            >
+                                              {code}
+                                            </span>
+                                          );
+                                        })}
+                                      </div>
+                                    ) : (
+                                      <span style={{ fontSize: 10, color: "var(--muted)" }}>—</span>
                                     )}
                                   </td>
                                   <td style={{ padding: "8px 10px", textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--muted)" }}>
@@ -7404,7 +3921,8 @@ const contentKpis = useMemo(() => {
                                     <StatusBadge status={e.status || "pending"} />
                                   </td>
                                 </tr>
-                              ))}
+                                );
+                              })}
                             </tbody>
                           </table>
                         </div>
@@ -7672,6 +4190,43 @@ const contentKpis = useMemo(() => {
         )}
       </Drawer>
 
+      {/* SuperAdmin — vista estudiante del curso actual (sesión propia) */}
+      {isSuperAdmin && adminView === "student" && !impersonateStudent && (
+        <div style={{
+          position: "fixed", inset: 0, zIndex: 305,
+          background: "var(--page-bg, #f5f7fb)",
+          overflow: "auto",
+        }}>
+          <div style={{
+            position: "sticky", top: 0, zIndex: 5,
+            padding: "8px 20px",
+            background: "linear-gradient(90deg, var(--brand) 0%, #1e40af 100%)",
+            color: "#fff",
+            display: "flex", alignItems: "center", justifyContent: "space-between",
+            gap: 12, flexWrap: "wrap",
+            fontSize: 12, fontWeight: 700,
+          }}>
+            <span>🎓 Vista estudiante (administrador) — estás viendo el portal con tu propia sesión. Para ver los datos de un estudiante específico usa "Ver como…"</span>
+            <button
+              onClick={() => setAdminView("teacher")}
+              style={{
+                background: "#fff", border: "none", borderRadius: 6,
+                padding: "4px 12px", fontSize: 11, fontWeight: 800,
+                cursor: "pointer", color: "var(--brand)", flexShrink: 0,
+              }}
+            >
+              👨‍🏫 Volver a vista profesor
+            </button>
+          </div>
+          <React.Suspense fallback={<SharedCesaLoader title="Portal del Estudiante" subtitle="Cargando vista estudiante" />}>
+            <StudentPortal
+              orgUnitIdOverride={orgUnitId}
+              allowOverviewPanel={isSuperAdmin}
+            />
+          </React.Suspense>
+        </div>
+      )}
+
       {/* SuperAdmin impersonation — view a student's portal */}
       {impersonateStudent && (
         <div style={{
@@ -7700,11 +4255,7 @@ const contentKpis = useMemo(() => {
               ✕ Salir de vista previa
             </button>
           </div>
-          <React.Suspense fallback={
-            <div style={{ padding: "80px 20px", textAlign: "center", color: "var(--muted)", fontSize: 13 }}>
-              Cargando portal del estudiante...
-            </div>
-          }>
+          <React.Suspense fallback={<SharedCesaLoader title="Portal del Estudiante" subtitle="Cargando vista previa" />}>
             <StudentPortal
               orgUnitIdOverride={orgUnitId}
               userIdOverride={impersonateStudent.userId}
@@ -7722,11 +4273,7 @@ const contentKpis = useMemo(() => {
           background: "var(--page-bg, #f5f7fb)",
           overflow: "auto",
         }}>
-          <React.Suspense fallback={
-            <div style={{ padding: "80px 20px", textAlign: "center", color: "var(--muted)", fontSize: 13 }}>
-              Cargando panel coordinador...
-            </div>
-          }>
+          <React.Suspense fallback={<SharedCesaLoader title="Panel Coordinador" subtitle="Cargando" />}>
             <CoordinatorDashboard onClose={() => setShowCoordinator(false)} />
           </React.Suspense>
         </div>

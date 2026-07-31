@@ -27,16 +27,58 @@ export function fmtGrade10FromPct(pct) {
   return (Number(pct) / 10).toFixed(1);
 }
 
+/**
+ * Extrae descripciones planas de outcomeSets de Brightspace.
+ *
+ * Brightspace puede devolver los outcomes de varias formas:
+ *   - Array top-level `outcomeSets` con cada set conteniendo `Outcomes`.
+ *   - `outcomeSets` puede ser directamente un array plano de outcomes
+ *     (cuando el curso hereda los RAs sin agruparlos en un set).
+ *   - Cada outcome puede tener SubOutcomes/ChildOutcomes anidados que
+ *     tambien son RAs vigentes (algunos cursos definen jerarquias).
+ *
+ * Se recorre recursivamente y se devuelven todas las descripciones no vacias
+ * en el orden en que aparecen. Cursos como 41634 exponian los RAs solo
+ * en el nivel anidado, por eso antes se veian vacios.
+ */
 export function flattenOutcomeDescriptions(payload) {
-  const sets = payload?.outcomeSets;
-  if (!Array.isArray(sets)) return [];
   const flat = [];
-  for (const s of sets) {
-    for (const o of s?.Outcomes || []) {
-      if (o?.Description) flat.push(String(o.Description));
+  if (!payload) return flat;
+
+  const visit = (node) => {
+    if (!node) return;
+    if (Array.isArray(node)) {
+      node.forEach(visit);
+      return;
     }
-  }
-  return flat;
+    if (typeof node !== "object") return;
+
+    const desc = node.Description ?? node.description;
+    if (desc && String(desc).trim()) flat.push(String(desc).trim());
+
+    // Recorrer contenedores comunes de outcomes en el arbol
+    const children =
+      node.Outcomes || node.outcomes ||
+      node.SubOutcomes || node.subOutcomes ||
+      node.ChildOutcomes || node.childOutcomes ||
+      node.Children || node.children;
+    if (children) visit(children);
+  };
+
+  // El payload puede llegar como {outcomeSets: [...]}, como array crudo o
+  // como un solo set. Cubrimos las tres variantes.
+  const sets = payload.outcomeSets ?? payload;
+  visit(sets);
+
+  // Dedupe manteniendo el orden — Brightspace a veces repite la misma
+  // description por rubricas compartidas.
+  const seen = new Set();
+  return flat.filter((d) => {
+    const key = d.toLowerCase();
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 export function isVisibleContentItem(item) {
@@ -46,7 +88,11 @@ export function isVisibleContentItem(item) {
 }
 
 export function safeAvg(list) {
+  // Nota (#16): se filtran null/undefined/"" ANTES de Number() porque
+  // Number(null) === 0 — sin este filtro, un dato faltante contaba como 0
+  // y arrastraba el promedio hacia abajo.
   const nums = (Array.isArray(list) ? list : [])
+    .filter((x) => x !== null && x !== undefined && x !== "")
     .map((x) => Number(x))
     .filter((x) => Number.isFinite(x));
   if (!nums.length) return null;

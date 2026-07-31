@@ -34,6 +34,11 @@ engine = create_engine(
     DATABASE_URL,
     echo=False,
     pool_pre_ping=True,
+    # connect_timeout corto: si la BD no es alcanzable (p. ej. RDS sin acceso
+    # desde la red local en dev), fallar en ~5s en vez de colgar el startup
+    # varios minutos con el timeout TCP del SO. En produccion (misma VPC que
+    # RDS) la conexion tarda milisegundos, asi que no afecta.
+    connect_args={"connect_timeout": 5},
 )
 
 SessionLocal = sessionmaker(

@@ -48,3 +48,23 @@ commits.json
 # Build artifacts del generador de documentos
 docs/build/node_modules/
 docs/build/package-lock.json
+
+# Sesiones persistidas en dev local (tokens Brightspace — NUNCA commitear)
+.session_store.json
+.session_store.json.tmp
+gemelo-digital-backend/.session_store.json
+gemelo-digital-backend/.session_store.json.tmp
+
+# Directorios de Claude Code (sesiones/worktrees locales)
+.claude/
+
+# Datos de runtime (best-effort en disco — NO commitear; efímeros en ECS)
+known_users.json
+announcements.json
+announcements.json.tmp
+bug_reports.jsonl
+gemelo-digital-backend/known_users.json
+gemelo-digital-backend/announcements.json
+gemelo-digital-backend/announcements.json.tmp
+gemelo-digital-backend/bug_reports.jsonl
+svc2.json

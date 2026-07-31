@@ -31,8 +31,7 @@ LTI_JWKS_URL = os.getenv("LTI_JWKS_URL", "https://cesa.brightspace.com/d2l/.well
 LTI_CLIENT_ID = os.getenv("LTI_CLIENT_ID", "")
 LTI_DEPLOYMENT_ID = os.getenv("LTI_DEPLOYMENT_ID", "").strip()  # opcional
 
-LTI_STATE_SECRET = os.getenv("LTI_STATE_SECRET", "change-me")
-SESSION_SECRET = os.getenv("SESSION_SECRET", "change-me")
+from app.security import LTI_STATE_SECRET, SESSION_SECRET
 
 STATE_STORE: Dict[str, Dict[str, Any]] = {}
 JWKS_CACHE: Dict[str, Any] = {"ts": 0, "jwks": None}

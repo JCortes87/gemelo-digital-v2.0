@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useMemo, lazy, Suspense } from "react";
 import { useNavigate } from "react-router-dom";
+import CesaLoader from "../components/ui/CesaLoader";
 
 const StudentOverviewPanel = lazy(() => import("./StudentOverviewPanel"));
 import {
@@ -13,7 +14,7 @@ import {
   ReferenceLine,
 } from "recharts";
 import { useAuth } from "../context/AuthContext";
-import { apiGet } from "../utils/api";
+import { apiGet, apiGetCached, apiPost } from "../utils/api";
 import { COLORS, STATUS_CONFIG, colorForPct, colorForRisk } from "../utils/colors";
 import {
   fmtPct,
@@ -109,6 +110,120 @@ function ProgressBar({ value, color, animate = true }) {
   );
 }
 
+/* ── Novedades / anuncios del administrador (in-app, sin correo) ── */
+
+const ANN_TAG_COLORS = {
+  "Nuevo": "#16a34a",
+  "Anuncio": "var(--brand)",
+  "Actualización": "#0891b2",
+  "Mejorado": "var(--brand)",
+  "Importante": "#dc2626",
+  "SuperAdmin": "#7c3aed",
+};
+
+function fmtAnnDate(ts) {
+  try {
+    return new Date(ts).toLocaleString("es-CO", {
+      day: "2-digit", month: "short", year: "numeric",
+      hour: "2-digit", minute: "2-digit",
+    });
+  } catch { return ""; }
+}
+
+function StudentAnnouncements({ onClose }) {
+  const [items, setItems] = useState(null);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const data = await apiGet("/gemelo/announcements?limit=50");
+        if (alive) setItems(Array.isArray(data?.items) ? data.items : []);
+      } catch {
+        if (alive) { setItems([]); setError("No se pudieron cargar las novedades."); }
+      }
+    })();
+    return () => { alive = false; };
+  }, []);
+
+  return (
+    <div style={{
+      position: "fixed", inset: 0, zIndex: 9999,
+      background: "rgba(0,0,0,0.72)",
+      display: "flex", alignItems: "center", justifyContent: "center",
+      fontFamily: "var(--font)", padding: 20, backdropFilter: "blur(4px)",
+    }}>
+      <div style={{
+        background: "var(--card)", borderRadius: 20,
+        padding: "28px 30px", maxWidth: 540, width: "100%",
+        maxHeight: "82vh", display: "flex", flexDirection: "column",
+        boxShadow: "0 24px 80px rgba(0,0,0,0.3)", position: "relative",
+      }}>
+        <button
+          onClick={onClose} aria-label="Cerrar"
+          style={{ position: "absolute", top: 14, right: 14, background: "none", border: "none", fontSize: 18, cursor: "pointer", color: "var(--muted)", padding: 4, lineHeight: 1 }}
+        >✕</button>
+
+        <div style={{ textAlign: "center", marginBottom: 18 }}>
+          <span style={{ fontSize: 11, fontWeight: 800, color: "var(--brand)", textTransform: "uppercase", letterSpacing: "0.1em" }}>
+            🔔 Novedades · G.D
+          </span>
+        </div>
+
+        <div style={{ overflowY: "auto", flex: 1, display: "flex", flexDirection: "column", gap: 12 }}>
+          {items === null && (
+            <div style={{ textAlign: "center", color: "var(--muted)", fontSize: 13, padding: "40px 0" }}>
+              Cargando novedades…
+            </div>
+          )}
+          {items !== null && items.length === 0 && (
+            <div style={{ textAlign: "center", color: "var(--muted)", fontSize: 13, padding: "40px 20px" }}>
+              <div style={{ fontSize: 40, marginBottom: 10 }}>📭</div>
+              {error || "No hay novedades por ahora. Aquí verás los anuncios y actualizaciones del administrador."}
+            </div>
+          )}
+          {items !== null && items.map((a) => {
+            const color = ANN_TAG_COLORS[a.tag] || "var(--brand)";
+            return (
+              <div key={a.id} style={{ border: "1px solid var(--border)", borderRadius: 12, padding: "14px 16px", background: "var(--bg)" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6, flexWrap: "wrap" }}>
+                  <span style={{
+                    fontSize: 10, fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.06em",
+                    padding: "3px 9px", borderRadius: 99,
+                    background: color + "1a", color, border: "1px solid " + color + "40",
+                  }}>
+                    {a.tag || "Anuncio"}
+                  </span>
+                  <span style={{ fontSize: 11, color: "var(--muted)", marginLeft: "auto" }}>
+                    {fmtAnnDate(a.ts)}
+                  </span>
+                </div>
+                <h3 style={{ fontSize: 15, fontWeight: 900, color: "var(--text)", margin: "0 0 6px", letterSpacing: "-0.01em" }}>
+                  {a.subject}
+                </h3>
+                <p style={{ fontSize: 13.5, color: "var(--muted)", lineHeight: 1.6, margin: 0, whiteSpace: "pre-wrap" }}>
+                  {a.message}
+                </p>
+                {a.author && (
+                  <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 8, fontWeight: 600 }}>— {a.author}</div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+
+        <button
+          onClick={onClose}
+          style={{ marginTop: 18, padding: "11px 0", borderRadius: 10, border: "none", background: "var(--brand)", color: "#fff", fontSize: 13, fontWeight: 800, cursor: "pointer", boxShadow: "0 4px 14px rgba(11,95,255,0.3)" }}
+        >
+          Entendido ✓
+        </button>
+      </div>
+    </div>
+  );
+}
+
 /* ── Student Portal Page ── */
 
 export default function StudentPortal({ orgUnitIdOverride, userIdOverride, allowOverviewPanel = true }) {
@@ -123,9 +238,43 @@ export default function StudentPortal({ orgUnitIdOverride, userIdOverride, allow
   const [studentCourses, setStudentCourses] = useState([]);
   const [loadingCourses, setLoadingCourses] = useState(false);
 
+  // Novedades / anuncios del administrador (in-app; el estudiante no recibe correo).
+  const [showAnnouncements, setShowAnnouncements] = useState(false);
+  const [annUnread, setAnnUnread] = useState(0);
+
   useEffect(() => {
     document.documentElement.classList.toggle("dark", darkMode);
   }, [darkMode]);
+
+  // Marca a este usuario como "student" para excluirlo del correo (solo in-app).
+  useEffect(() => {
+    apiPost("/gemelo/audience", { audience: "student" }).catch(() => {});
+  }, []);
+
+  // Carga novedades y calcula cuántas no se han visto (badge en la campana).
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const data = await apiGet("/gemelo/announcements?limit=50");
+        const list = Array.isArray(data?.items) ? data.items : [];
+        if (!alive) return;
+        const lastSeen = Number(localStorage.getItem("gemelo_ann_last_seen") || 0);
+        setAnnUnread(list.filter((a) => Number(a.id) > lastSeen).length);
+      } catch { /* silencioso */ }
+    })();
+    return () => { alive = false; };
+  }, []);
+
+  const openAnnouncements = React.useCallback(async () => {
+    setShowAnnouncements(true);
+    setAnnUnread(0);
+    try {
+      const data = await apiGet("/gemelo/announcements?limit=1");
+      const newest = Array.isArray(data?.items) && data.items[0] ? Number(data.items[0].id) : 0;
+      if (newest) localStorage.setItem("gemelo_ann_last_seen", String(newest));
+    } catch { /* silencioso */ }
+  }, []);
 
   // Course selection (students typically come from LTI with orgUnitId)
   // Override props allow SuperAdmin to view this portal for any user/course.
@@ -236,9 +385,9 @@ export default function StudentPortal({ orgUnitIdOverride, userIdOverride, allow
     (async () => {
       try {
         const [studentRes, courseRes, loRes] = await Promise.allSettled([
-          apiGet(`/gemelo/course/${orgUnitId}/student/${userId}`, { signal: controller.signal }),
-          apiGet(`/brightspace/course/${orgUnitId}`, { signal: controller.signal }),
-          apiGet(`/gemelo/course/${orgUnitId}/learning-outcomes`, { signal: controller.signal }),
+          apiGetCached(`/gemelo/course/${orgUnitId}/student/${userId}`, { signal: controller.signal }),
+          apiGetCached(`/brightspace/course/${orgUnitId}`, { signal: controller.signal, ttl: 300_000 }),
+          apiGetCached(`/gemelo/course/${orgUnitId}/learning-outcomes`, { signal: controller.signal }),
         ]);
 
         if (!alive) return;
@@ -367,12 +516,11 @@ export default function StudentPortal({ orgUnitIdOverride, userIdOverride, allow
   // ── Loading ──
   if (loading) {
     return (
-      <div style={{ minHeight: "100vh", background: "var(--bg)", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "var(--font)" }}>
-        <div style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 24, padding: "40px 48px", textAlign: "center", boxShadow: "var(--shadow-lg)" }}>
-          <div style={{ fontSize: 20, fontWeight: 800, color: "var(--text)" }}>Cargando tu información...</div>
-          <div style={{ fontSize: 13, color: "var(--muted)", marginTop: 4 }}>Consolidando tu gemelo digital</div>
-        </div>
-      </div>
+      <CesaLoader
+        title="Portal del Estudiante"
+        subtitle="Cargando tu información"
+        footer="Consolidando tu gemelo digital…"
+      />
     );
   }
 
@@ -462,6 +610,25 @@ export default function StudentPortal({ orgUnitIdOverride, userIdOverride, allow
             </button>
           )}
           <button
+            onClick={openAnnouncements}
+            aria-label="Novedades"
+            title="Novedades y anuncios"
+            style={{ position: "relative", width: 36, height: 36, display: "flex", alignItems: "center", justifyContent: "center", borderRadius: 9, border: "1px solid var(--border)", background: "transparent", cursor: "pointer", color: "var(--muted)", fontSize: 15 }}
+          >
+            🔔
+            {annUnread > 0 && (
+              <span style={{
+                position: "absolute", top: -4, right: -4,
+                minWidth: 16, height: 16, padding: "0 4px",
+                borderRadius: 99, background: "#dc2626", color: "#fff",
+                fontSize: 9, fontWeight: 900, display: "flex", alignItems: "center", justifyContent: "center",
+                border: "2px solid var(--card)",
+              }}>
+                {annUnread > 9 ? "9+" : annUnread}
+              </span>
+            )}
+          </button>
+          <button
             onClick={() => setDarkMode((v) => !v)}
             aria-label="Cambiar tema"
             style={{ width: 36, height: 36, display: "flex", alignItems: "center", justifyContent: "center", borderRadius: 9, border: "1px solid var(--border)", background: "transparent", cursor: "pointer", color: "var(--muted)", fontSize: 15 }}
@@ -479,6 +646,9 @@ export default function StudentPortal({ orgUnitIdOverride, userIdOverride, allow
           </button>
         </div>
       </header>
+
+      {/* ── Novedades / anuncios del administrador ── */}
+      {showAnnouncements && <StudentAnnouncements onClose={() => setShowAnnouncements(false)} />}
 
       {/* ── Course Panel Overlay ── */}
       {showCoursePanel && (
@@ -564,7 +734,7 @@ export default function StudentPortal({ orgUnitIdOverride, userIdOverride, allow
       )}
 
       {/* ── Content ── */}
-      <main style={{ padding: isMobile ? "16px 14px" : "24px 28px", maxWidth: 900, margin: "0 auto" }}>
+      <main id="main-content" tabIndex={-1} style={{ padding: isMobile ? "16px 14px" : "24px 28px", maxWidth: 900, margin: "0 auto" }}>
         {/* Page Header */}
         <div style={{ marginBottom: 20 }}>
           <div style={{ fontSize: 10, fontWeight: 800, color: "var(--brand)", textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: 4 }}>
@@ -933,7 +1103,11 @@ export default function StudentPortal({ orgUnitIdOverride, userIdOverride, allow
             <Card title={`Mis Evidencias Calificadas (${gradedItems.length})`} accent="brand">
               {/* Chart */}
               {chartData.length > 1 && (
-                <div style={{ width: "100%", height: 180, marginBottom: 16 }}>
+                <div
+                  role="img"
+                  aria-label="Gráfico de evolución de mis notas en evidencias calificadas"
+                  style={{ width: "100%", height: 180, marginBottom: 16 }}
+                >
                   <ResponsiveContainer>
                     <LineChart data={chartData} margin={{ left: -10, right: 10 }}>
                       <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
@@ -1106,7 +1280,7 @@ export default function StudentPortal({ orgUnitIdOverride, userIdOverride, allow
 
         {/* Footer */}
         <div style={{ textAlign: "center", padding: "20px 0 40px", fontSize: 11, color: "var(--muted)" }}>
-          CESA · G.D V.260428 · Portal Estudiante
+          CESA · G.D 2026.7.10 · Portal Estudiante
         </div>
       </main>
 

@@ -7,6 +7,7 @@ import { I18nProvider } from "./context/I18nContext";
 import ErrorBoundary from "./components/ui/ErrorBoundary";
 import ProtectedRoute from "./components/auth/ProtectedRoute";
 import LoginScreen from "./components/auth/LoginScreen";
+import CesaLoader from "./components/ui/CesaLoader";
 import { injectStyles } from "./styles/global";
 
 // Lazy-loaded pages for code splitting
@@ -14,29 +15,12 @@ const RoleHome = lazy(() => import("./pages/RoleHome"));
 const TeacherDashboard = lazy(() => import("./pages/TeacherDashboard"));
 const StudentPortal = lazy(() => import("./pages/StudentPortal"));
 const CoordinatorDashboard = lazy(() => import("./pages/CoordinatorDashboard"));
+const LearningOutcomesAdmin = lazy(() => import("./pages/LearningOutcomesAdmin"));
+const AdminPanel = lazy(() => import("./pages/AdminPanel"));
 
-// Suspense fallback — lightweight loader
+// Suspense fallback — usa el loader CESA compartido
 function PageLoader() {
-  return (
-    <div
-      role="status"
-      aria-label="Cargando página"
-      style={{
-        minHeight: "100vh", background: "var(--bg)",
-        display: "flex", alignItems: "center", justifyContent: "center",
-        fontFamily: "'Manrope', system-ui, sans-serif",
-      }}
-    >
-      <div style={{
-        background: "var(--card)", border: "1px solid var(--border)",
-        borderRadius: 24, padding: "40px 48px", textAlign: "center",
-        boxShadow: "0 8px 32px rgba(15,24,39,0.12)",
-      }}>
-        <div style={{ fontSize: 20, fontWeight: 800, color: "var(--text)" }}>CESA · G.D</div>
-        <div style={{ fontSize: 13, color: "var(--muted)", marginTop: 4 }}>Cargando...</div>
-      </div>
-    </div>
-  );
+  return <CesaLoader subtitle="Cargando página" />;
 }
 
 function AppRoutes() {
@@ -47,6 +31,9 @@ function AppRoutes() {
 
   return (
     <Suspense fallback={<PageLoader />}>
+      <a href="#main-content" className="skip-link">
+        Saltar al contenido principal
+      </a>
       <Routes>
         {/* Teacher/Admin dashboard */}
         <Route
@@ -67,6 +54,30 @@ function AppRoutes() {
             <ProtectedRoute allowedRoles={["instructor", "admin"]}>
               <ErrorBoundary sectionName="Panel Coordinador">
                 <CoordinatorDashboard />
+              </ErrorBoundary>
+            </ProtectedRoute>
+          }
+        />
+
+        {/* Resultados de aprendizaje (Super Admin) — página dedicada */}
+        <Route
+          path="/outcomes"
+          element={
+            <ProtectedRoute allowedRoles={["instructor", "admin"]}>
+              <ErrorBoundary sectionName="Resultados de Aprendizaje">
+                <LearningOutcomesAdmin />
+              </ErrorBoundary>
+            </ProtectedRoute>
+          }
+        />
+
+        {/* Panel de administración (Super Admin) — uso de la plataforma */}
+        <Route
+          path="/admin"
+          element={
+            <ProtectedRoute allowedRoles={["instructor", "admin"]}>
+              <ErrorBoundary sectionName="Panel de Administración">
+                <AdminPanel />
               </ErrorBoundary>
             </ProtectedRoute>
           }

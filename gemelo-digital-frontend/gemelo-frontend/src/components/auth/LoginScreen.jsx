@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
+import { Loader2, CheckCircle2 } from "lucide-react";
 import { injectStyles } from "../../styles/global";
 import { apiUrl } from "../../utils/api";
 
@@ -201,7 +202,7 @@ export default function LoginScreen({ orgUnitId }) {
           <div style={{ textAlign: "left" }}>
             <div style={{ fontSize: 16, fontWeight: 900, color: "var(--text)", letterSpacing: "-0.02em" }}>G.D</div>
             <div style={{ fontSize: 11, fontWeight: 600, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.08em" }}>
-              V.260428
+              2026.7.10
             </div>
           </div>
         </div>
@@ -211,7 +212,9 @@ export default function LoginScreen({ orgUnitId }) {
         {/* ── Estado: esperando al popup ── */}
         {status === "waiting" && (
           <>
-            <div style={{ fontSize: 28, marginBottom: 12 }}>⏳</div>
+            <div style={{ marginBottom: 14, display: "flex", justifyContent: "center", color: "var(--brand)" }}>
+              <Loader2 size={30} strokeWidth={2.2} style={{ animation: "rotateGlow 1s linear infinite" }} />
+            </div>
             <h2 style={{ fontSize: 20, fontWeight: 900, color: "var(--text)", margin: "0 0 8px", letterSpacing: "-0.02em" }}>
               Autenticando…
             </h2>
@@ -235,13 +238,15 @@ export default function LoginScreen({ orgUnitId }) {
         {/* ── Estado: retry (popup cerro sin completar OAuth) ── */}
         {status === "retry" && (
           <>
-            <div style={{ fontSize: 28, marginBottom: 12 }}>✅</div>
+            <div style={{ marginBottom: 14, display: "flex", justifyContent: "center", color: "var(--ok, #12b76a)" }}>
+              <CheckCircle2 size={30} strokeWidth={2.2} />
+            </div>
             <h2 style={{ fontSize: 20, fontWeight: 900, color: "var(--text)", margin: "0 0 8px", letterSpacing: "-0.02em" }}>
               Ya iniciaste sesion en Microsoft
             </h2>
             <p style={{ fontSize: 14, color: "var(--muted)", lineHeight: 1.6, margin: "0 0 20px" }}>
               La autenticacion con Microsoft fue exitosa. Haz clic para completar
-              el acceso a Gemelo Digital.
+              el acceso a G.D.
             </p>
             <button
               onClick={handleRetry}
@@ -254,7 +259,7 @@ export default function LoginScreen({ orgUnitId }) {
               onMouseLeave={e => e.currentTarget.style.opacity = "1"}
             >
               {msIcon}
-              Completar acceso a Gemelo Digital
+              Completar acceso a G.D
             </button>
             <button
               onClick={handleLogin}

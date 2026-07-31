@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useCallback } from "react";
+import React, { createContext, useContext, useState, useEffect, useCallback, useMemo } from "react";
 
 /**
  * Lightweight i18n context — no external library.
@@ -32,6 +32,27 @@ const translations = {
     "dashboard.dueDateCalendar": "Calendario de entregas",
     "dashboard.myCourses": "Mis cursos",
     "dashboard.noCourse": "Selecciona un curso",
+    // Sidebar / Topbar
+    "nav.dashboard": "Dashboard",
+    "nav.students": "Estudiantes",
+    "nav.calendar": "Calendario",
+    "nav.trends": "Tendencias",
+    "nav.routes": "Rutas de atención",
+    "nav.predictions": "Predicción de notas",
+    "nav.evidences": "Evidencias",
+    "nav.learningOutcomes": "Resultados de aprendizaje",
+    "nav.assistant": "Asistente IA",
+    "nav.support": "Soporte",
+    "nav.views": "Vistas",
+    "nav.activeCourse": "Curso activo",
+    "nav.teacherView": "Vista Docente",
+    "topbar.courseIdPlaceholder": "ID de curso…",
+    "topbar.commands": "Comandos",
+    "topbar.home": "Inicio",
+    "topbar.myCourses": "Mis cursos",
+    "topbar.viewAs": "Ver como...",
+    "topbar.teacherView": "Vista profesor",
+    "topbar.studentView": "Vista estudiante",
     // Portal
     "portal.title": "G.D · Mi Rendimiento",
     "portal.greeting": "Hola",
@@ -67,6 +88,26 @@ const translations = {
     "dashboard.dueDateCalendar": "Due Date Calendar",
     "dashboard.myCourses": "My Courses",
     "dashboard.noCourse": "Select a course",
+    "nav.dashboard": "Dashboard",
+    "nav.students": "Students",
+    "nav.calendar": "Calendar",
+    "nav.trends": "Trends",
+    "nav.routes": "Intervention Routes",
+    "nav.predictions": "Grade Predictions",
+    "nav.evidences": "Evidences",
+    "nav.learningOutcomes": "Learning Outcomes",
+    "nav.assistant": "AI Assistant",
+    "nav.support": "Support",
+    "nav.views": "Views",
+    "nav.activeCourse": "Active course",
+    "nav.teacherView": "Teacher View",
+    "topbar.courseIdPlaceholder": "Course ID…",
+    "topbar.commands": "Commands",
+    "topbar.home": "Home",
+    "topbar.myCourses": "My Courses",
+    "topbar.viewAs": "View as...",
+    "topbar.teacherView": "Teacher view",
+    "topbar.studentView": "Student view",
     "portal.title": "Digital Twin · My Performance",
     "portal.greeting": "Hi",
     "portal.myGrade": "My Current Grade",
@@ -89,7 +130,7 @@ export function I18nProvider({ children }) {
   });
 
   useEffect(() => {
-    try { localStorage.setItem("gemelo_locale", locale); } catch {}
+    try { localStorage.setItem("gemelo_locale", locale); } catch { /* noop */ }
     if (typeof document !== "undefined") document.documentElement.lang = locale;
   }, [locale]);
 
@@ -106,8 +147,14 @@ export function I18nProvider({ children }) {
     setLocaleState((l) => (l === "es" ? "en" : "es"));
   }, []);
 
+  // Memoizado: evita re-renders en cascada de todos los consumidores de useI18n()
+  const value = useMemo(
+    () => ({ locale, t, setLocale, toggleLocale }),
+    [locale, t, setLocale, toggleLocale],
+  );
+
   return (
-    <I18nContext.Provider value={{ locale, t, setLocale, toggleLocale }}>
+    <I18nContext.Provider value={value}>
       {children}
     </I18nContext.Provider>
   );
