@@ -157,7 +157,7 @@ children.push(new Paragraph({
 children.push(new Paragraph({
   alignment: AlignmentType.CENTER,
   spacing: { after: 200 },
-  children: [new TextRun({ text: "Estado consolidado a junio de 2026", italics: true, size: 24 })],
+  children: [new TextRun({ text: "Estado consolidado a julio de 2026", italics: true, size: 24 })],
 }));
 children.push(new Paragraph({
   alignment: AlignmentType.CENTER,
@@ -195,7 +195,7 @@ children.push(bullet("Cómo recuperarse ante problemas (rollback, snapshots)."))
 children.push(bullet("Quién es quién y cómo coordinarse con CESA y el colaborador."));
 
 children.push(H2("1.1 Última actualización del proyecto"));
-children.push(P("Junio de 2026. Última sesión de trabajo importante: integración de la arquitectura completa del colaborador (Juan David) con todas las features modernas (vista de estudiante, calendario, predicciones, alertas inteligentes, etc.) más nuestros aportes propios (refresh-token, fix de estudiantes fantasma, CI/CD vía GitHub Actions OIDC)."));
+children.push(P("31 de julio de 2026. Última sesión de trabajo importante: rediseño completo del dashboard docente y del portal del estudiante con estilo de dashboard analítico (fila de KPIs, velocímetro de riesgo, panel de asignaciones, accesos al curso, consumo de contenidos), pestañas dedicadas para Estudiantes/Calendario/Tendencias, selector de estudiante en \"Vista estudiante\" para el superadmin, y nuevo repositorio de respaldo gemelo-digital-v2.0. Detalle en la sección 15.13. La sesión anterior (junio 2026) integró la arquitectura del colaborador (Juan David) + refresh-token, fix de estudiantes fantasma y CI/CD vía GitHub Actions OIDC."));
 
 children.push(H2("1.2 Estado actual"));
 children.push(P("En producción HOY (después del deploy de junio):"));
@@ -1336,6 +1336,27 @@ children.push(table2col([
   ["d8a5db0", "Fase 3: integración de capa Postgres"],
 ]));
 
+children.push(H2("15.13 Rediseño de julio 2026 — dashboard, portal y nuevas métricas"));
+children.push(P("Sesión del 31 de julio de 2026. Los cambios se desarrollaron en la carpeta local clonada del repo de Juan David, se pushearon como ramas al repo principal (PR + merge a main con deploy automático) y se respaldaron en el repo nuevo JCortes87/gemelo-digital-v2.0 (sin CI/CD; solo respaldo/compartir)."));
+children.push(H3("Dashboard docente"));
+children.push(bullet("Fila de 4 KPIs estilo tarjeta centrada: nota promedio (donut 0-10), estudiantes inscritos, en riesgo (alto+medio) y contenidos publicados vs mínimo esperado."));
+children.push(bullet("Nuevo componente GaugeMeter (velocímetro semicircular con zonas verde/ámbar/rojo) para el riesgo académico."));
+children.push(bullet("Fila de 4 tarjetas de igual altura: riesgo académico, distribución de notas, contenidos y cobertura, estudiantes prioritarios."));
+children.push(bullet("Nuevo AssignmentsPanel: asignaciones creadas / con entregas (+% de entrega) / calificadas / vencidas, con listado detallado colapsable (usa /brightspace/.../dropbox/folders)."));
+children.push(bullet("Nueva tarjeta Accesos al curso: recencia del último acceso por estudiante (hoy / 7 días / +14 días / nunca) y top de desconectados, del LastAccessed del classlist."));
+children.push(bullet("Contenidos y cobertura: sección renombrada a 'Contenidos del profesor', y nueva métrica 'Contenidos consumidos por estudiantes' (promedio de temas abiertos) vía endpoint nuevo /brightspace/course/{ou}/content/consumption."));
+children.push(bullet("Pestañas nuevas en el sidebar: Estudiantes (tabla con columna 'Último acceso'), Calendario y Tendencias. Atajos 4/5/6 y paleta de comandos actualizados."));
+children.push(bullet("Tarjetas con banda de encabezado (fondo suave, título centrado) e iconos por sección en toda el área docente."));
+children.push(bullet("Fix: el dashboard abría en la pestaña Estudiantes al montar; la pestaña por defecto vuelve a ser Dashboard."));
+children.push(H3("Portal del estudiante"));
+children.push(bullet("KPIs rediseñados al mismo estilo: mi nota actual, asignaciones calificadas (nuevo, con pendientes y vencidas), cobertura y mi estado."));
+children.push(bullet("Los Resultados de Aprendizaje conservan la explicación de cada resultado."));
+children.push(H3("Superadmin"));
+children.push(bullet("El botón 'Vista estudiante' abre un selector emergente (buscar por nombre o ID) y muestra el portal del estudiante elegido; reemplaza al menú 'Ver como...' del topbar."));
+children.push(H3("Convenciones y notas"));
+children.push(bullet("Mensajes de commit y títulos de PR en imperativo ('ajusta...', 'agrega...'), con prefijo tipo conventional commits."));
+children.push(bullet("Dev local: venv + certificado autofirmado en gemelo-digital-backend/certs/ + .env local; el BRIGHTSPACE_SCOPE del .env viejo pedía grades:grades:read (ya no autorizado) y se comentó para usar el default del código."));
+
 children.push(new Paragraph({ children: [new PageBreak()] }));
 
 // ── 16. PENDIENTES Y SIGUIENTES PASOS ──
@@ -1343,6 +1364,8 @@ children.push(H1("16. Pendientes y siguientes pasos sugeridos"));
 children.push(P("Lo que queda por hacer cuando se retome el proyecto."));
 
 children.push(H2("16.1 Pendientes de corto plazo"));
+children.push(bullet("Verificar en producción que 'Contenidos consumidos por estudiantes' muestre datos; si aparece 'no disponible', ajustar la ruta del user progress en el endpoint /brightspace/course/{ou}/content/consumption."));
+children.push(bullet("Convertir el tip de 'nuevas funciones' del dashboard en un sistema de notificaciones (idea de la sesión de julio 2026)."));
 children.push(bullet("Reactivar la voz TTS ElevenLabs en el chat del asistente. La infraestructura backend está intacta (endpoints /speech/* funcionan). En el frontend nuevo de JD, los utils voice.js y speech.js están preservados; falta cablearlos en useStudentChat.js o el componente del chat."));
 children.push(bullet("Reintegrar el fix de no-superposición de audios (AbortController + token monotónico) cuando se reactive la voz."));
 
@@ -1605,7 +1628,7 @@ children.push(new Paragraph({
 children.push(new Paragraph({
   alignment: AlignmentType.CENTER,
   spacing: { before: 200 },
-  children: [new TextRun({ text: "Última actualización: junio 2026", italics: true, size: 18 })],
+  children: [new TextRun({ text: "Última actualización: 31 de julio de 2026", italics: true, size: 18 })],
 }));
 
 // ─────────────────────────────────────────────────────────

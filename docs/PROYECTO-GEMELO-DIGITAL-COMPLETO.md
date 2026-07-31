@@ -5,7 +5,10 @@
 > cada cosa. Pensado para que cualquier persona técnica que herede el
 > proyecto pueda continuarlo sin pedir contexto a nadie.
 >
-> **Última actualización**: junio 2026.
+> **Última actualización**: 31 de julio de 2026 — rediseño del dashboard
+> docente y del portal del estudiante (ver sección 15). La versión Word
+> (`Gemelo-Digital-Documentacion-Completa.docx`) corresponde a junio 2026;
+> este Markdown es la versión canónica y más reciente.
 
 ---
 
@@ -18,36 +21,53 @@ agregada y predictiva sobre el desempeño de cada curso.
 
 ### Funcionalidades principales
 
-#### Vista de docente
-- **Dashboard del curso** con KPIs agregados: promedio de notas, cobertura
-  de evaluación, distribución de riesgo, alertas, etc.
+#### Vista de docente (rediseñada en julio 2026, estilo dashboard analítico)
+- **Fila de KPIs** con tarjetas centradas: nota promedio (donut 0–10),
+  estudiantes inscritos, en riesgo (alto+medio) y contenidos publicados
+  vs mínimo esperado.
+- **Riesgo académico** — medidor semicircular tipo velocímetro
+  (`GaugeMeter`) con el % de estudiantes en riesgo y leyenda alto/medio/bajo.
+- **Distribución de notas** — histograma por rangos de 1 punto.
+- **Contenidos y cobertura** — ritmo de publicación del profesor
+  (cumplimiento vs mínimo), índice de cumplimiento evaluativo y
+  **contenidos consumidos por estudiantes** (promedio de temas abiertos,
+  vía user progress de Brightspace).
 - **Estudiantes prioritarios** — quiénes necesitan intervención y por qué.
-- **SmartAlerts** — alertas inteligentes (cobertura baja, desempeño bajo,
-  concentración de riesgo, etc.).
-- **GradePredictions** — predicción de notas finales por estudiante.
-- **DueDateCalendar** — calendario con todas las fechas de entrega.
-- **EvidenceReports** — reporte detallado de evidencias por estudiante.
-- **AINarrativeSummary** — resumen narrativo del curso generado por IA.
-- **CoursesComparison** — comparación entre cursos del mismo docente.
-- **CourseTrends** — tendencias del curso a lo largo del semestre
-  (persistidas en DB, históricas).
-- **Descarga de evidencias** y feedback del docente.
+- **Resultados de aprendizaje** — RA del curso en 2 columnas, ordenados
+  de menor a mayor desempeño, con botón Vincular.
+- **Asignaciones del curso** (`AssignmentsPanel`) — creadas, con entregas
+  (+% de entrega), calificadas y vencidas; listado detallado colapsable.
+- **Accesos al curso** — recencia del último acceso por estudiante
+  (hoy / 7 días / +14 días / nunca) y top de desconectados, del
+  `LastAccessed` del classlist.
+- **Pestañas dedicadas** (sidebar): Estudiantes (tabla completa con
+  columna de último acceso), Calendario de entregas, Tendencias, Rutas de
+  atención, Predicción de notas, Evidencias, RA y Asistente IA.
+- **SmartAlerts** y **AINarrativeSummary** (resumen narrativo IA) al final
+  del dashboard.
+- **Descarga de evidencias**, export CSV y feedback del docente.
 
-#### Vista de estudiante
-- **Portal personal** con todos sus cursos.
-- **Mis cursos** y su rendimiento individual.
-- **Cortes** y evidencias vencidas.
+#### Vista de estudiante (rediseñada en julio 2026, mismo estilo)
+- **Fila de KPIs**: mi nota actual (donut /10), asignaciones calificadas
+  (% + pendientes y vencidas), cobertura y mi estado.
+- **Mis Resultados de Aprendizaje** — anillo por RA con estado y la
+  **explicación de cada resultado** (descripción del outcome).
+- **Cortes** y evidencias vencidas/pendientes/calificadas.
 - **Calendario personal** con fechas de entrega.
 - **Proyección explicada** — predicción de nota final con explicación.
+- **Prescripción del docente** y ruta de mejora.
 
 #### Vista de coordinador
 - **Vista superior** de todos los cursos bajo su responsabilidad.
 - **Filtros por semestre** y año académico.
 
 #### Vista de superadmin
-- **Búsqueda por ID** de cualquier curso o usuario.
-- **Modo impersonar** — ver el sistema desde la perspectiva de otro
-  usuario para diagnóstico/soporte.
+- **Búsqueda por ID** de cualquier curso o usuario (RoleHome).
+- **Toggle Vista profesor / Vista estudiante** en el topbar: "Vista
+  estudiante" abre un selector emergente (buscar por nombre o ID) y
+  muestra el portal del estudiante elegido tal como él lo ve.
+- **Modo impersonar** — también accesible desde el drawer de un
+  estudiante ("Ver portal de este estudiante").
 
 ### Cómo se accede
 
@@ -123,12 +143,17 @@ agregada y predictiva sobre el desempeño de cada curso.
 ### Frontend
 - **Framework**: React 19
 - **Bundler**: Vite 8
-- **Routing**: React Router
-- **Estado global**: Context API (AuthContext, CourseContext, I18nContext,
-  ThemeContext, ToastContext)
-- **Charts**: Recharts 3.7
-- **Estilos**: CSS Modules
-- **Lenguaje**: JavaScript (ES2022+) + algunos archivos TypeScript
+- **Routing**: React Router DOM v7
+- **Estado global**: Context API (AuthContext, I18nContext, ThemeContext,
+  ToastContext; CourseContext existe pero no está conectado)
+- **Charts**: Recharts 3.7 + componentes SVG propios (`CircularRing`,
+  `GaugeMeter`)
+- **Estilos**: CSS-in-JS — un solo string inyectado en runtime desde
+  `src/styles/global.js` (variables CSS, dark mode con clase `.dark`);
+  no se usan CSS Modules ni Tailwind
+- **Tests**: Vitest (`npm test`) — tests de helpers, colores y smoke del
+  dashboard
+- **Lenguaje**: JavaScript (ES2022+), sin TypeScript activo
 
 ### Infraestructura
 - **Cloud**: AWS (región us-east-1, North Virginia)
@@ -156,6 +181,20 @@ agregada y predictiva sobre el desempeño de cada curso.
 - **Uso**: referencia para mirar su versión histórica. **NUNCA se debe
   empujar a este repo** desde nuestro setup. Está configurado como remote
   `colaborador` con push deshabilitado.
+
+### Repositorio de trabajo v2.0 (respaldo de cambios nuevos)
+- **URL**: https://github.com/JCortes87/gemelo-digital-v2.0
+- **Creado**: julio 2026. Recibe copia de `main` y de todas las ramas de
+  cambios nuevos (es el remote `origin` en la carpeta de trabajo local,
+  que está clonada del repo de Juan David).
+- **NO tiene CI/CD**: pushear aquí no despliega nada. El deploy a
+  producción sigue siendo exclusivo del repo principal
+  (`proyecto-gemelos-digitales-JC`), cuyo rol IAM OIDC solo confía en ese
+  repo.
+- **Flujo de trabajo actual**: los cambios se desarrollan localmente, se
+  pushean como rama a ambos repos, y se abren PR a `main` del repo
+  principal para desplegar. Juan David puede tomar los cambios desde
+  cualquiera de los dos.
 
 ### Repositorio fork inicial (archivo, no usar)
 - **URL**: https://github.com/JCortes87/gemelo-digital-backend-JC
@@ -197,6 +236,10 @@ agregada y predictiva sobre el desempeño de cada curso.
 | `GET /.well-known/jwks.json` | JWKS público para LTI 1.3 |
 | `POST /lti/login` | OIDC login initiation (LTI 1.3) |
 | `POST /lti/launch` | LTI launch endpoint |
+| `GET /gemelo/course/{ou}/grade-items` | Grade items + dropbox con due dates (DB-first). Lo usa el calendario |
+| `GET /brightspace/course/{ou}/dropbox/folders` | Asignaciones crudas de Brightspace (con TotalUsersWithSubmissions/Feedback). Lo usa AssignmentsPanel |
+| `GET /brightspace/course/{ou}/classlist` | Classlist crudo (incluye `LastAccessed` por estudiante). Lo usan la tarjeta de Accesos y la columna Último acceso |
+| `GET /brightspace/course/{ou}/content/consumption` | **Nuevo (jul 2026)**: agrega el user progress de contenido por estudiante → `{perUser: {userId: temasVisitados}}` |
 
 ---
 
@@ -583,6 +626,76 @@ Permite disparar deploys manuales desde la pestaña Actions de GitHub sin
 necesidad de hacer un commit. Útil para re-desplegar la misma versión
 (por ejemplo si una variable de entorno cambió en taskdef y necesitas
 que el container la lea).
+
+---
+
+## 15. Actualización julio 2026 — rediseño del dashboard y portal
+
+Trabajo realizado el 31 de julio de 2026 (ramas pusheadas al repo
+principal y respaldadas en `gemelo-digital-v2.0`; cada una se mergeó a
+`main` vía PR con deploy automático):
+
+### Dashboard docente (`TeacherDashboard.jsx` + `pages/teacher/`)
+- **Fila de 4 KPIs** estilo tarjeta centrada: nota promedio (donut),
+  estudiantes, en riesgo, contenidos publicados (con tooltip que aclara
+  que cuenta temas de contenido, no asignaciones).
+- **`GaugeMeter`** (nuevo en `primitives.jsx`): medidor semicircular tipo
+  velocímetro con zonas verde/ámbar/rojo; reemplaza la dona de riesgo.
+- **Fila de 4 tarjetas de igual altura**: riesgo académico, distribución
+  de notas, contenidos y cobertura, estudiantes prioritarios.
+- **Fila RA + Asignaciones + Accesos**: RA en 2 columnas con botón
+  Vincular; `AssignmentsPanel` (nuevo componente) con contadores
+  creadas/con entregas/calificadas/vencidas, % global de entregas y
+  detalle colapsable; tarjeta de accesos al curso por recencia.
+- **Pestañas nuevas** en el sidebar: Estudiantes (tabla, con columna
+  "Último acceso"), Calendario y Tendencias — antes apiladas en el
+  dashboard. Atajos de teclado 4/5/6 y paleta actualizados.
+- **Tarjetas con banda de encabezado** (fondo suave, título centrado) en
+  toda el área docente y el portal (componente `Card`).
+- **Fix**: el dashboard abría en la pestaña Estudiantes al montar
+  (estado `activeSection` inicializaba en `"students"`); la pestaña por
+  defecto vuelve a ser Dashboard.
+- SmartAlerts, tip de "nuevas funciones" y resumen semanal IA se movieron
+  al final del dashboard (pendiente: convertirlos en notificaciones).
+
+### Portal del estudiante (`StudentPortal.jsx`)
+- KPIs rediseñados al mismo estilo: mi nota actual, **asignaciones
+  calificadas** (nuevo, con pendientes/vencidas), cobertura y mi estado.
+- Los RA conservan la explicación de cada resultado.
+
+### Superadmin
+- Botón **"Vista estudiante"** abre un selector emergente de estudiante
+  (busca por nombre/ID) y muestra su portal; reemplaza al menú
+  "Ver como…" del topbar.
+
+### Backend
+- Nuevo endpoint `GET /brightspace/course/{ou}/content/consumption`
+  (proxy, best-effort) que agrega el user progress de contenido por
+  estudiante usando el scope `content:completions:read` ya autorizado.
+
+### Entorno de desarrollo local (esta carpeta)
+- Backend: venv en `gemelo-digital-backend/.venv`, certificado
+  autofirmado en `gemelo-digital-backend/certs/` (gitignoreado) y `.env`
+  local (gitignoreado; el `BRIGHTSPACE_SCOPE` viejo se comentó porque
+  pedía `grades:grades:read`, un scope ya no autorizado — se usa el
+  default del código). Arranque:
+  `.venv\Scripts\python -m uvicorn main:app --port 8000 --ssl-keyfile certs/localhost-key.pem --ssl-certfile certs/localhost-cert.pem`
+- Frontend: `npm run dev` (proxy a `https://localhost:8000` con cert
+  autofirmado, ya configurado en `vite.config.js`).
+- Los secretos `SESSION_SECRET`/`LTI_STATE_SECRET` se generaron aleatorios
+  para local (obligatorios porque `TOOL_BASE_URL` es https).
+
+### Convenciones
+- Mensajes de commit y títulos de PR **en imperativo** ("ajusta…",
+  "agrega…"), con prefijo tipo conventional commits (feat/fix/style).
+
+### Pendientes que dejó esta sesión
+- Convertir el tip de "nuevas funciones" en un sistema de notificaciones.
+- Verificar en producción que "Contenidos consumidos" muestre datos (si
+  aparece "no disponible", ajustar la ruta del user progress en el
+  endpoint nuevo).
+- Regenerar el documento Word (`docs/build/generate-docx.js`) con este
+  contenido — la versión .docx sigue siendo la de junio.
 
 ---
 
