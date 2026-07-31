@@ -2134,7 +2134,7 @@ const contentKpis = useMemo(() => {
           </div>
         </div>
 
-        {/* ── KPIs principales del curso ── */}
+        {/* ── KPIs principales del curso (estilo tarjetas centradas) ── */}
         <div
           className="fade-up fade-up-1"
           style={{
@@ -2142,96 +2142,68 @@ const contentKpis = useMemo(() => {
             gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(4, 1fr)",
             gap: 16,
             marginBottom: 16,
+            alignItems: "stretch",
           }}
         >
-          {/* Estudiantes */}
-          <div className="kpi-card" style={{ display: "flex", alignItems: "center", gap: 14 }}>
-            <div style={{
-              width: 64, height: 64, borderRadius: "50%", flexShrink: 0,
-              background: "var(--brand-light)", display: "flex", alignItems: "center",
-              justifyContent: "center", fontSize: 26,
-            }} aria-hidden="true">👥</div>
-            <div style={{ minWidth: 0 }}>
-              <div style={{ fontSize: 11, fontWeight: 800, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.06em" }}>
-                Estudiantes
-              </div>
-              <div style={{ fontSize: 28, fontWeight: 900, color: "var(--text)", fontFamily: "var(--font-mono)", lineHeight: 1.15 }}>
-                {studentsCount || "—"}
-              </div>
-              <div style={{ fontSize: 11, color: "var(--muted)" }}>Inscritos en el curso</div>
+          {/* Nota promedio — donut grande */}
+          <div className="kpi-card" style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 10, padding: isMobile ? 14 : 18, textAlign: "center" }}>
+            <div style={{ fontSize: 13, fontWeight: 800, color: "var(--text)", letterSpacing: "0.01em" }}>
+              Nota promedio
             </div>
-          </div>
-
-          {/* Nota promedio */}
-          <div className="kpi-card" style={{ display: "flex", alignItems: "center", gap: 14 }}>
             <CircularRing
               pct={avgPerfPct != null && Number(avgPerfPct) > 0 ? avgPerfPct : 0}
-              size={64}
-              stroke={7}
+              size={isMobile ? 92 : 118}
+              stroke={12}
               color={avgPerfPct != null && Number(avgPerfPct) > 0 ? colorForPct(avgPerfPct, thresholds) : "var(--border)"}
               label={avgPerfPct == null || Number(avgPerfPct) === 0 ? "—" : fmtGrade10FromPct(avgPerfPct)}
-              fontSize={13}
+              fontSize={isMobile ? 16 : 21}
             />
-            <div style={{ minWidth: 0 }}>
-              <div style={{ fontSize: 11, fontWeight: 800, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.06em" }}>
-                Nota promedio
-              </div>
-              <div style={{ fontSize: 28, fontWeight: 900, color: avgPerfPct != null && Number(avgPerfPct) > 0 ? colorForPct(avgPerfPct, thresholds) : "var(--muted)", fontFamily: "var(--font-mono)", lineHeight: 1.15 }}>
-                {avgPerfPct == null || Number(avgPerfPct) === 0 ? "—" : fmtGrade10FromPct(avgPerfPct)}
-              </div>
-              <div style={{ fontSize: 11, color: "var(--muted)" }}>Escala 0–10 · gradebook</div>
-            </div>
+            <div style={{ fontSize: 11, color: "var(--muted)" }}>Escala 0–10 · gradebook</div>
           </div>
 
-          {/* En riesgo */}
-          <div className="kpi-card" style={{ display: "flex", alignItems: "center", gap: 14 }}>
-            <CircularRing
-              pct={atRiskPct != null ? Math.min(100, atRiskPct) : 0}
-              size={64}
-              stroke={7}
-              color={
-                atRiskPct == null ? "var(--border)"
-                  : atRiskPct > 40 ? COLORS.critical
-                  : atRiskPct > 20 ? COLORS.watch
-                  : COLORS.ok
-              }
-              label={atRiskPct == null ? "—" : String(atRiskCount)}
-              fontSize={14}
-            />
-            <div style={{ minWidth: 0 }}>
-              <div style={{ fontSize: 11, fontWeight: 800, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.06em" }}>
-                En riesgo
-              </div>
-              <div style={{
-                fontSize: 28, fontWeight: 900, fontFamily: "var(--font-mono)", lineHeight: 1.15,
-                color: atRiskPct == null ? "var(--muted)" : atRiskPct > 40 ? COLORS.critical : atRiskPct > 20 ? COLORS.watch : COLORS.ok,
-              }}>
-                {atRiskPct == null ? "—" : atRiskCount}
-              </div>
-              <div style={{ fontSize: 11, color: "var(--muted)" }}>
-                {atRiskPct == null ? "Sin datos aún" : `${fmtPct(atRiskPct)} del curso (alto + medio)`}
-              </div>
+          {/* Estudiantes — número grande */}
+          <div className="kpi-card" style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 8, padding: isMobile ? 14 : 18, textAlign: "center" }}>
+            <div style={{ fontSize: 13, fontWeight: 800, color: "var(--text)", letterSpacing: "0.01em" }}>
+              Estudiantes
             </div>
+            <div style={{ fontSize: isMobile ? 34 : 46, fontWeight: 900, color: "var(--text)", fontFamily: "var(--font-mono)", lineHeight: 1 }}>
+              {studentsCount || "—"}
+            </div>
+            <div style={{ fontSize: 11, color: "var(--muted)" }}>Inscritos en el curso</div>
           </div>
 
-          {/* Contenidos creados */}
-          <div className="kpi-card" style={{ display: "flex", alignItems: "center", gap: 14 }}>
+          {/* En riesgo — número grande coloreado */}
+          <div className="kpi-card" style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 8, padding: isMobile ? 14 : 18, textAlign: "center" }}>
+            <div style={{ fontSize: 13, fontWeight: 800, color: "var(--text)", letterSpacing: "0.01em" }}>
+              En riesgo
+            </div>
             <div style={{
-              width: 64, height: 64, borderRadius: "50%", flexShrink: 0,
-              background: contentKpis?.createdCount != null ? `${contentRhythmMeta.bg}` : "var(--bg)",
-              display: "flex", alignItems: "center", justifyContent: "center", fontSize: 26,
-            }} aria-hidden="true">📚</div>
-            <div style={{ minWidth: 0 }}>
-              <div style={{ fontSize: 11, fontWeight: 800, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.06em" }}>
-                Contenidos creados
-              </div>
-              <div style={{ fontSize: 28, fontWeight: 900, color: contentKpis?.createdCount != null ? contentRhythmMeta.color : "var(--muted)", fontFamily: "var(--font-mono)", lineHeight: 1.15 }}>
-                {contentKpis?.createdCount ?? "—"}
-              </div>
-              <div style={{ fontSize: 11, color: "var(--muted)" }}>
-                {contentKpis?.minExpected != null ? `Mínimo esperado: ${contentKpis.minExpected}` : "Desde inicio del curso"}
-              </div>
+              fontSize: isMobile ? 34 : 46, fontWeight: 900, fontFamily: "var(--font-mono)", lineHeight: 1,
+              color: atRiskPct == null ? "var(--muted)" : atRiskPct > 40 ? COLORS.critical : atRiskPct > 20 ? COLORS.watch : COLORS.ok,
+            }}>
+              {atRiskPct == null ? "—" : atRiskCount}
             </div>
+            <div style={{ fontSize: 11, color: "var(--muted)" }}>
+              {atRiskPct == null ? "Sin datos aún" : `${fmtPct(atRiskPct)} del curso (alto + medio)`}
+            </div>
+          </div>
+
+          {/* Contenidos creados — número grande + ritmo */}
+          <div className="kpi-card" style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 8, padding: isMobile ? 14 : 18, textAlign: "center" }}>
+            <div style={{ fontSize: 13, fontWeight: 800, color: "var(--text)", letterSpacing: "0.01em" }}>
+              Contenidos creados
+            </div>
+            <div style={{ fontSize: isMobile ? 34 : 46, fontWeight: 900, color: contentKpis?.createdCount != null ? contentRhythmMeta.color : "var(--muted)", fontFamily: "var(--font-mono)", lineHeight: 1 }}>
+              {contentKpis?.createdCount ?? "—"}
+            </div>
+            <div style={{ fontSize: 11, color: "var(--muted)" }}>
+              {contentKpis?.minExpected != null ? `Mínimo esperado: ${contentKpis.minExpected}` : "Desde inicio del curso"}
+            </div>
+            {contentKpis?.createdCount != null && (
+              <span className="badge" style={{ background: contentRhythmMeta.bg, color: contentRhythmMeta.color, fontSize: 10 }}>
+                {contentRhythmMeta.label}
+              </span>
+            )}
           </div>
         </div>
 
