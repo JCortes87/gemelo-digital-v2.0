@@ -50,7 +50,9 @@ function AssignmentsPanel({ orgUnitId }) {
 
   const { rows, stats } = useMemo(() => {
     const now = new Date();
-    const rows = (folders || []).map((f) => {
+    // Solo asignaciones publicadas (no ocultas para los estudiantes)
+    const visible = (folders || []).filter((f) => f?.IsHidden !== true);
+    const rows = visible.map((f) => {
       const due =
         toDate(f?.DueDate) || toDate(f?.Availability?.EndDate) || null;
       const start = toDate(f?.Availability?.StartDate) || null;
@@ -142,7 +144,7 @@ function AssignmentsPanel({ orgUnitId }) {
   }
 
   const miniStats = [
-    { label: "Creadas", value: stats.created, color: "var(--brand)", bg: "var(--brand-light)", icon: "📝" },
+    { label: "Activas", value: stats.created, color: "var(--brand)", bg: "var(--brand-light)", icon: "📝" },
     { label: "Con entregas", value: stats.withSubmissions, color: COLORS.ok, bg: "var(--ok-bg)", icon: "📥" },
     { label: "Calificadas", value: stats.graded, color: COLORS.brand, bg: "var(--brand-light)", icon: "✅" },
     { label: "Vencidas", value: stats.overdue, color: stats.overdue > 0 ? COLORS.critical : "var(--muted)", bg: stats.overdue > 0 ? "var(--critical-bg)" : "var(--bg)", icon: "⏰" },

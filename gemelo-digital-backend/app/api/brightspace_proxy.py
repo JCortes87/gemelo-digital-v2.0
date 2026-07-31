@@ -845,7 +845,16 @@ async def brightspace_content_consumption(request: Request, org_unit_id: int):
 
     sem = asyncio.Semaphore(8)
     per_user: dict = {}
+    per_user_topics: dict = {}
     method = None
+
+    def _topic_id_of(rec) -> Optional[str]:
+        if not isinstance(rec, dict):
+            return None
+        for k in ("ContentObjectId", "TopicId", "ObjectId", "Id"):
+            if rec.get(k) is not None:
+                return str(rec[k])
+        return None
 
     # ── Estrategia 1: user progress por estudiante ──────────────────────
     async def _progress_for(uid: str):
@@ -856,19 +865,24 @@ async def brightspace_content_consumption(request: Request, org_unit_id: int):
         async with sem:
             status, data = await _bs_get_cached(url, headers)
         if status != 200:
-            return uid, None
+            return uid, None, []
         items = data if isinstance(data, list) else (data.get("Objects") or data.get("Items") or [])
         if not isinstance(items, list):
-            return uid, None
-        return uid, len(items)
+            return uid, None, []
+        topics = [t for t in (_topic_id_of(it) for it in items) if t]
+        return uid, len(items), topics[:500]
 
     if user_ids:
-        probe_uid, probe_val = await _progress_for(user_ids[0])
+        probe_uid, probe_val, probe_topics = await _progress_for(user_ids[0])
         if probe_val is not None:
             method = "userprogress"
             per_user[probe_uid] = probe_val
+            per_user_topics[probe_uid] = probe_topics
             rest = await asyncio.gather(*[_progress_for(u) for u in user_ids[1:100]])
-            per_user.update({uid: n for uid, n in rest if n is not None})
+            for uid, n, topics in rest:
+                if n is not None:
+                    per_user[uid] = n
+                    per_user_topics[uid] = topics
 
     # ── Estrategia 2 (fallback): completions por tema ───────────────────
     # Una llamada por tema devuelve los registros de TODOS los usuarios.
@@ -897,16 +911,16 @@ async def brightspace_content_consumption(request: Request, org_unit_id: int):
             async with sem:
                 status, data = await _bs_get_cached(url, headers)
             if status != 200:
-                return []
+                return tid, []
             items = data if isinstance(data, list) else (data.get("Objects") or data.get("Items") or [])
-            return items if isinstance(items, list) else []
+            return tid, (items if isinstance(items, list) else [])
 
         if topic_ids:
             all_completions = await asyncio.gather(
                 *[_completions_for_topic(t) for t in topic_ids[:200]]
             )
             found_any = False
-            for records in all_completions:
+            for tid, records in all_completions:
                 for rec in records:
                     if not isinstance(rec, dict):
                         continue
@@ -916,16 +930,19 @@ async def brightspace_content_consumption(request: Request, org_unit_id: int):
                     found_any = True
                     key = str(uid)
                     per_user[key] = per_user.get(key, 0) + 1
+                    per_user_topics.setdefault(key, []).append(str(tid))
             if found_any:
                 method = "topic_completions"
                 # Los estudiantes sin registros quedan en 0 explícito para
                 # que el frontend los cuente en el promedio.
                 for uid in user_ids:
                     per_user.setdefault(uid, 0)
+                    per_user_topics.setdefault(uid, [])
 
     return {
         "orgUnitId": org_unit_id,
         "perUser": per_user,
+        "perUserTopics": per_user_topics,
         "method": method,
         "usersQueried": len(user_ids),
         "usersWithData": len(per_user),
