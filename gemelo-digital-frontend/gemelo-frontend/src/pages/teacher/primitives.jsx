@@ -195,20 +195,24 @@ export function Card({ title, right, children, className = "", style = {}, accen
       }}
     >
       {accent && (
-        <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 3, background: `var(--${accent})`, borderRadius: "var(--radius-lg) var(--radius-lg) 0 0" }} />
+        <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 3, background: `var(--${accent})`, borderRadius: "var(--radius-lg) var(--radius-lg) 0 0", zIndex: 1 }} />
       )}
       {(title || right) && (
         <div
           style={{
+            // Banda de encabezado tipo dashboard: fondo suave de borde a borde
             display: "flex", alignItems: "center", justifyContent: "space-between",
-            marginBottom: 16, gap: 12,
-            paddingTop: accent ? 4 : 0,
+            gap: 12,
+            background: "var(--bg)",
+            margin: "-20px -20px 14px",
+            padding: accent ? "13px 16px 10px" : "10px 16px",
+            borderBottom: "1px solid var(--border)",
           }}
         >
-          <div style={{ fontSize: 14, fontWeight: 800, color: "var(--text)", letterSpacing: "-0.02em", lineHeight: 1.3 }}>
+          <div style={{ fontSize: 13, fontWeight: 800, color: "var(--text)", letterSpacing: "-0.01em", lineHeight: 1.3, flex: 1, textAlign: "center" }}>
             {title}
           </div>
-          <div style={{ flexShrink: 0 }}>{right}</div>
+          {right != null && <div style={{ flexShrink: 0 }}>{right}</div>}
         </div>
       )}
       {children}
