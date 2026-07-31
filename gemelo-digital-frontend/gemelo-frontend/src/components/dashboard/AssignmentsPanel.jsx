@@ -149,39 +149,36 @@ function AssignmentsPanel({ orgUnitId }) {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-      {/* Mini KPIs — fichas centradas con icono */}
+      {/* Mini KPIs — una sola fila dentro de la tarjeta, separados por líneas */}
       <div
         style={{
           display: "grid",
-          gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))",
-          gap: 10,
+          gridTemplateColumns: "repeat(auto-fit, minmax(110px, 1fr))",
         }}
       >
-        {miniStats.map((s) => (
+        {miniStats.map((s, i) => (
           <div
             key={s.label}
             style={{
-              padding: "14px 12px",
-              border: "1px solid var(--border)",
-              borderRadius: 12,
-              background: "var(--card)",
+              padding: "6px 8px",
+              borderLeft: i > 0 ? "1px solid var(--border)" : "none",
               display: "flex",
               flexDirection: "column",
               alignItems: "center",
-              gap: 6,
+              gap: 5,
               textAlign: "center",
             }}
           >
             <div
               style={{
-                width: 38,
-                height: 38,
+                width: 34,
+                height: 34,
                 borderRadius: 10,
                 background: s.bg,
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
-                fontSize: 18,
+                fontSize: 16,
               }}
               aria-hidden="true"
             >
@@ -189,7 +186,7 @@ function AssignmentsPanel({ orgUnitId }) {
             </div>
             <div
               style={{
-                fontSize: 24,
+                fontSize: 22,
                 fontWeight: 900,
                 fontFamily: "var(--font-mono)",
                 color: s.color,

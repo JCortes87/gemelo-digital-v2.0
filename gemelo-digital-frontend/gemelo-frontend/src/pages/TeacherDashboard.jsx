@@ -51,7 +51,7 @@ import { injectStyles } from "./teacher/dashboardStyles";
 import useMediaQuery from "../hooks/useMediaQuery";
 import {
   StatusBadge, CircularRing, ThresholdsModal, Card, Stat, Divider,
-  ProgressBar, InfoTooltip, SortTh, CoverageBars,
+  ProgressBar, InfoTooltip, SortTh, CoverageBars, GaugeMeter,
 } from "./teacher/primitives";
 import { AnnouncementsModal, OnboardingTutorial } from "./teacher/onboarding";
 import {
@@ -2213,7 +2213,7 @@ const contentKpis = useMemo(() => {
           className="fade-up fade-up-2"
           style={{
             display: "grid",
-            gridTemplateColumns: isMobile ? "1fr" : isNarrow ? "1fr 1fr" : "minmax(260px,2fr) minmax(180px,1fr) minmax(200px,1.4fr) minmax(180px,1.2fr)",
+            gridTemplateColumns: isMobile ? "1fr" : isNarrow ? "1fr 1fr" : "minmax(240px,1fr) minmax(240px,1fr) minmax(260px,1.15fr)",
             gap: 12,
             marginBottom: 12,
             alignItems: "start",
@@ -2300,34 +2300,14 @@ const contentKpis = useMemo(() => {
           {/* ── Riesgo académico + Distribución apilados en 1 columna ── */}
           <div style={{ display: "flex", flexDirection: "column", gap: 12, order: 1 }}>
             <Card title={<span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>⚠️ Riesgo académico <InfoTooltip text="Distribución de los estudiantes según su nota actual: Alto (<5.0), Medio (5.0–7.0), Bajo (≥7.0). Calculado solo con notas reales del gradebook, excluye columnas 'Corte'." /></span>} accent="pending">
-              <div
-                role="img"
-                aria-label="Gráfico de pastel: distribución de estudiantes por nivel de riesgo académico"
-                style={{ width: "100%", height: 200 }}
-              >
-                <ResponsiveContainer>
-                  <PieChart>
-                    <Pie
-                      data={riskData}
-                      dataKey="value"
-                      nameKey="name"
-                      innerRadius={55}
-                      outerRadius={82}
-                      paddingAngle={3}
-                    >
-                      {riskData.map((entry) => (
-                        <Cell key={entry.key} fill={colorForRisk(entry.key)} />
-                      ))}
-                    </Pie>
-                    <Tooltip
-                      formatter={(value) => {
-                        const v = Number(value || 0);
-                        const pct = totalStudents > 0 ? (v / totalStudents) * 100 : 0;
-                        return [`${v} (${pct.toFixed(1)}%)`, "Estudiantes"];
-                      }}
-                    />
-                  </PieChart>
-                </ResponsiveContainer>
+              <div style={{ display: "flex", justifyContent: "center", padding: "4px 0 6px" }}>
+                <GaugeMeter
+                  pct={atRiskPct ?? 0}
+                  size={170}
+                  centerLabel={atRiskPct == null ? "—" : fmtPct(atRiskPct)}
+                  centerColor={atRiskPct == null ? "var(--muted)" : atRiskPct > 40 ? COLORS.critical : atRiskPct > 20 ? COLORS.watch : COLORS.ok}
+                  sublabel={totalStudents ? `${atRiskCount} de ${totalStudents} estudiantes en riesgo` : "Sin datos aún"}
+                />
               </div>
 
               <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
@@ -2504,7 +2484,10 @@ const contentKpis = useMemo(() => {
           </Card>
           </div>
 
-          <div ref={learningOutcomesRef} style={{ order: 4 }}>
+        </div>
+
+        {/* ── Resultados de aprendizaje (horizontal, ancho completo) ── */}
+        <div ref={learningOutcomesRef} className="fade-up fade-up-2" style={{ marginBottom: 12 }}>
           <Card
             title={<span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>🎯 Resultados de aprendizaje <InfoTooltip text="Resultados de Aprendizaje (RA) del curso ordenados de menor a mayor desempeño. El RA en primera posición es donde tus estudiantes están más débiles — prioriza refuerzo ahí." /></span>}
             accent="brand"
@@ -2574,6 +2557,7 @@ const contentKpis = useMemo(() => {
                   })}
                 </div>
               )}
+              <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "repeat(auto-fit, minmax(270px, 1fr))", gap: 8 }}>
               {(raTab === "quiz" ? quizOutcomesData : learningOutcomesData)
                 .slice()
                 .sort((a, b) => a.avgPct - b.avgPct)
@@ -2645,6 +2629,7 @@ const contentKpis = useMemo(() => {
                     </div>
                   );
                 })}
+              </div>
 
               {!(raTab === "quiz" ? quizOutcomesData : learningOutcomesData).length && (
                 <div className="empty-state">
@@ -2663,8 +2648,6 @@ const contentKpis = useMemo(() => {
               )}
             </div>
           </Card>
-        </div>
-
         </div>
 
         {/* ── Estado de asignaciones (entregado / calificado / vencido) ── */}
