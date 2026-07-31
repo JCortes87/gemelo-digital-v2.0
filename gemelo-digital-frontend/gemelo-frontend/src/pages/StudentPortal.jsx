@@ -86,14 +86,23 @@ function StatusBadge({ status }) {
   );
 }
 
-function Card({ title, right, children, accent }) {
+function Card({ title, right, children, accent, style = {} }) {
   return (
-    <div className="kpi-card" style={{ borderRadius: "var(--radius-lg)", boxShadow: "var(--shadow)", border: "1px solid var(--border)", position: "relative", overflow: "hidden" }}>
-      {accent && <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 3, background: `var(--${accent})`, borderRadius: "var(--radius-lg) var(--radius-lg) 0 0" }} />}
+    <div className="kpi-card" style={{ ...style, borderRadius: "var(--radius-lg)", boxShadow: "var(--shadow)", border: "1px solid var(--border)", position: "relative", overflow: "hidden" }}>
+      {accent && <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 3, background: `var(--${accent})`, borderRadius: "var(--radius-lg) var(--radius-lg) 0 0", zIndex: 1 }} />}
       {(title || right) && (
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16, gap: 12, paddingTop: accent ? 4 : 0 }}>
-          <div style={{ fontSize: 14, fontWeight: 800, color: "var(--text)", letterSpacing: "-0.02em", lineHeight: 1.3 }}>{title}</div>
-          <div style={{ flexShrink: 0 }}>{right}</div>
+        <div
+          style={{
+            // Banda de encabezado tipo dashboard (igual que la vista docente)
+            display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12,
+            background: "var(--bg)",
+            margin: "-20px -20px 14px",
+            padding: accent ? "13px 16px 10px" : "10px 16px",
+            borderBottom: "1px solid var(--border)",
+          }}
+        >
+          <div style={{ fontSize: 13, fontWeight: 800, color: "var(--text)", letterSpacing: "-0.01em", lineHeight: 1.3, flex: 1, textAlign: "center" }}>{title}</div>
+          {right != null && <div style={{ flexShrink: 0 }}>{right}</div>}
         </div>
       )}
       {children}
@@ -748,56 +757,92 @@ export default function StudentPortal({ orgUnitIdOverride, userIdOverride, allow
           </div>
         </div>
 
-        {/* ── KPI Hero Row ── */}
-        <div style={{ display: "flex", gap: 12, alignItems: "stretch", flexWrap: "wrap", marginBottom: 20 }}>
-          {/* Nota ring */}
-          <div style={{ flex: "1 1 140px", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "20px 10px", background: "var(--card)", borderRadius: 16, border: "1px solid var(--border)", boxShadow: "var(--shadow)", gap: 6 }}>
+        {/* ── KPI Hero Row (estilo tarjetas centradas, igual que vista docente) ── */}
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(4, 1fr)",
+            gap: 12,
+            alignItems: "stretch",
+            marginBottom: 12,
+          }}
+        >
+          {/* Mi nota actual — donut */}
+          <div className="kpi-card" style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "flex-start", gap: 8, padding: isMobile ? 12 : 14, textAlign: "center" }}>
+            <div style={{ fontSize: 12, fontWeight: 800, color: "var(--text)", letterSpacing: "0.01em" }}>
+              Mi nota actual
+            </div>
             <CircularRing
               pct={summary?.currentPerformancePct ?? 0}
-              size={100} stroke={9}
+              size={isMobile ? 84 : 96} stroke={10}
               color={colorForPct(summary?.currentPerformancePct, thresholds)}
               label={fmtGrade10FromPct(summary?.currentPerformancePct)}
-              sublabel="/10" fontSize={24}
+              sublabel="/10" fontSize={isMobile ? 16 : 19}
             />
-            <div style={{ fontSize: 10, fontWeight: 800, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.08em" }}>Mi Nota Actual</div>
+            <div style={{ fontSize: 10, color: "var(--muted)" }}>Escala 0–10 · gradebook</div>
           </div>
 
-          {/* Cobertura ring */}
-          <div style={{ flex: "1 1 140px", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "20px 10px", background: "var(--card)", borderRadius: 16, border: "1px solid var(--border)", boxShadow: "var(--shadow)", gap: 6 }}>
+          {/* Asignaciones completadas / calificadas — donut */}
+          <div className="kpi-card" style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "flex-start", gap: 8, padding: isMobile ? 12 : 14, textAlign: "center" }}>
+            <div style={{ fontSize: 12, fontWeight: 800, color: "var(--text)", letterSpacing: "0.01em" }}>
+              Asignaciones
+            </div>
+            <CircularRing
+              pct={nonCorteItems.length > 0 ? (gradedItems.length / nonCorteItems.length) * 100 : 0}
+              size={isMobile ? 84 : 96} stroke={10}
+              color={nonCorteItems.length > 0 ? colorForPct((gradedItems.length / nonCorteItems.length) * 100, thresholds) : "var(--border)"}
+              label={nonCorteItems.length > 0 ? fmtPct((gradedItems.length / nonCorteItems.length) * 100) : "—"}
+              fontSize={isMobile ? 13 : 15}
+            />
+            <div style={{ fontSize: 10, color: "var(--muted)" }}>
+              {gradedItems.length}/{nonCorteItems.length} calificadas
+              {pendingItems.length > 0 ? ` · ${pendingItems.length} pendientes` : ""}
+              {overdueItems.length > 0 ? ` · ${overdueItems.length} vencidas` : ""}
+            </div>
+          </div>
+
+          {/* Cobertura — donut */}
+          <div className="kpi-card" style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "flex-start", gap: 8, padding: isMobile ? 12 : 14, textAlign: "center" }}>
+            <div style={{ fontSize: 12, fontWeight: 800, color: "var(--text)", letterSpacing: "0.01em" }}>
+              Cobertura
+            </div>
             <CircularRing
               pct={summary?.coveragePct ?? 0}
-              size={100} stroke={9}
+              size={isMobile ? 84 : 96} stroke={10}
               color={colorForPct(summary?.coveragePct, thresholds)}
               label={fmtPct(summary?.coveragePct)}
-              fontSize={16}
+              fontSize={isMobile ? 13 : 15}
             />
-            <div style={{ fontSize: 10, fontWeight: 800, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.08em" }}>Cobertura</div>
             <div style={{ fontSize: 10, color: "var(--muted)" }}>
-              {summary?.gradedItemsCount ?? 0}/{summary?.totalItemsCount ?? 0} ítems
+              {summary?.gradedItemsCount ?? 0}/{summary?.totalItemsCount ?? 0} ítems evaluados
             </div>
           </div>
 
-          {/* Risk + pending info */}
-          <div style={{ flex: "2 1 200px", display: "flex", flexDirection: "column", justifyContent: "center", padding: "20px 16px", background: "var(--card)", borderRadius: 16, border: "1px solid var(--border)", boxShadow: "var(--shadow)", gap: 10 }}>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-              <span style={{ fontSize: 10, fontWeight: 800, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.08em" }}>Mi Estado</span>
+          {/* Mi estado — badge + avisos */}
+          <div className="kpi-card" style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "flex-start", gap: 8, padding: isMobile ? 12 : 14, textAlign: "center" }}>
+            <div style={{ fontSize: 12, fontWeight: 800, color: "var(--text)", letterSpacing: "0.01em" }}>
+              Mi estado
+            </div>
+            <div style={{ marginTop: 4 }}>
               <StatusBadge status={risk} />
             </div>
-            {pendingUngradedPct > 0 && (
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "6px 10px", borderRadius: 8, background: "var(--watch-bg)", border: "1px solid var(--watch-border)" }}>
-                <span style={{ fontSize: 11, fontWeight: 700, color: "var(--watch)" }}>⏳ Pendiente de calificación</span>
-                <span style={{ fontSize: 12, fontWeight: 900, fontFamily: "var(--font-mono)", color: "var(--watch)" }}>{fmtPct(pendingUngradedPct)}</span>
-              </div>
-            )}
-            {overdueUnscoredPct > 0 && (
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "6px 10px", borderRadius: 8, background: "var(--critical-bg)", border: "1px solid var(--critical-border)" }}>
-                <span style={{ fontSize: 11, fontWeight: 700, color: "var(--critical)" }}>🔴 Entregas vencidas</span>
-                <span style={{ fontSize: 12, fontWeight: 900, fontFamily: "var(--font-mono)", color: "var(--critical)" }}>{fmtPct(overdueUnscoredPct)}</span>
-              </div>
-            )}
-            {pendingUngradedPct === 0 && overdueUnscoredPct === 0 && (
-              <div style={{ fontSize: 12, color: "var(--ok)", fontWeight: 700 }}>✅ Sin entregas pendientes</div>
-            )}
+            <div style={{ display: "flex", flexDirection: "column", gap: 6, width: "100%", marginTop: 2 }}>
+              {pendingUngradedPct > 0 && (
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "5px 9px", borderRadius: 8, background: "var(--watch-bg)", border: "1px solid var(--watch-border)" }}>
+                  <span style={{ fontSize: 10, fontWeight: 700, color: "var(--watch)" }}>⏳ Pend. calificación</span>
+                  <span style={{ fontSize: 11, fontWeight: 900, fontFamily: "var(--font-mono)", color: "var(--watch)" }}>{fmtPct(pendingUngradedPct)}</span>
+                </div>
+              )}
+              {overdueUnscoredPct > 0 && (
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "5px 9px", borderRadius: 8, background: "var(--critical-bg)", border: "1px solid var(--critical-border)" }}>
+                  <span style={{ fontSize: 10, fontWeight: 700, color: "var(--critical)" }}>🔴 Entregas vencidas</span>
+                  <span style={{ fontSize: 11, fontWeight: 900, fontFamily: "var(--font-mono)", color: "var(--critical)" }}>{fmtPct(overdueUnscoredPct)}</span>
+                </div>
+              )}
+              {pendingUngradedPct === 0 && overdueUnscoredPct === 0 && (
+                <div style={{ fontSize: 11, color: "var(--ok)", fontWeight: 700 }}>✅ Sin entregas pendientes</div>
+              )}
+            </div>
           </div>
         </div>
 
@@ -824,7 +869,7 @@ export default function StudentPortal({ orgUnitIdOverride, userIdOverride, allow
         {/* ── Resultados de Aprendizaje ── */}
         {macroUnits.length > 0 && (
           <div style={{ marginBottom: 20 }}>
-            <Card title="Mis Resultados de Aprendizaje" accent="brand">
+            <Card title="🎯 Mis Resultados de Aprendizaje" accent="brand">
               <div style={{ display: "flex", flexWrap: "wrap", gap: 10, justifyContent: "center", marginBottom: 14 }}>
                 {macroUnits.map((item) => {
                   const ringColor = colorForPct(item.pct, thresholds);
