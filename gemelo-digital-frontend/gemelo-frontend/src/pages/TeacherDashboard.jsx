@@ -2213,13 +2213,13 @@ const contentKpis = useMemo(() => {
           className="fade-up fade-up-2"
           style={{
             display: "grid",
-            gridTemplateColumns: isMobile ? "1fr" : isNarrow ? "1fr 1fr" : "minmax(240px,1fr) minmax(240px,1fr) minmax(260px,1.15fr)",
+            gridTemplateColumns: isMobile ? "1fr" : isNarrow ? "1fr 1fr" : "repeat(4, minmax(220px, 1fr))",
             gap: 12,
             marginBottom: 12,
             alignItems: "start",
           }}
         >
-          <div ref={overviewRef} style={{ order: 2 }}>
+          <div ref={overviewRef} style={{ order: 3 }}>
           <Card title={<span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>📚 Contenidos y cobertura</span>} right={<StatusBadge status={courseStatus} />} accent="brand">
             <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
               <div
@@ -2297,13 +2297,13 @@ const contentKpis = useMemo(() => {
           </Card>
           </div>
 
-          {/* ── Riesgo académico + Distribución apilados en 1 columna ── */}
-          <div style={{ display: "flex", flexDirection: "column", gap: 12, order: 1 }}>
+          {/* ── Riesgo académico ── */}
+          <div style={{ order: 1 }}>
             <Card title={<span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>⚠️ Riesgo académico <InfoTooltip text="Distribución de los estudiantes según su nota actual: Alto (<5.0), Medio (5.0–7.0), Bajo (≥7.0). Calculado solo con notas reales del gradebook, excluye columnas 'Corte'." /></span>} accent="pending">
               <div style={{ display: "flex", justifyContent: "center", padding: "4px 0 6px" }}>
                 <GaugeMeter
                   pct={atRiskPct ?? 0}
-                  size={170}
+                  size={150}
                   centerLabel={atRiskPct == null ? "—" : fmtPct(atRiskPct)}
                   centerColor={atRiskPct == null ? "var(--muted)" : atRiskPct > 40 ? COLORS.critical : atRiskPct > 20 ? COLORS.watch : COLORS.ok}
                   sublabel={totalStudents ? `${atRiskCount} de ${totalStudents} estudiantes en riesgo` : "Sin datos aún"}
@@ -2346,11 +2346,14 @@ const contentKpis = useMemo(() => {
                 })}
               </div>
             </Card>
+          </div>
 
+          {/* ── Distribución de notas ── */}
+          <div style={{ order: 2 }}>
             <GradeDistributionCard studentRows={studentRows} thresholds={thresholds} />
           </div>
 
-          <div ref={priorityRef} style={{ order: 3 }}>
+          <div ref={priorityRef} style={{ order: 4 }}>
           <Card
             title={<span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>🚨 Estudiantes prioritarios <InfoTooltip text="Estudiantes que requieren tu atención inmediata: nota crítica (<5), cobertura baja (<60%), ítems vencidos sin calificar o pendientes de calificación. Ordenados por nivel de riesgo." /></span>} accent="critical"
             right={
@@ -2369,7 +2372,7 @@ const contentKpis = useMemo(() => {
                 <div style={{ fontSize: 11, color: "var(--muted)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: 4 }}>
                   Nota &lt;5 · cobertura baja · ítems vencidos
                 </div>
-                <div style={{ overflowY: "auto", maxHeight: 420, paddingRight: 2, display: "flex", flexDirection: "column", gap: 6 }}>
+                <div style={{ overflowY: "auto", maxHeight: 300, paddingRight: 2, display: "flex", flexDirection: "column", gap: 6 }}>
                 {assignmentRiskData.map((item) => {
                   const covColor = colorForPct(item.coveragePct, thresholds);
                   const hasOverdue = item.notSubmittedWeightPct > 0;
@@ -2473,7 +2476,7 @@ const contentKpis = useMemo(() => {
                 </div>
               </div>
             ) : (
-              <div className="empty-state" style={{ minHeight: 160 }}>
+              <div className="empty-state" style={{ minHeight: 110 }}>
                 <span className="empty-state-icon">✅</span>
                 <span style={{ fontSize: 12 }}>Sin estudiantes críticos</span>
                 <span style={{ fontSize: 11, color: "var(--muted)", textAlign: "center" }}>
@@ -2557,7 +2560,7 @@ const contentKpis = useMemo(() => {
                   })}
                 </div>
               )}
-              <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "repeat(auto-fit, minmax(270px, 1fr))", gap: 8 }}>
+              <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "repeat(2, 1fr)", gap: 8 }}>
               {(raTab === "quiz" ? quizOutcomesData : learningOutcomesData)
                 .slice()
                 .sort((a, b) => a.avgPct - b.avgPct)
