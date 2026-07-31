@@ -2216,11 +2216,11 @@ const contentKpis = useMemo(() => {
             gridTemplateColumns: isMobile ? "1fr" : isNarrow ? "1fr 1fr" : "repeat(4, minmax(220px, 1fr))",
             gap: 12,
             marginBottom: 12,
-            alignItems: "start",
+            alignItems: "stretch",
           }}
         >
-          <div ref={overviewRef} style={{ order: 3 }}>
-          <Card title={<span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>📚 Contenidos y cobertura</span>} right={<StatusBadge status={courseStatus} />} accent="brand">
+          <div ref={overviewRef} style={{ order: 3, display: "flex" }}>
+          <Card style={{ flex: 1 }} title={<span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>📚 Contenidos y cobertura</span>} right={<StatusBadge status={courseStatus} />} accent="brand">
             <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
               <div
                 style={{
@@ -2298,8 +2298,8 @@ const contentKpis = useMemo(() => {
           </div>
 
           {/* ── Riesgo académico ── */}
-          <div style={{ order: 1 }}>
-            <Card title={<span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>⚠️ Riesgo académico <InfoTooltip text="Distribución de los estudiantes según su nota actual: Alto (<5.0), Medio (5.0–7.0), Bajo (≥7.0). Calculado solo con notas reales del gradebook, excluye columnas 'Corte'." /></span>} accent="pending">
+          <div style={{ order: 1, display: "flex" }}>
+            <Card style={{ flex: 1 }} title={<span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>⚠️ Riesgo académico <InfoTooltip text="Distribución de los estudiantes según su nota actual: Alto (<5.0), Medio (5.0–7.0), Bajo (≥7.0). Calculado solo con notas reales del gradebook, excluye columnas 'Corte'." /></span>} accent="pending">
               <div style={{ display: "flex", justifyContent: "center", padding: "4px 0 6px" }}>
                 <GaugeMeter
                   pct={atRiskPct ?? 0}
@@ -2349,12 +2349,13 @@ const contentKpis = useMemo(() => {
           </div>
 
           {/* ── Distribución de notas ── */}
-          <div style={{ order: 2 }}>
-            <GradeDistributionCard studentRows={studentRows} thresholds={thresholds} />
+          <div style={{ order: 2, display: "flex" }}>
+            <GradeDistributionCard studentRows={studentRows} thresholds={thresholds} style={{ flex: 1 }} />
           </div>
 
-          <div ref={priorityRef} style={{ order: 4 }}>
+          <div ref={priorityRef} style={{ order: 4, display: "flex" }}>
           <Card
+            style={{ flex: 1 }}
             title={<span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>🚨 Estudiantes prioritarios <InfoTooltip text="Estudiantes que requieren tu atención inmediata: nota crítica (<5), cobertura baja (<60%), ítems vencidos sin calificar o pendientes de calificación. Ordenados por nivel de riesgo." /></span>} accent="critical"
             right={
               assignmentRiskData.length > 0
@@ -2489,9 +2490,20 @@ const contentKpis = useMemo(() => {
 
         </div>
 
-        {/* ── Resultados de aprendizaje (horizontal, ancho completo) ── */}
-        <div ref={learningOutcomesRef} className="fade-up fade-up-2" style={{ marginBottom: 12 }}>
+        {/* ── Fila: Resultados de aprendizaje + Asignaciones ── */}
+        <div
+          className="fade-up fade-up-2"
+          style={{
+            display: "grid",
+            gridTemplateColumns: isMobile || isNarrow ? "1fr" : "1fr 1fr",
+            gap: 12,
+            marginBottom: 12,
+            alignItems: "stretch",
+          }}
+        >
+        <div ref={learningOutcomesRef} style={{ display: "flex" }}>
           <Card
+            style={{ flex: 1 }}
             title={<span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>🎯 Resultados de aprendizaje <InfoTooltip text="Resultados de Aprendizaje (RA) del curso ordenados de menor a mayor desempeño. El RA en primera posición es donde tus estudiantes están más débiles — prioriza refuerzo ahí." /></span>}
             accent="brand"
             right={
@@ -2654,8 +2666,9 @@ const contentKpis = useMemo(() => {
         </div>
 
         {/* ── Estado de asignaciones (entregado / calificado / vencido) ── */}
-        <div className="fade-up fade-up-2" style={{ marginBottom: 12 }}>
+        <div style={{ display: "flex" }}>
           <Card
+            style={{ flex: 1 }}
             title={<span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>📝 Asignaciones del curso <InfoTooltip text="Estado de las asignaciones (dropbox) que has creado en Brightspace: cuántas tienen entregas de estudiantes (con % de entrega), cuántas ya están completamente calificadas y cuántas vencieron. Ordenadas por fecha de entrega." /></span>}
             accent="brand"
           >
@@ -2663,6 +2676,8 @@ const contentKpis = useMemo(() => {
               <AssignmentsPanel orgUnitId={orgUnitId} />
             </ErrorBoundary>
           </Card>
+        </div>
+
         </div>
 
         {/* ── Alertas inteligentes (fusiona Radar docente + heurísticas locales) ── */}

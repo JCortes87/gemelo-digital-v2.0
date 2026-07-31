@@ -15,6 +15,7 @@ import { toDate, fmtPct } from "../../utils/helpers";
 function AssignmentsPanel({ orgUnitId }) {
   const [folders, setFolders] = useState(null); // null = cargando, [] = sin datos
   const [err, setErr] = useState("");
+  const [showList, setShowList] = useState(false); // detalle colapsado por defecto
 
   useEffect(() => {
     if (!orgUnitId) return;
@@ -273,7 +274,18 @@ function AssignmentsPanel({ orgUnitId }) {
         </div>
       )}
 
+      {/* Botón para desplegar el detalle por asignación (colapsado por defecto) */}
+      <button
+        className="btn"
+        onClick={() => setShowList((v) => !v)}
+        aria-expanded={showList}
+        style={{ alignSelf: "center", fontSize: 12, padding: "7px 16px", borderRadius: 10 }}
+      >
+        📋 {showList ? "Ocultar detalle" : `Ver detalle de asignaciones (${rows.length})`} {showList ? "▴" : "▾"}
+      </button>
+
       {/* Listado por asignación */}
+      {showList && (
       <div
         style={{
           display: "flex",
@@ -388,6 +400,7 @@ function AssignmentsPanel({ orgUnitId }) {
           );
         })}
       </div>
+      )}
     </div>
   );
 }
