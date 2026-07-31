@@ -54,6 +54,19 @@ import {
   ProgressBar, InfoTooltip, SortTh, CoverageBars, GaugeMeter,
 } from "./teacher/primitives";
 
+// Icono según el tipo de contenido inferido del título del tema.
+function topicIcon(title) {
+  const t = String(title || "").toLowerCase();
+  if (t.includes(".pdf")) return "📕";
+  if (/\.(docx?|rtf)/.test(t)) return "📘";
+  if (/\.(xlsx?|csv)/.test(t)) return "📗";
+  if (/\.pptx?/.test(t)) return "📙";
+  if (/\.(mp4|mov|avi|webm)|video/.test(t)) return "🎬";
+  if (/https?:|www\.|link|enlace|url/.test(t)) return "🔗";
+  if (/\.(html?)/.test(t)) return "🌐";
+  return "📄";
+}
+
 // Formatea el último acceso de un estudiante como texto relativo corto.
 function fmtLastAccess(iso) {
   if (!iso) return "Nunca";
@@ -279,8 +292,8 @@ export default function TeacherDashboard() {
   const [contentRoot, setContentRoot] = useState([]);
   // Accesos al curso (userId -> LastAccessed ISO o null) y consumo de contenidos
   const [lastAccessMap, setLastAccessMap] = useState({});
-  // Accesos del equipo docente (roles no-estudiante del classlist)
-  const [teacherAccessList, setTeacherAccessList] = useState([]);
+  // Classlist crudo (para derivar el equipo docente por diferencia con estudiantes)
+  const [classlistItems, setClasslistItems] = useState([]);
   const [consumption, setConsumption] = useState(null);
   const [overview, setOverview] = useState(null);
   const [studentsList, setStudentsList] = useState(null);
@@ -1004,30 +1017,20 @@ export default function TeacherDashboard() {
     if (!orgUnitId) return;
     let alive = true;
     setLastAccessMap({});
-    setTeacherAccessList([]);
+    setClasslistItems([]);
     setConsumption(null);
 
     (async () => {
       try {
         const cl = await apiGetCached(`/brightspace/course/${orgUnitId}/classlist`, { ttl: 300_000 });
         if (!alive) return;
+        const items = Array.isArray(cl?.items) ? cl.items : [];
         const map = {};
-        const teachers = [];
-        for (const u of (Array.isArray(cl?.items) ? cl.items : [])) {
-          if (u?.Identifier == null) continue;
-          map[String(u.Identifier)] = u.LastAccessed || null;
-          const role = u.RoleName || u.roleName || "";
-          if (role && !isStudentRole(role)) {
-            teachers.push({
-              userId: String(u.Identifier),
-              name: u.DisplayName || `Usuario ${u.Identifier}`,
-              role,
-              iso: u.LastAccessed || null,
-            });
-          }
+        for (const u of items) {
+          if (u?.Identifier != null) map[String(u.Identifier)] = u.LastAccessed || null;
         }
         setLastAccessMap(map);
-        setTeacherAccessList(teachers);
+        setClasslistItems(items);
       } catch { /* opcional */ }
     })();
 
@@ -1611,6 +1614,7 @@ const contentKpis = useMemo(() => {
   const consumptionStats = useMemo(() => {
     if (consumption == null) return null; // cargando
     const per = consumption?.perUser || {};
+    const perTopics = consumption?.perUserTopics || {};
     const ids = studentRows.map((r) => String(r.userId));
     const vals = ids.map((id) => per[id]).filter((v) => v != null);
     if (!vals.length) return { available: false };
@@ -1618,7 +1622,22 @@ const contentKpis = useMemo(() => {
     const avgPct = totalContentTopics > 0
       ? (vals.reduce((a, b) => a + Math.min(Number(b) || 0, totalContentTopics), 0) / (vals.length * totalContentTopics)) * 100
       : null;
-    return { available: true, opened, total: vals.length, avgPct };
+    const openedPct = vals.length > 0 ? (opened / vals.length) * 100 : null;
+    // Detalle por estudiante: cuántos temas y cuáles (ids), ordenado desc
+    const detail = studentRows
+      .map((r) => {
+        const id = String(r.userId);
+        if (per[id] == null) return null;
+        return {
+          userId: r.userId,
+          name: r.displayName,
+          count: Number(per[id]) || 0,
+          topicIds: Array.isArray(perTopics[id]) ? perTopics[id] : [],
+        };
+      })
+      .filter(Boolean)
+      .sort((a, b) => b.count - a.count);
+    return { available: true, opened, total: vals.length, avgPct, openedPct, detail };
   }, [consumption, studentRows, totalContentTopics]);
 
   // Accesos al curso por recencia (a partir de LastAccessed del classlist).
@@ -1656,8 +1675,41 @@ const contentKpis = useMemo(() => {
     };
   }, [studentRows, lastAccessMap]);
 
-  // Qué lista de accesos está desplegada: "stale" | "never" | null
+  // Qué lista de accesos está desplegada: "today" | "week" | "stale" | "never" | null
   const [accessListOpen, setAccessListOpen] = useState(null);
+
+  // Equipo docente = usuarios del classlist que NO están en la lista de
+  // estudiantes (el classlist crudo de Brightspace no trae RoleName).
+  const teacherAccessList = useMemo(() => {
+    if (!classlistItems.length || !studentRows.length) return [];
+    const studentIds = new Set(studentRows.map((r) => String(r.userId)));
+    return classlistItems
+      .filter((u) => u?.Identifier != null && !studentIds.has(String(u.Identifier)))
+      .map((u) => ({
+        userId: String(u.Identifier),
+        name: u.DisplayName || `${u.FirstName || ""} ${u.LastName || ""}`.trim() || `Usuario ${u.Identifier}`,
+        role: u.RoleName || u.roleName || "Equipo del curso",
+        iso: u.LastAccessed || null,
+      }));
+  }, [classlistItems, studentRows]);
+
+  // Metadatos de los temas de contenido (id -> título) para el detalle de consumo
+  const contentTopicMeta = useMemo(() => {
+    const map = new Map();
+    for (const mod of (Array.isArray(contentRoot) ? contentRoot : [])) {
+      if (mod?.IsHidden === true) continue;
+      for (const it of (Array.isArray(mod?.Structure) ? mod.Structure : [])) {
+        if (it?.Id != null && Number(it?.Type) === 1) {
+          map.set(String(it.Id), { title: it.Title || it.ShortTitle || `Tema ${it.Id}` });
+        }
+      }
+    }
+    return map;
+  }, [contentRoot]);
+
+  // Detalle de consumo desplegable
+  const [consumptionDetailOpen, setConsumptionDetailOpen] = useState(false);
+  const [consumptionStudentOpen, setConsumptionStudentOpen] = useState(null);
   const performanceBands = useMemo(() => {
   const bands = [
     { name: "Excelente", key: "excellent", value: 0, color: COLORS.ok },
@@ -2896,9 +2948,9 @@ const contentKpis = useMemo(() => {
                 ) : !consumptionStats.available ? (
                   <div style={{ fontSize: 11, color: "var(--muted)" }}>Dato no disponible para este curso.</div>
                 ) : (
-                  <div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                     {consumptionStats.avgPct != null && (
-                      <>
+                      <div>
                         <ProgressBar
                           value={Math.min(100, consumptionStats.avgPct)}
                           color={colorForPct(consumptionStats.avgPct, thresholds)}
@@ -2909,11 +2961,86 @@ const contentKpis = useMemo(() => {
                           <span>Promedio de temas abiertos</span>
                           <span style={{ fontFamily: "var(--font-mono)", fontWeight: 800 }}>{fmtPct(consumptionStats.avgPct)}</span>
                         </div>
-                      </>
+                      </div>
                     )}
-                    <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 4 }}>
-                      {consumptionStats.opened} de {consumptionStats.total} estudiantes han abierto contenidos
-                    </div>
+                    {consumptionStats.openedPct != null && (
+                      <div>
+                        <ProgressBar
+                          value={Math.min(100, consumptionStats.openedPct)}
+                          color={colorForPct(consumptionStats.openedPct, thresholds)}
+                          animate={false}
+                          showLabel={false}
+                        />
+                        <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 6, display: "flex", justifyContent: "space-between" }}>
+                          <span>{consumptionStats.opened} de {consumptionStats.total} estudiantes han abierto contenidos</span>
+                          <span style={{ fontFamily: "var(--font-mono)", fontWeight: 800 }}>{fmtPct(consumptionStats.openedPct)}</span>
+                        </div>
+                      </div>
+                    )}
+
+                    <button
+                      className="btn"
+                      onClick={() => { setConsumptionDetailOpen((v) => !v); setConsumptionStudentOpen(null); }}
+                      aria-expanded={consumptionDetailOpen}
+                      style={{ alignSelf: "center", fontSize: 11, padding: "5px 12px", borderRadius: 8 }}
+                    >
+                      👥 {consumptionDetailOpen ? "Ocultar detalle" : "Ver quiénes y qué consumieron"} {consumptionDetailOpen ? "▴" : "▾"}
+                    </button>
+
+                    {consumptionDetailOpen && (
+                      <div style={{
+                        maxHeight: 220, overflowY: "auto",
+                        border: "1px solid var(--border)", borderRadius: 10,
+                        background: "var(--bg)", padding: "4px 2px",
+                        display: "flex", flexDirection: "column", gap: 2,
+                      }}>
+                        {(consumptionStats.detail || []).map((s) => {
+                          const isOpen = consumptionStudentOpen === s.userId;
+                          const hasTopics = s.topicIds.length > 0;
+                          return (
+                            <div key={s.userId}>
+                              <button
+                                onClick={() => setConsumptionStudentOpen((v) => (v === s.userId ? null : s.userId))}
+                                title={hasTopics ? "Ver qué contenidos abrió" : "Sin detalle de temas"}
+                                style={{
+                                  display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8,
+                                  border: "none", background: isOpen ? "var(--brand-light)" : "transparent",
+                                  cursor: "pointer", padding: "4px 8px", borderRadius: 6, fontSize: 11,
+                                  fontFamily: "var(--font)", color: "var(--text)", textAlign: "left", width: "100%",
+                                }}
+                              >
+                                <span style={{ fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.name}</span>
+                                <span style={{ display: "inline-flex", alignItems: "center", gap: 4, flexShrink: 0 }}>
+                                  <span style={{ fontWeight: 800, fontFamily: "var(--font-mono)", color: s.count > 0 ? "var(--brand)" : "var(--muted)" }}>
+                                    {s.count} {s.count === 1 ? "tema" : "temas"}
+                                  </span>
+                                  {hasTopics && <span style={{ fontSize: 9, color: "var(--muted)" }}>{isOpen ? "▴" : "▾"}</span>}
+                                </span>
+                              </button>
+                              {isOpen && hasTopics && (
+                                <div style={{ padding: "2px 8px 6px 16px", display: "flex", flexDirection: "column", gap: 3 }}>
+                                  {[...new Set(s.topicIds)].map((tid) => {
+                                    const meta = contentTopicMeta.get(String(tid));
+                                    const title = meta?.title || `Tema ${tid}`;
+                                    return (
+                                      <div key={tid} style={{ fontSize: 10, color: "var(--muted-strong)", display: "flex", gap: 5, alignItems: "flex-start" }}>
+                                        <span aria-hidden="true" style={{ flexShrink: 0 }}>{topicIcon(title)}</span>
+                                        <span style={{ lineHeight: 1.35 }}>{title}</span>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              )}
+                              {isOpen && !hasTopics && (
+                                <div style={{ padding: "2px 8px 6px 16px", fontSize: 10, color: "var(--muted)" }}>
+                                  Sin detalle de temas disponible para este estudiante.
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
