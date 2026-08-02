@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { useNavigate, useSearchParams, Navigate } from "react-router-dom";
 import { Presentation, GraduationCap, ArrowRight, LogOut } from "lucide-react";
 import {
   ResponsiveContainer,
@@ -2029,6 +2029,13 @@ const contentKpis = useMemo(() => {
   }
   if (!authUser) return <LoginScreen orgUnitId={orgUnitId} />;
 
+  // Superadmin sin curso seleccionado → SIEMPRE a su consola (RoleHome).
+  // El selector de cursos de profesor no es útil para el usuario admin
+  // (p. ej. Desarrollo Profesoral) y aparecía al refrescar en /dashboard.
+  if ((!orgUnitId || orgUnitId === 0) && isSuperAdmin) {
+    return <Navigate to="/" replace />;
+  }
+
   // Sin curso seleccionado → mostrar selector automáticamente (visual de tarjetas, igual que RoleHome)
   if (!orgUnitId || orgUnitId === 0) {
     const instructorCourses = courseList.filter(c => !isStudentRole(c.roleName));
@@ -2309,7 +2316,6 @@ const contentKpis = useMemo(() => {
         locale={locale}
         toggleLocale={toggleLocale}
         isSuperAdmin={isSuperAdmin}
-        studentRows={studentRows}
         adminView={impersonateStudent ? "student" : "teacher"}
         onAdminViewChange={isSuperAdmin ? (v) => {
           if (v === "student") setStudentPickerOpen(true);

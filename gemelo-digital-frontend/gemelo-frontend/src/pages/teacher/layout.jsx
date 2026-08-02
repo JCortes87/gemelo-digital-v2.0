@@ -95,11 +95,10 @@ export function AppTopbar({
   handleOpenCoursePanel,
   authUser, isDualRole, onGoHome,
   onOpenPalette, onOpenCoordinator,
-  isSuperAdmin, studentRows, onImpersonate,
+  isSuperAdmin,
   adminView, onAdminViewChange,
 }) {
-  const [showImpersonateMenu, setShowImpersonateMenu] = useState(false);
-  const [impersonateSearch, setImpersonateSearch] = useState("");
+  const [showMainMenu, setShowMainMenu] = useState(false);
   const { t } = useI18n();
   return (
     <header className="app-topbar">
@@ -179,177 +178,100 @@ export function AppTopbar({
             })}
           </div>
         )}
-        {onOpenPalette && (
-          <button
-            className="btn"
-            onClick={onOpenPalette}
-            title="Paleta de comandos (Ctrl+K)"
-            aria-label="Abrir paleta de comandos"
-            style={{ padding: "7px 12px", fontSize: 12, borderRadius: 10, gap: 8 }}
-          >
-            <span>🔎</span>
-            {!isMobile && <>
-              <span>{t("topbar.commands", "Comandos")}</span>
-              <span style={{
-                fontSize: 9, fontWeight: 800, padding: "2px 5px", borderRadius: 4,
-                background: "var(--bg)", border: "1px solid var(--border)", color: "var(--muted)",
-              }}>⌘K</span>
-            </>}
-          </button>
-        )}
-        {(isDualRole || isSuperAdmin) && (
-          <button
-            className="btn"
-            onClick={onGoHome}
-            title="Volver al inicio"
-            aria-label="Volver al inicio"
-            style={{ padding: "7px 12px", fontSize: 12, borderRadius: 10 }}
-          >
-            🏠 {isMobile ? "" : t("topbar.home", "Inicio")}
-          </button>
-        )}
-        <button
-          className="btn btn-primary"
-          onClick={handleOpenCoursePanel}
-          style={{ padding: "7px 14px", fontSize: 12, borderRadius: 10 }}
-        >
-          📚 {isMobile ? "" : t("topbar.myCourses", "Mis cursos")}
-        </button>
-
-        {onOpenCoordinator && (
+        {/* Menú agrupado (comandos, inicio, cursos, coordinación, idioma, tema, imprimir) */}
+        <div style={{ position: "relative" }}>
           <button
             className="topbar-icon-btn"
-            onClick={onOpenCoordinator}
-            title="Vista de coordinación (agregada)"
-            aria-label="Abrir panel de coordinación"
+            onClick={() => setShowMainMenu((v) => !v)}
+            title="Más opciones"
+            aria-label="Abrir menú de opciones"
+            aria-expanded={showMainMenu ? "true" : "false"}
           >
-            🏛
+            <svg width="15" height="15" viewBox="0 0 16 16" aria-hidden="true">
+              {[2, 8, 14].map((y) =>
+                [2, 8, 14].map((x) => (
+                  <circle key={`${x}-${y}`} cx={x} cy={y} r="1.7" fill="currentColor" />
+                ))
+              )}
+            </svg>
           </button>
-        )}
-        {onImpersonate && (
-          <div style={{ position: "relative" }}>
-            <button
-              className="btn"
-              onClick={() => setShowImpersonateMenu((v) => !v)}
-              title="Ver como profesor o estudiante"
-              style={{
-                padding: "7px 12px", fontSize: 12, borderRadius: 10,
-                background: "rgba(255, 170, 0, 0.12)",
-                color: "#b27300",
-                border: "1px solid rgba(255, 170, 0, 0.3)",
-              }}
-            >
-              👁 {isMobile ? "" : t("topbar.viewAs", "Ver como...")}
-            </button>
-            {showImpersonateMenu && (
+          {showMainMenu && (
+            <>
               <div
-                onClick={(e) => e.stopPropagation()}
+                onClick={() => setShowMainMenu(false)}
+                style={{ position: "fixed", inset: 0, zIndex: 190 }}
+                aria-hidden="true"
+              />
+              <div
+                role="menu"
                 style={{
                   position: "absolute", top: "calc(100% + 6px)", right: 0, zIndex: 200,
-                  width: 320, maxHeight: 400, background: "var(--card)",
+                  width: 235, background: "var(--card)",
                   border: "1px solid var(--border)", borderRadius: 12,
-                  boxShadow: "var(--shadow-lg)", display: "flex", flexDirection: "column",
-                  overflow: "hidden",
+                  boxShadow: "var(--shadow-lg)", padding: 6,
+                  display: "flex", flexDirection: "column", gap: 2,
                 }}
               >
-                <div style={{ padding: "12px 14px", borderBottom: "1px solid var(--border)" }}>
-                  <div style={{ fontSize: 12, fontWeight: 800, color: "var(--text)", marginBottom: 6 }}>
-                    👁 Impersonar usuario
-                  </div>
-                  <input
-                    value={impersonateSearch}
-                    onChange={(e) => setImpersonateSearch(e.target.value)}
-                    placeholder="Buscar estudiante..."
-                    autoFocus
+                {[
+                  ...(onOpenPalette ? [{
+                    key: "palette", icon: "🔎", label: t("topbar.commands", "Comandos"), hint: "⌘K",
+                    action: () => { setShowMainMenu(false); onOpenPalette(); },
+                  }] : []),
+                  ...((isDualRole || isSuperAdmin) ? [{
+                    key: "home", icon: "🏠", label: t("topbar.home", "Inicio"),
+                    action: () => { setShowMainMenu(false); onGoHome(); },
+                  }] : []),
+                  {
+                    key: "courses", icon: "📚", label: t("topbar.myCourses", "Mis cursos"),
+                    action: () => { setShowMainMenu(false); handleOpenCoursePanel(); },
+                  },
+                  ...(onOpenCoordinator ? [{
+                    key: "coordinator", icon: "🏛", label: t("topbar.coordination", "Panel de coordinación"),
+                    action: () => { setShowMainMenu(false); onOpenCoordinator(); },
+                  }] : []),
+                  {
+                    key: "locale", icon: "🌐",
+                    label: `${t("topbar.language", "Idioma")}: ${locale === "es" ? "Español" : "English"}`,
+                    action: () => toggleLocale(),
+                  },
+                  {
+                    key: "theme", icon: darkMode ? "☀️" : "🌙",
+                    label: darkMode ? t("topbar.lightMode", "Tema claro") : t("topbar.darkMode", "Tema oscuro"),
+                    action: () => setDarkMode((v) => !v),
+                  },
+                  {
+                    key: "print", icon: "🖨", label: t("topbar.print", "Imprimir vista"),
+                    action: () => { setShowMainMenu(false); window.print(); },
+                  },
+                ].map((item) => (
+                  <button
+                    key={item.key}
+                    role="menuitem"
+                    onClick={item.action}
                     style={{
-                      width: "100%", padding: "8px 10px", fontSize: 12,
-                      border: "1px solid var(--border)", borderRadius: 8,
-                      background: "var(--bg)", color: "var(--text)",
-                      fontFamily: "var(--font)", outline: "none",
+                      display: "flex", alignItems: "center", gap: 10,
+                      width: "100%", padding: "8px 10px", border: "none",
+                      background: "transparent", cursor: "pointer",
+                      fontSize: 12, fontWeight: 600, fontFamily: "var(--font)",
+                      color: "var(--text)", textAlign: "left", borderRadius: 8,
                     }}
-                  />
-                </div>
-                <div style={{ flex: 1, overflowY: "auto", padding: "4px 0", maxHeight: 300 }}>
-                  {(Array.isArray(studentRows) ? studentRows : [])
-                    .filter((s) => {
-                      if (!impersonateSearch.trim()) return true;
-                      const q = impersonateSearch.toLowerCase();
-                      return (s.displayName || "").toLowerCase().includes(q) ||
-                             String(s.userId).includes(q);
-                    })
-                    .slice(0, 30)
-                    .map((s) => (
-                      <button
-                        key={s.userId}
-                        onClick={() => {
-                          onImpersonate({ userId: s.userId, name: s.displayName });
-                          setShowImpersonateMenu(false);
-                          setImpersonateSearch("");
-                        }}
-                        style={{
-                          display: "flex", alignItems: "center", gap: 8,
-                          width: "100%", padding: "8px 14px", border: "none",
-                          background: "transparent", cursor: "pointer",
-                          fontSize: 12, fontFamily: "var(--font)",
-                          color: "var(--text)", textAlign: "left",
-                        }}
-                        onMouseEnter={(e) => { e.currentTarget.style.background = "var(--brand-light)"; }}
-                        onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}
-                      >
-                        <div style={{
-                          width: 28, height: 28, borderRadius: "50%",
-                          background: "var(--brand-light)", display: "flex",
-                          alignItems: "center", justifyContent: "center",
-                          fontSize: 11, fontWeight: 800, color: "var(--brand)", flexShrink: 0,
-                        }}>{(s.displayName || "?").charAt(0).toUpperCase()}</div>
-                        <div style={{ flex: 1, minWidth: 0 }}>
-                          <div style={{ fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                            {s.displayName}
-                          </div>
-                          <div style={{ fontSize: 10, color: "var(--muted)" }}>ID {s.userId}</div>
-                        </div>
-                        <span style={{ fontSize: 10, fontWeight: 700, color: "#b27300" }}>Ver como</span>
-                      </button>
-                    ))
-                  }
-                  {(Array.isArray(studentRows) ? studentRows : []).length === 0 && (
-                    <div style={{ padding: "16px 14px", textAlign: "center", color: "var(--muted)", fontSize: 11 }}>
-                      Carga un curso primero para ver estudiantes
-                    </div>
-                  )}
-                </div>
-                <div style={{ padding: "8px 14px", borderTop: "1px solid var(--border)", fontSize: 10, color: "var(--muted)", textAlign: "center" }}>
-                  Vista previa del portal del estudiante
-                </div>
+                    onMouseEnter={(e) => { e.currentTarget.style.background = "var(--bg)"; }}
+                    onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}
+                  >
+                    <span aria-hidden="true" style={{ width: 18, textAlign: "center" }}>{item.icon}</span>
+                    <span style={{ flex: 1 }}>{item.label}</span>
+                    {item.hint && (
+                      <span style={{
+                        fontSize: 9, fontWeight: 800, padding: "2px 5px", borderRadius: 4,
+                        background: "var(--bg)", border: "1px solid var(--border)", color: "var(--muted)",
+                      }}>{item.hint}</span>
+                    )}
+                  </button>
+                ))}
               </div>
-            )}
-          </div>
-        )}
-        <button
-          className="topbar-icon-btn"
-          onClick={toggleLocale}
-          title={locale === "es" ? "Switch to English" : "Cambiar a español"}
-          aria-label="Cambiar idioma"
-          style={{ fontSize: 10, fontWeight: 800 }}
-        >
-          {locale === "es" ? "ES" : "EN"}
-        </button>
-        <button
-          className="topbar-icon-btn"
-          onClick={() => setDarkMode((v) => !v)}
-          title="Cambiar tema"
-          aria-label="Cambiar tema claro/oscuro"
-        >
-          {darkMode ? "☀️" : "🌙"}
-        </button>
-        <button
-          className="topbar-icon-btn"
-          onClick={() => window.print()}
-          title="Imprimir vista actual"
-          aria-label="Imprimir vista actual"
-        >
-          🖨
-        </button>
+            </>
+          )}
+        </div>
 
         {/* User avatar with initials */}
         <div style={{ position: "relative", display: "flex", alignItems: "center", gap: 6 }}>

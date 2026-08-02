@@ -728,6 +728,17 @@ principal y respaldadas en `gemelo-digital-v2.0`; cada una se mergeó a
   (p. ej. "CESA Laboratorio", "Desarrollo profesoral" — regex
   `SERVICE_ACCOUNT_RE` en TeacherDashboard.jsx) y ya no muestra el rol,
   solo el nombre del profesor.
+- **Fix superadmin**: al refrescar en `/dashboard` sin curso
+  seleccionado, el usuario superadmin (p. ej. Desarrollo Profesoral) ya
+  no cae en el selector de cursos de profesor — se redirige siempre a su
+  consola de administración (RoleHome).
+- **Topbar reorganizado**: el buscador y el toggle Vista profesor /
+  estudiante se mantienen; Comandos, Inicio, Mis cursos, Panel de
+  coordinación, idioma, tema e imprimir se agruparon en un **menú
+  desplegable** (icono de 9 puntos) a la izquierda del usuario. Se
+  eliminó el menú muerto "Ver como…" del topbar.
+- **Asignaciones**: la tarjeta muestra arriba el **total de
+  asignaciones** (activas + no publicadas) y debajo el desglose.
 - Limitación documentada: la **duración de las sesiones** (tiempo
   conectado, pedido para la tarjeta de accesos y la tabla de
   estudiantes) no está disponible vía API REST de Brightspace; solo
