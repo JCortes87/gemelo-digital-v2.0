@@ -719,9 +719,22 @@ principal y respaldadas en `gemelo-digital-v2.0`; cada una se mergeó a
   la **Url real del archivo** vía el endpoint nuevo
   `/brightspace/course/{ou}/content/topics` (el content/root no trae Url
   y por título casi todo caía en "Otro").
+- Categorías de tipo de elemento acordadas: **HTML** (páginas construidas
+  en Brightspace), **PDF**, **Excel**, **Word**, **Imágenes** (todos los
+  formatos), **Audios**, **Videos**, **Enlace** (externos o internos) y
+  **Otros**. El total del KPI y el desglose salen de la misma fuente
+  (`/content/topics`) para que siempre sumen igual.
+- "Accesos del profesor" oculta cuentas institucionales/de servicio
+  (p. ej. "CESA Laboratorio", "Desarrollo profesoral" — regex
+  `SERVICE_ACCOUNT_RE` en TeacherDashboard.jsx) y ya no muestra el rol,
+  solo el nombre del profesor.
 - Limitación documentada: la **duración de las sesiones** (tiempo
-  conectado) no está disponible vía API REST de Brightspace; solo existe
-  en Data Hub. La tarjeta muestra recencia de acceso, no duración.
+  conectado, pedido para la tarjeta de accesos y la tabla de
+  estudiantes) no está disponible vía API REST de Brightspace; solo
+  existe en Data Hub (datasets de sesiones). La tarjeta y la columna
+  muestran recencia del último acceso, no duración. Para tener duración
+  habría que habilitar Data Hub con el admin de Brightspace e ingerir
+  los datasets vía el scheduler.
 
 ### Convenciones
 - Mensajes de commit y títulos de PR **en imperativo** ("ajusta…",
