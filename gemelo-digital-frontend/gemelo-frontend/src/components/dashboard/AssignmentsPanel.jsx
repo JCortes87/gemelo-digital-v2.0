@@ -154,6 +154,16 @@ function AssignmentsPanel({ orgUnitId }) {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+      {/* Total de asignaciones del curso (activas + no publicadas) */}
+      <div style={{ textAlign: "center" }}>
+        <div style={{ fontSize: 32, fontWeight: 900, fontFamily: "var(--font-mono)", color: "var(--text)", lineHeight: 1.1 }}>
+          {stats.created + stats.hidden}
+        </div>
+        <div style={{ fontSize: 10, color: "var(--muted)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em" }}>
+          Total de asignaciones
+        </div>
+      </div>
+
       {/* Mini KPIs — una sola fila dentro de la tarjeta, separados por líneas */}
       <div
         style={{
