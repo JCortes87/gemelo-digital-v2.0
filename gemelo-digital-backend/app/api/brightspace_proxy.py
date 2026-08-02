@@ -821,6 +821,73 @@ async def brightspace_classlist(
     return {"count": len(items), "items": items}
 
 
+@router.get("/brightspace/course/{org_unit_id}/content/topics")
+async def brightspace_content_topics(request: Request, org_unit_id: int):
+    """Elementos de contenido del curso con metadatos completos (Url,
+    TopicType, ActivityType), recorriendo la estructura de cada módulo.
+    El /content/root/ solo trae 'shells' sin Url, y sin la Url no se puede
+    saber el tipo de archivo (PDF, Word, etc.).
+
+    Devuelve {count, items: [{Id, Title, Url, TopicType, ActivityType,
+    IsHidden, LastModifiedDate}]}.
+    """
+    token, err = _require_token_from_request(request)
+    if err:
+        return err
+    headers = _auth_headers(token)
+
+    root_url = f"{BRIGHTSPACE_BASE_URL}/d2l/api/le/{LE_VERSION}/{org_unit_id}/content/root/"
+    root_status, root_data = await _bs_get_cached(root_url, headers)
+    if root_status != 200:
+        return JSONResponse(status_code=root_status, content=root_data)
+
+    queue = [
+        m.get("Id") for m in (root_data if isinstance(root_data, list) else [])
+        if isinstance(m, dict) and m.get("Id") is not None and m.get("IsHidden") is not True
+    ]
+    seen_modules = set(queue)
+    topics = []
+    sem = asyncio.Semaphore(8)
+
+    async def _structure_of(mid):
+        url = (
+            f"{BRIGHTSPACE_BASE_URL}/d2l/api/le/{LE_VERSION}"
+            f"/{org_unit_id}/content/modules/{mid}/structure/"
+        )
+        async with sem:
+            status, data = await _bs_get_cached(url, headers)
+        return data if (status == 200 and isinstance(data, list)) else []
+
+    # BFS por niveles para soportar módulos anidados (máx 100 módulos)
+    for _ in range(6):
+        if not queue or len(seen_modules) > 100:
+            break
+        batch = queue[:50]
+        queue = queue[50:]
+        results = await asyncio.gather(*[_structure_of(m) for m in batch])
+        for items in results:
+            for it in items:
+                if not isinstance(it, dict):
+                    continue
+                if it.get("Type") == 0:
+                    mid = it.get("Id")
+                    if mid is not None and mid not in seen_modules and it.get("IsHidden") is not True:
+                        seen_modules.add(mid)
+                        queue.append(mid)
+                elif it.get("Type") == 1:
+                    topics.append({
+                        "Id": it.get("Id"),
+                        "Title": it.get("Title") or it.get("ShortTitle"),
+                        "Url": it.get("Url"),
+                        "TopicType": it.get("TopicType"),
+                        "ActivityType": it.get("ActivityType"),
+                        "IsHidden": it.get("IsHidden"),
+                        "LastModifiedDate": it.get("LastModifiedDate"),
+                    })
+
+    return {"count": len(topics), "items": topics}
+
+
 @router.get("/brightspace/course/{org_unit_id}/instructors")
 async def brightspace_course_instructors(request: Request, org_unit_id: int):
     """Usuarios del curso con rol de profesor/instructor (LP enrollments,

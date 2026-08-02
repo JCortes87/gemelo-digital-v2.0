@@ -54,16 +54,27 @@ import {
   ProgressBar, InfoTooltip, SortTh, CoverageBars, GaugeMeter,
 } from "./teacher/primitives";
 
-// Tipo de contenido inferido del título del tema (para el desglose por tipo).
-function contentTypeLabel(title) {
-  const t = String(title || "").toLowerCase();
-  if (t.includes(".pdf")) return "PDF";
-  if (/\.(docx?|rtf)/.test(t)) return "Word";
-  if (/\.(xlsx?|csv)/.test(t)) return "Excel";
-  if (/\.pptx?/.test(t)) return "PowerPoint";
-  if (/\.(mp4|mov|avi|webm)|video/.test(t)) return "Video";
-  if (/https?:|www\.|link|enlace|url/.test(t)) return "Enlace";
-  if (/\.html?/.test(t)) return "HTML";
+// Tipo de un elemento de contenido. Prioriza la URL del archivo (lo más
+// confiable), luego el TopicType de Brightspace (3 = enlace externo) y por
+// último el título. Los "elementos" son los archivos/páginas dentro de los
+// módulos de contenido del curso.
+function contentTypeLabel(title, url, topicType) {
+  const check = (s) => {
+    if (!s) return null;
+    if (s.includes(".pdf")) return "PDF";
+    if (/\.(docx?|rtf)(\?|$|\b)/.test(s)) return "Word";
+    if (/\.(xlsx?|csv)(\?|$|\b)/.test(s)) return "Excel";
+    if (/\.pptx?(\?|$|\b)/.test(s)) return "PowerPoint";
+    if (/\.(mp4|mov|avi|webm)(\?|$|\b)|video/.test(s)) return "Video";
+    if (/\.html?(\?|$|\b)/.test(s)) return "HTML";
+    return null;
+  };
+  const fromUrl = check(String(url || "").toLowerCase());
+  if (fromUrl) return fromUrl;
+  if (Number(topicType) === 3) return "Enlace";
+  const fromTitle = check(String(title || "").toLowerCase());
+  if (fromTitle) return fromTitle;
+  if (/https?:|www\.|link|enlace/.test(String(title || "").toLowerCase())) return "Enlace";
   return "Otro";
 }
 
@@ -71,19 +82,6 @@ const CONTENT_TYPE_ICONS = {
   PDF: "📕", Word: "📘", Excel: "📗", PowerPoint: "📙",
   Video: "🎬", Enlace: "🔗", HTML: "🌐", Otro: "📄",
 };
-
-// Icono según el tipo de contenido inferido del título del tema.
-function topicIcon(title) {
-  const t = String(title || "").toLowerCase();
-  if (t.includes(".pdf")) return "📕";
-  if (/\.(docx?|rtf)/.test(t)) return "📘";
-  if (/\.(xlsx?|csv)/.test(t)) return "📗";
-  if (/\.pptx?/.test(t)) return "📙";
-  if (/\.(mp4|mov|avi|webm)|video/.test(t)) return "🎬";
-  if (/https?:|www\.|link|enlace|url/.test(t)) return "🔗";
-  if (/\.(html?)/.test(t)) return "🌐";
-  return "📄";
-}
 
 // Formatea el último acceso de un estudiante como texto relativo corto.
 function fmtLastAccess(iso) {
@@ -314,6 +312,9 @@ export default function TeacherDashboard() {
   const [classlistItems, setClasslistItems] = useState([]);
   // Profesores/instructores del curso (LP enrollments trae el nombre del rol)
   const [instructors, setInstructors] = useState(null); // null = cargando
+  // Elementos de contenido con metadatos completos (Url/TopicType) para
+  // clasificar por tipo (PDF, Word, etc.) — el content/root no trae Url
+  const [contentTopics, setContentTopics] = useState(null);
   const [consumption, setConsumption] = useState(null);
   const [overview, setOverview] = useState(null);
   const [studentsList, setStudentsList] = useState(null);
@@ -1039,6 +1040,7 @@ export default function TeacherDashboard() {
     setLastAccessMap({});
     setClasslistItems([]);
     setInstructors(null);
+    setContentTopics(null);
     setConsumption(null);
 
     (async () => {
@@ -1047,6 +1049,15 @@ export default function TeacherDashboard() {
         if (alive) setInstructors(Array.isArray(ins?.items) ? ins.items : []);
       } catch {
         if (alive) setInstructors([]);
+      }
+    })();
+
+    (async () => {
+      try {
+        const ct = await apiGetCached(`/brightspace/course/${orgUnitId}/content/topics`, { ttl: 300_000 });
+        if (alive) setContentTopics(Array.isArray(ct?.items) ? ct.items : []);
+      } catch {
+        if (alive) setContentTopics([]);
       }
     })();
 
@@ -1750,19 +1761,53 @@ const contentKpis = useMemo(() => {
       }));
   }, [instructors, lastAccessMap, classlistItems, studentRows]);
 
-  // Metadatos de los temas de contenido (id -> título) para el detalle de consumo
+  // Metadatos de los elementos de contenido (id -> título/url/tipo) para el
+  // detalle de consumo y la clasificación por tipo. Prefiere el endpoint
+  // /content/topics (trae Url); cae al content/root si aún no llegó.
   const contentTopicMeta = useMemo(() => {
     const map = new Map();
+    if (Array.isArray(contentTopics) && contentTopics.length) {
+      for (const t of contentTopics) {
+        if (t?.Id != null) {
+          map.set(String(t.Id), {
+            title: t.Title || `Elemento ${t.Id}`,
+            url: t.Url || null,
+            topicType: t.TopicType ?? null,
+          });
+        }
+      }
+      return map;
+    }
     for (const mod of (Array.isArray(contentRoot) ? contentRoot : [])) {
       if (mod?.IsHidden === true) continue;
       for (const it of (Array.isArray(mod?.Structure) ? mod.Structure : [])) {
         if (it?.Id != null && Number(it?.Type) === 1) {
-          map.set(String(it.Id), { title: it.Title || it.ShortTitle || `Tema ${it.Id}` });
+          map.set(String(it.Id), { title: it.Title || it.ShortTitle || `Elemento ${it.Id}`, url: null, topicType: null });
         }
       }
     }
     return map;
-  }, [contentRoot]);
+  }, [contentTopics, contentRoot]);
+
+  // Desglose por tipo de los elementos publicados (mismo criterio de fecha
+  // que createdCount). Usa los metadatos con Url cuando están disponibles.
+  const contentTypeBreakdown = useMemo(() => {
+    if (Array.isArray(contentTopics) && contentTopics.length) {
+      const start = toDate(courseInfo?.StartDate);
+      const counts = {};
+      for (const t of contentTopics) {
+        if (t?.IsHidden === true) continue;
+        const d = toDate(t?.LastModifiedDate);
+        if (start && (!d || d < start)) continue;
+        const label = contentTypeLabel(t?.Title, t?.Url, t?.TopicType);
+        counts[label] = (counts[label] || 0) + 1;
+      }
+      return Object.entries(counts)
+        .map(([label, count]) => ({ label, count }))
+        .sort((a, b) => b.count - a.count);
+    }
+    return contentKpis?.typeBreakdown || [];
+  }, [contentTopics, courseInfo?.StartDate, contentKpis]);
 
   // Detalle de consumo desplegable
   const [consumptionDetailOpen, setConsumptionDetailOpen] = useState(false);
@@ -2437,7 +2482,7 @@ const contentKpis = useMemo(() => {
           {/* Contenidos creados — número grande + ritmo */}
           <div className="kpi-card" style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 6, padding: isMobile ? 12 : 14, textAlign: "center" }}>
             <div style={{ fontSize: 12, fontWeight: 800, color: "var(--text)", letterSpacing: "0.01em", display: "inline-flex", alignItems: "center", gap: 4 }}>
-              Contenidos publicados <InfoTooltip text="Temas de contenido visibles del curso (PDF, Word, páginas, enlaces…) creados o actualizados desde el inicio del curso. No incluye asignaciones (dropbox) — esas se cuentan aparte en la tarjeta de Asignaciones." />
+              Elementos publicados <InfoTooltip text="Elementos dentro de los módulos de contenido del curso (PDF, Word, Excel, páginas, enlaces…) creados o actualizados desde el inicio del curso. No incluye asignaciones (dropbox) — esas se cuentan aparte en la tarjeta de Asignaciones." />
             </div>
             <div style={{ fontSize: isMobile ? 30 : 38, fontWeight: 900, color: contentKpis?.createdCount != null ? contentRhythmMeta.color : "var(--muted)", fontFamily: "var(--font-mono)", lineHeight: 1 }}>
               {contentKpis?.createdCount ?? "—"}
@@ -2450,7 +2495,7 @@ const contentKpis = useMemo(() => {
                 {contentRhythmMeta.label}
               </span>
             )}
-            {(contentKpis?.typeBreakdown?.length ?? 0) > 0 && (
+            {(contentTypeBreakdown?.length ?? 0) > 0 && (
               <>
                 <button
                   onClick={() => setContentTypesOpen((v) => !v)}
@@ -2461,11 +2506,11 @@ const contentKpis = useMemo(() => {
                     fontFamily: "var(--font)", padding: "2px 6px",
                   }}
                 >
-                  Tipos de contenido {contentTypesOpen ? "▴" : "▾"}
+                  Tipos de elemento {contentTypesOpen ? "▴" : "▾"}
                 </button>
                 {contentTypesOpen && (
                   <div style={{ display: "flex", flexDirection: "column", gap: 3, width: "100%", maxHeight: 110, overflowY: "auto" }}>
-                    {contentKpis.typeBreakdown.map((t) => (
+                    {contentTypeBreakdown.map((t) => (
                       <div key={t.label} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, fontSize: 11, padding: "1px 8px" }}>
                         <span style={{ color: "var(--text)", fontWeight: 600 }}>
                           <span aria-hidden="true" style={{ marginRight: 4 }}>{CONTENT_TYPE_ICONS[t.label] || "📄"}</span>
@@ -3026,9 +3071,9 @@ const contentKpis = useMemo(() => {
 
                 <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                   <div style={{ fontSize: 10, color: "var(--muted)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em" }}>
-                    Contenidos consumidos
+                    Elementos consumidos
                   </div>
-                  <InfoTooltip text="Temas de contenido (PDF, Word, páginas, etc.) que los estudiantes han abierto en Brightspace, según su progreso de contenido del curso." />
+                  <InfoTooltip text="Elementos de contenido (PDF, Word, páginas, enlaces, etc.) que los estudiantes han abierto en Brightspace, según su progreso de contenido del curso." />
                 </div>
                 {consumptionStats == null ? (
                   <div style={{ fontSize: 11, color: "var(--muted)" }}>Cargando…</div>
@@ -3045,7 +3090,7 @@ const contentKpis = useMemo(() => {
                           showLabel={false}
                         />
                         <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 6, display: "flex", justifyContent: "space-between" }}>
-                          <span>Promedio de temas abiertos</span>
+                          <span>Promedio de elementos abiertos</span>
                           <span style={{ fontFamily: "var(--font-mono)", fontWeight: 800 }}>{fmtPct(consumptionStats.avgPct)}</span>
                         </div>
                       </div>
@@ -3059,7 +3104,7 @@ const contentKpis = useMemo(() => {
                           showLabel={false}
                         />
                         <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 6, display: "flex", justifyContent: "space-between" }}>
-                          <span>{consumptionStats.opened} de {consumptionStats.total} estudiantes han abierto contenidos</span>
+                          <span>{consumptionStats.opened} de {consumptionStats.total} estudiantes han abierto elementos</span>
                           <span style={{ fontFamily: "var(--font-mono)", fontWeight: 800 }}>{fmtPct(consumptionStats.openedPct)}</span>
                         </div>
                       </div>
@@ -3099,7 +3144,7 @@ const contentKpis = useMemo(() => {
                                 <span style={{ fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.name}</span>
                                 <span style={{ display: "inline-flex", alignItems: "center", gap: 4, flexShrink: 0 }}>
                                   <span style={{ fontWeight: 800, fontFamily: "var(--font-mono)", color: s.count > 0 ? "var(--brand)" : "var(--muted)" }}>
-                                    {s.count} {s.count === 1 ? "tema" : "temas"}
+                                    {s.count} {s.count === 1 ? "elemento" : "elementos"}
                                   </span>
                                   {hasTopics && <span style={{ fontSize: 9, color: "var(--muted)" }}>{isOpen ? "▴" : "▾"}</span>}
                                 </span>
@@ -3108,10 +3153,11 @@ const contentKpis = useMemo(() => {
                                 <div style={{ padding: "2px 8px 6px 16px", display: "flex", flexDirection: "column", gap: 3 }}>
                                   {[...new Set(s.topicIds)].map((tid) => {
                                     const meta = contentTopicMeta.get(String(tid));
-                                    const title = meta?.title || `Tema ${tid}`;
+                                    const title = meta?.title || `Elemento ${tid}`;
+                                    const typeLabel = contentTypeLabel(title, meta?.url, meta?.topicType);
                                     return (
                                       <div key={tid} style={{ fontSize: 10, color: "var(--muted-strong)", display: "flex", gap: 5, alignItems: "flex-start" }}>
-                                        <span aria-hidden="true" style={{ flexShrink: 0 }}>{topicIcon(title)}</span>
+                                        <span aria-hidden="true" style={{ flexShrink: 0 }} title={typeLabel}>{CONTENT_TYPE_ICONS[typeLabel] || "📄"}</span>
                                         <span style={{ lineHeight: 1.35 }}>{title}</span>
                                       </div>
                                     );
@@ -3120,7 +3166,7 @@ const contentKpis = useMemo(() => {
                               )}
                               {isOpen && !hasTopics && (
                                 <div style={{ padding: "2px 8px 6px 16px", fontSize: 10, color: "var(--muted)" }}>
-                                  Sin detalle de temas disponible para este estudiante.
+                                  Sin detalle de elementos disponible para este estudiante.
                                 </div>
                               )}
                             </div>
