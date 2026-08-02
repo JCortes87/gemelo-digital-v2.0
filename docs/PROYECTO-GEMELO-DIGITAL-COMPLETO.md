@@ -241,6 +241,7 @@ agregada y predictiva sobre el desempeño de cada curso.
 | `GET /brightspace/course/{ou}/classlist` | Classlist crudo (incluye `LastAccessed` por estudiante). Lo usan la tarjeta de Accesos y la columna Último acceso |
 | `GET /brightspace/course/{ou}/content/consumption` | **Nuevo (jul 2026)**: consumo de contenidos por estudiante → `{perUser, perUserTopics}` (user progress con fallback a completions por tema) |
 | `GET /brightspace/course/{ou}/instructors` | **Nuevo (jul 2026)**: profesores del curso con rol real (LP enrollments) — lo usa "Accesos del profesor" |
+| `GET /brightspace/course/{ou}/content/topics` | **Nuevo (jul 2026)**: elementos de contenido con Url/TopicType (recorre la estructura de cada módulo) — permite clasificar por tipo (PDF, Word…) |
 
 ---
 
@@ -711,6 +712,13 @@ principal y respaldadas en `gemelo-digital-v2.0`; cada una se mergeó a
 - **KPI "Contenidos publicados"** con desglose por tipo desplegable
   (PDF, Word, Excel, PowerPoint, video, enlace, HTML, otro — tipo
   inferido del título del tema).
+- Terminología: los archivos/páginas dentro de los módulos de contenido
+  se llaman **"elementos"** en la UI (KPI "Elementos publicados",
+  "Elementos consumidos", "Tipos de elemento") para no confundirlos con
+  los módulos de contenido de Brightspace. La clasificación por tipo usa
+  la **Url real del archivo** vía el endpoint nuevo
+  `/brightspace/course/{ou}/content/topics` (el content/root no trae Url
+  y por título casi todo caía en "Otro").
 - Limitación documentada: la **duración de las sesiones** (tiempo
   conectado) no está disponible vía API REST de Brightspace; solo existe
   en Data Hub. La tarjeta muestra recencia de acceso, no duración.
