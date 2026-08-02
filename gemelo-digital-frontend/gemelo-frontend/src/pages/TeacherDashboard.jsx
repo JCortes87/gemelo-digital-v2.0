@@ -58,30 +58,39 @@ import {
 // confiable), luego el TopicType de Brightspace (3 = enlace externo) y por
 // último el título. Los "elementos" son los archivos/páginas dentro de los
 // módulos de contenido del curso.
+// Categorías acordadas: HTML (páginas construidas en Brightspace), PDF,
+// Excel, Word, Imágenes (todos los formatos), Audios (todos), Videos
+// (todos), Enlace (links externos o internos) y Otros para el resto.
 function contentTypeLabel(title, url, topicType) {
   const check = (s) => {
     if (!s) return null;
     if (s.includes(".pdf")) return "PDF";
     if (/\.(docx?|rtf)(\?|$|\b)/.test(s)) return "Word";
     if (/\.(xlsx?|csv)(\?|$|\b)/.test(s)) return "Excel";
-    if (/\.pptx?(\?|$|\b)/.test(s)) return "PowerPoint";
-    if (/\.(mp4|mov|avi|webm)(\?|$|\b)|video/.test(s)) return "Video";
+    if (/\.(png|jpe?g|gif|svg|webp|bmp|tiff?|ico)(\?|$|\b)/.test(s)) return "Imágenes";
+    if (/\.(mp3|wav|ogg|m4a|aac|wma)(\?|$|\b)/.test(s)) return "Audios";
+    if (/\.(mp4|mov|avi|webm|mkv|wmv|flv)(\?|$|\b)/.test(s)) return "Videos";
     if (/\.html?(\?|$|\b)/.test(s)) return "HTML";
     return null;
   };
-  const fromUrl = check(String(url || "").toLowerCase());
+  const u = String(url || "").toLowerCase();
+  const fromUrl = check(u);
   if (fromUrl) return fromUrl;
   if (Number(topicType) === 3) return "Enlace";
+  if (/^https?:/.test(u)) return "Enlace";
   const fromTitle = check(String(title || "").toLowerCase());
   if (fromTitle) return fromTitle;
   if (/https?:|www\.|link|enlace/.test(String(title || "").toLowerCase())) return "Enlace";
-  return "Otro";
+  return "Otros";
 }
 
 const CONTENT_TYPE_ICONS = {
-  PDF: "📕", Word: "📘", Excel: "📗", PowerPoint: "📙",
-  Video: "🎬", Enlace: "🔗", HTML: "🌐", Otro: "📄",
+  HTML: "🌐", PDF: "📕", Excel: "📗", Word: "📘",
+  "Imágenes": "🖼️", Audios: "🎧", Videos: "🎬", Enlace: "🔗", Otros: "📄",
 };
+
+// Cuentas institucionales/de servicio que no deben aparecer como profesor
+const SERVICE_ACCOUNT_RE = /^cesa\b|laboratorio|desarrollo profesoral|soporte|capacitaci|prueba|demo|test/i;
 
 // Formatea el último acceso de un estudiante como texto relativo corto.
 function fmtLastAccess(iso) {
@@ -1739,26 +1748,27 @@ const contentKpis = useMemo(() => {
   // (Instructor/Profesor/Docente). Si el endpoint no devuelve nada, caemos
   // al equipo no-estudiante del classlist como antes.
   const teacherAccessList = useMemo(() => {
+    let list = [];
     if (Array.isArray(instructors) && instructors.length > 0) {
-      return instructors
+      list = instructors
         .filter((u) => u?.Identifier != null)
         .map((u) => ({
           userId: String(u.Identifier),
           name: u.DisplayName || `Usuario ${u.Identifier}`,
-          role: u.RoleName || "Instructor",
           iso: lastAccessMap[String(u.Identifier)] ?? null,
         }));
+    } else if (classlistItems.length && studentRows.length) {
+      const studentIds = new Set(studentRows.map((r) => String(r.userId)));
+      list = classlistItems
+        .filter((u) => u?.Identifier != null && !studentIds.has(String(u.Identifier)))
+        .map((u) => ({
+          userId: String(u.Identifier),
+          name: u.DisplayName || `${u.FirstName || ""} ${u.LastName || ""}`.trim() || `Usuario ${u.Identifier}`,
+          iso: u.LastAccessed || null,
+        }));
     }
-    if (!classlistItems.length || !studentRows.length) return [];
-    const studentIds = new Set(studentRows.map((r) => String(r.userId)));
-    return classlistItems
-      .filter((u) => u?.Identifier != null && !studentIds.has(String(u.Identifier)))
-      .map((u) => ({
-        userId: String(u.Identifier),
-        name: u.DisplayName || `${u.FirstName || ""} ${u.LastName || ""}`.trim() || `Usuario ${u.Identifier}`,
-        role: u.RoleName || u.roleName || "Equipo del curso",
-        iso: u.LastAccessed || null,
-      }));
+    // Ocultar cuentas institucionales/de servicio: solo el profesor real
+    return list.filter((t) => !SERVICE_ACCOUNT_RE.test(String(t.name).trim()));
   }, [instructors, lastAccessMap, classlistItems, studentRows]);
 
   // Metadatos de los elementos de contenido (id -> título/url/tipo) para el
@@ -1789,25 +1799,35 @@ const contentKpis = useMemo(() => {
     return map;
   }, [contentTopics, contentRoot]);
 
-  // Desglose por tipo de los elementos publicados (mismo criterio de fecha
-  // que createdCount). Usa los metadatos con Url cuando están disponibles.
-  const contentTypeBreakdown = useMemo(() => {
+  // KPI de elementos publicados: total, desglose por tipo y ritmo, todo
+  // derivado de la MISMA fuente para que el desglose siempre sume el total.
+  // Preferimos /content/topics (con Url para clasificar); fallback al root.
+  const elementsStats = useMemo(() => {
     if (Array.isArray(contentTopics) && contentTopics.length) {
       const start = toDate(courseInfo?.StartDate);
       const counts = {};
+      let total = 0;
       for (const t of contentTopics) {
         if (t?.IsHidden === true) continue;
         const d = toDate(t?.LastModifiedDate);
         if (start && (!d || d < start)) continue;
         const label = contentTypeLabel(t?.Title, t?.Url, t?.TopicType);
         counts[label] = (counts[label] || 0) + 1;
+        total += 1;
       }
-      return Object.entries(counts)
+      const breakdown = Object.entries(counts)
         .map(([label, count]) => ({ label, count }))
         .sort((a, b) => b.count - a.count);
+      const minExpected = contentKpis?.minExpected ?? null;
+      const ratio = minExpected ? clamp(total / minExpected, 0, 2) : null;
+      return { total, breakdown, rhythm: contentRhythmStatus(ratio) };
     }
-    return contentKpis?.typeBreakdown || [];
-  }, [contentTopics, courseInfo?.StartDate, contentKpis]);
+    return {
+      total: contentKpis?.createdCount ?? null,
+      breakdown: contentKpis?.typeBreakdown || [],
+      rhythm: contentRhythmMeta,
+    };
+  }, [contentTopics, courseInfo?.StartDate, contentKpis, contentRhythmMeta]);
 
   // Detalle de consumo desplegable
   const [consumptionDetailOpen, setConsumptionDetailOpen] = useState(false);
@@ -2484,18 +2504,18 @@ const contentKpis = useMemo(() => {
             <div style={{ fontSize: 12, fontWeight: 800, color: "var(--text)", letterSpacing: "0.01em", display: "inline-flex", alignItems: "center", gap: 4 }}>
               Elementos publicados <InfoTooltip text="Elementos dentro de los módulos de contenido del curso (PDF, Word, Excel, páginas, enlaces…) creados o actualizados desde el inicio del curso. No incluye asignaciones (dropbox) — esas se cuentan aparte en la tarjeta de Asignaciones." />
             </div>
-            <div style={{ fontSize: isMobile ? 30 : 38, fontWeight: 900, color: contentKpis?.createdCount != null ? contentRhythmMeta.color : "var(--muted)", fontFamily: "var(--font-mono)", lineHeight: 1 }}>
-              {contentKpis?.createdCount ?? "—"}
+            <div style={{ fontSize: isMobile ? 30 : 38, fontWeight: 900, color: elementsStats.total != null ? elementsStats.rhythm.color : "var(--muted)", fontFamily: "var(--font-mono)", lineHeight: 1 }}>
+              {elementsStats.total ?? "—"}
             </div>
             <div style={{ fontSize: 10, color: "var(--muted)" }}>
               {contentKpis?.minExpected != null ? `Mínimo esperado: ${contentKpis.minExpected}` : "Desde inicio del curso"}
             </div>
-            {contentKpis?.createdCount != null && (
-              <span className="badge" style={{ background: contentRhythmMeta.bg, color: contentRhythmMeta.color, fontSize: 10 }}>
-                {contentRhythmMeta.label}
+            {elementsStats.total != null && (
+              <span className="badge" style={{ background: elementsStats.rhythm.bg, color: elementsStats.rhythm.color, fontSize: 10 }}>
+                {elementsStats.rhythm.label}
               </span>
             )}
-            {(contentTypeBreakdown?.length ?? 0) > 0 && (
+            {(elementsStats.breakdown?.length ?? 0) > 0 && (
               <>
                 <button
                   onClick={() => setContentTypesOpen((v) => !v)}
@@ -2510,7 +2530,7 @@ const contentKpis = useMemo(() => {
                 </button>
                 {contentTypesOpen && (
                   <div style={{ display: "flex", flexDirection: "column", gap: 3, width: "100%", maxHeight: 110, overflowY: "auto" }}>
-                    {contentTypeBreakdown.map((t) => (
+                    {elementsStats.breakdown.map((t) => (
                       <div key={t.label} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, fontSize: 11, padding: "1px 8px" }}>
                         <span style={{ color: "var(--text)", fontWeight: 600 }}>
                           <span aria-hidden="true" style={{ marginRight: 4 }}>{CONTENT_TYPE_ICONS[t.label] || "📄"}</span>
@@ -3056,9 +3076,8 @@ const contentKpis = useMemo(() => {
                 ) : (
                   teacherAccessList.slice(0, 4).map((t) => (
                     <div key={t.userId} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, fontSize: 11 }}>
-                      <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                        <span style={{ color: "var(--text)", fontWeight: 700 }}>{t.name}</span>
-                        <span style={{ color: "var(--muted)" }}> · {t.role}</span>
+                      <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "var(--text)", fontWeight: 700 }}>
+                        {t.name}
                       </span>
                       <span style={{ color: t.iso ? "var(--text)" : COLORS.critical, fontWeight: 800, fontFamily: "var(--font-mono)", flexShrink: 0 }}>
                         {fmtLastAccess(t.iso)}
