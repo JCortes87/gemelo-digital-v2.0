@@ -1209,6 +1209,142 @@ async def brightspace_dropbox_submissions(
     return JSONResponse(status_code=status, content=data)
 
 
+@router.get("/brightspace/course/{org_unit_id}/dropbox/student/{user_id}/status")
+async def brightspace_dropbox_student_status(
+    request: Request, org_unit_id: int, user_id: int
+):
+    """Estado de las asignaciones (dropbox) para UN estudiante: cuáles entregó
+    (tiene submission) y cuáles ya tienen feedback/calificación del docente.
+
+    Devuelve por asignación publicada: id, nombre, fecha de entrega,
+    hasSubmission, submittedAt, isGraded y gradeItemId (para que el frontend
+    pueda emparejar la nota del gradebook). Las carpetas cuya lista de
+    submissions no se pudo leer quedan con hasSubmission=None y el response
+    marca partial=True."""
+    token, err = _require_token_from_request(request)
+    if err:
+        return err
+    headers = _auth_headers(token)
+
+    status_f, folders_data = await _bs_get(
+        f"{BRIGHTSPACE_BASE_URL}/d2l/api/le/{LE_VERSION}/{org_unit_id}/dropbox/folders/",
+        headers,
+    )
+    if status_f != 200:
+        return JSONResponse(status_code=status_f, content=folders_data)
+    folders = folders_data if isinstance(folders_data, list) else (
+        (folders_data or {}).get("Objects") or (folders_data or {}).get("Items") or []
+    )
+    visible = [f for f in folders if isinstance(f, dict) and f.get("IsHidden") is not True]
+
+    # Grupos: si una carpeta es de entrega grupal, la submission vive en la
+    # entidad GRUPO. Resolvemos una sola vez los grupos del estudiante por
+    # cada categoría de grupo usada.
+    group_ids_by_category: dict = {}
+
+    async def _user_group_ids(group_type_id):
+        key = str(group_type_id)
+        if key in group_ids_by_category:
+            return group_ids_by_category[key]
+        ids: set = set()
+        try:
+            _, groups_data = await _bs_get(
+                f"{BRIGHTSPACE_BASE_URL}/d2l/api/lp/{LP_VERSION}"
+                f"/{org_unit_id}/groupcategories/{group_type_id}/groups/",
+                headers,
+            )
+            if isinstance(groups_data, list):
+                for g in groups_data:
+                    if not isinstance(g, dict):
+                        continue
+                    enroll = [str(x) for x in (g.get("Enrollments") or [])]
+                    if str(user_id) in enroll and g.get("GroupId") is not None:
+                        ids.add(str(g.get("GroupId")))
+        except Exception as e:
+            logger.warning("group resolve failed cat=%s user=%s: %s", group_type_id, user_id, e)
+        group_ids_by_category[key] = ids
+        return ids
+
+    async def _folder_status(f):
+        fid = f.get("Id")
+        assess = f.get("Assessment") or {}
+        grade_item_id = assess.get("GradeItemId") or f.get("GradeItemId")
+        due = f.get("DueDate") or (f.get("Availability") or {}).get("EndDate")
+        base = {
+            "id": fid,
+            "name": f.get("Name") or f"Asignación {fid}",
+            "dueDate": due,
+            "gradeItemId": grade_item_id,
+            "hasSubmission": None,
+            "submittedAt": None,
+            "isGraded": None,
+        }
+        if not fid:
+            return base
+        entity_ids = {str(user_id)}
+        if f.get("GroupTypeId") is not None:
+            entity_ids |= await _user_group_ids(f.get("GroupTypeId"))
+        try:
+            s, subs_data = await _bs_get(
+                f"{BRIGHTSPACE_BASE_URL}/d2l/api/le/{LE_VERSION}"
+                f"/{org_unit_id}/dropbox/folders/{fid}/submissions/",
+                headers,
+            )
+            if s != 200:
+                return base
+            subs_list = subs_data if isinstance(subs_data, list) else (
+                (subs_data or {}).get("Items") or (subs_data or {}).get("items") or []
+            )
+            mine = []
+            for entry in subs_list:
+                if not isinstance(entry, dict):
+                    continue
+                eid = (
+                    entry.get("EntityId")
+                    or entry.get("UserId")
+                    or (entry.get("Entity") or {}).get("EntityId")
+                )
+                if str(eid) in entity_ids:
+                    mine.append(entry)
+            flat = []
+            has_feedback = False
+            for entry in mine:
+                inner = entry.get("Submissions") or entry.get("submissions") or []
+                if isinstance(inner, list):
+                    flat.extend([x for x in inner if isinstance(x, dict)])
+                if entry.get("Feedback"):
+                    has_feedback = True
+            flat.sort(key=lambda x: x.get("SubmissionDate") or "", reverse=True)
+            base["hasSubmission"] = len(flat) > 0
+            base["submittedAt"] = (flat[0].get("SubmissionDate") if flat else None)
+            base["isGraded"] = has_feedback
+        except Exception as e:
+            logger.warning(
+                "dropbox student status failed folder=%s user=%s: %s", fid, user_id, e
+            )
+        return base
+
+    import asyncio
+    items = list(await asyncio.gather(*[_folder_status(f) for f in visible]))
+
+    def _due_key(x):
+        return (x.get("dueDate") is None, x.get("dueDate") or "", str(x.get("name") or ""))
+    items.sort(key=_due_key)
+
+    known = [i for i in items if i.get("hasSubmission") is not None]
+    return {
+        "orgUnitId": org_unit_id,
+        "userId": user_id,
+        "items": items,
+        "counts": {
+            "total": len(items),
+            "submitted": sum(1 for i in known if i.get("hasSubmission")),
+            "graded": sum(1 for i in items if i.get("isGraded")),
+        },
+        "partial": len(known) < len(items),
+    }
+
+
 @router.get("/brightspace/course/{org_unit_id}/dropbox/folder/{folder_id}/student/{user_id}/download")
 async def brightspace_dropbox_download(
     request: Request, org_unit_id: int, folder_id: int, user_id: int
