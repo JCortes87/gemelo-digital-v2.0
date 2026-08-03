@@ -217,6 +217,65 @@ agregada y predictiva sobre el desempeño de cada curso.
 - **Estado**: archivado. Era un experimento inicial. Tiene una rama
   `integracion/manual-controlada` con trabajo histórico.
 
+### Flujo detallado de publicación — push del desarrollador, merge manual del dueño
+
+Este es el procedimiento exacto con el que se sube **cada** cambio.
+Aplica a cualquier persona (o asistente) que desarrolle en este proyecto.
+
+#### Resumen de remotes
+
+| Remote local | Repositorio | ¿Se puede pushear? | Para qué sirve |
+|---|---|---|---|
+| `produccion` | `JCortes87/proyecto-gemelos-digitales-JC` | Sí — **solo ramas, nunca `main`** | Abrir PRs; el merge a `main` despliega a producción |
+| `origin` | `JCortes87/gemelo-digital-v2.0` | Sí | **Solo respaldo** — sin CI/CD, no despliega nada |
+| `colaborador` | `juandavid639/Proyecto-Gemelos-Digitales` | **NO (bloqueado)** | Solo `git fetch` de referencia. **No se toca jamás** |
+
+#### Parte 1 — Lo que hace quien desarrolla (hasta aquí llega, sin excepción)
+
+1. Crear una rama nueva con prefijo tipo conventional commits:
+   ```bash
+   git checkout -b feat/nombre-descriptivo   # o fix/, style/, docs/
+   ```
+2. Hacer los cambios y **verificar antes de commitear**: `npm test`,
+   `npm run build` y lint sin errores nuevos.
+3. Commit con mensaje **en imperativo** y prefijo
+   (`feat(dashboard): agrega …`, `fix(auth): corrige …`).
+4. Pushear la **misma rama a los dos repos del dueño**:
+   ```bash
+   git push produccion nombre-de-la-rama   # sube la rama al repo principal (NO despliega)
+   git push origin nombre-de-la-rama       # copia de respaldo en v2.0
+   ```
+   Pushear una rama a `produccion` **no despliega nada** — los workflows
+   solo se disparan con cambios en `main`.
+5. Abrir el Pull Request hacia `main` del repo principal (GitHub imprime
+   el enlace al hacer el push):
+   `https://github.com/JCortes87/proyecto-gemelos-digitales-JC/pull/new/<rama>`
+6. **Fin del trabajo del desarrollador.** Prohibido para quien
+   desarrolla: mergear el PR, pushear directo a `main`, y cualquier
+   operación de escritura sobre `colaborador` (el repo de Juan).
+
+#### Parte 2 — Lo que hace el dueño (JCortes87), manualmente
+
+1. Abrir el PR en GitHub → pestaña **Files changed** → revisar el diff.
+2. Botón verde **"Merge pull request"** → **"Confirm merge"**. Este clic
+   es el único evento que despliega a producción.
+3. Verificar en la pestaña **Actions** que los workflows queden en verde
+   (frontend ~3 min; backend ~10 min; solo corren los que correspondan a
+   los paths tocados; `docs/**` no dispara ninguno).
+4. Comprobar en `https://gemelo.cesa.edu.co` en **ventana de incógnito**
+   (o `Ctrl+Shift+R`).
+5. Si un workflow falla, producción no se ve afectada (el contenedor y
+   los archivos anteriores siguen sirviendo); ver sección de rollback.
+
+#### Reglas duras (no negociables)
+
+- `main` del repo principal **solo** cambia mediante merge de PR hecho
+  por el dueño. Nunca push directo, nunca merge local, nunca `--force`.
+- El repo de Juan David (`colaborador`) **no se toca en absoluto** — ni
+  push, ni PRs, ni escritura de ningún tipo. Único uso: `git fetch`.
+- `gemelo-digital-v2.0` es respaldo: pushear ahí no despliega ni
+  reemplaza el PR — es una copia de seguridad de las ramas y de `main`.
+
 ---
 
 ## 5. URLs de producción
@@ -478,12 +537,16 @@ Definidas en el `taskdef` de ECS (sección `environment`):
 
 ### Hacer un cambio de código y desplegarlo
 
-1. Hacer el cambio localmente en la rama que prefieras (típicamente
-   `sync/upstream-abril-2026` o crear una nueva).
-2. `git add` + `git commit` con mensaje descriptivo.
-3. Abrir un Pull Request a `main` en GitHub.
-4. Revisar y mergear el PR.
-5. GitHub Actions deploya automáticamente.
+Seguir el **flujo detallado de publicación** de la sección 4. En corto:
+
+1. `git checkout -b feat/nombre-descriptivo` (o `fix/`, `style/`, `docs/`).
+2. Cambios + verificación (`npm test`, `npm run build`, lint) +
+   `git commit` con mensaje en imperativo.
+3. `git push produccion <rama>` y `git push origin <rama>` (respaldo).
+4. Abrir PR hacia `main` de `proyecto-gemelos-digitales-JC`.
+5. **El dueño (JCortes87) revisa y mergea manualmente el PR** — ese
+   merge dispara el deploy automático. Nunca push directo a `main` y
+   nunca tocar el repo de Juan (`colaborador`).
 
 ### Ver los logs del backend en producción
 
