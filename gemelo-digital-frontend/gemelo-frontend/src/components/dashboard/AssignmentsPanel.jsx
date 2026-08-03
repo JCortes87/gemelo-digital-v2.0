@@ -15,6 +15,7 @@ import { toDate, fmtPct } from "../../utils/helpers";
 function AssignmentsPanel({ orgUnitId }) {
   const [folders, setFolders] = useState(null); // null = cargando, [] = sin datos
   const [err, setErr] = useState("");
+  const [showList, setShowList] = useState(false); // detalle colapsado por defecto
 
   useEffect(() => {
     if (!orgUnitId) return;
@@ -49,7 +50,9 @@ function AssignmentsPanel({ orgUnitId }) {
 
   const { rows, stats } = useMemo(() => {
     const now = new Date();
-    const rows = (folders || []).map((f) => {
+    // Solo asignaciones publicadas (no ocultas para los estudiantes)
+    const visible = (folders || []).filter((f) => f?.IsHidden !== true);
+    const rows = visible.map((f) => {
       const due =
         toDate(f?.DueDate) || toDate(f?.Availability?.EndDate) || null;
       const start = toDate(f?.Availability?.StartDate) || null;
@@ -89,6 +92,7 @@ function AssignmentsPanel({ orgUnitId }) {
 
     const stats = {
       created: rows.length,
+      hidden: (folders || []).length - visible.length,
       withSubmissions: rows.filter((r) => r.withSub > 0).length,
       graded: rows.filter((r) => r.isGraded).length,
       overdue: rows.filter((r) => r.isOverdue).length,
@@ -141,59 +145,81 @@ function AssignmentsPanel({ orgUnitId }) {
   }
 
   const miniStats = [
-    { label: "Creadas", value: stats.created, color: "var(--brand)", icon: "📝" },
-    { label: "Con entregas", value: stats.withSubmissions, color: COLORS.ok, icon: "📥" },
-    { label: "Calificadas", value: stats.graded, color: COLORS.brand, icon: "✅" },
-    { label: "Vencidas", value: stats.overdue, color: stats.overdue > 0 ? COLORS.critical : "var(--muted)", icon: "⏰" },
+    { label: "Activas", value: stats.created, color: "var(--brand)", bg: "var(--brand-light)", icon: "📝" },
+    { label: "No publicadas", value: stats.hidden, color: "var(--muted)", bg: "var(--bg)", icon: "🙈" },
+    { label: "Con entregas", value: stats.withSubmissions, color: COLORS.ok, bg: "var(--ok-bg)", icon: "📥" },
+    { label: "Calificadas", value: stats.graded, color: COLORS.brand, bg: "var(--brand-light)", icon: "✅" },
+    { label: "Vencidas", value: stats.overdue, color: stats.overdue > 0 ? COLORS.critical : "var(--muted)", bg: stats.overdue > 0 ? "var(--critical-bg)" : "var(--bg)", icon: "⏰" },
   ];
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-      {/* Mini KPIs */}
+      {/* Total de asignaciones del curso (activas + no publicadas) */}
+      <div style={{ textAlign: "center" }}>
+        <div style={{ fontSize: 32, fontWeight: 900, fontFamily: "var(--font-mono)", color: "var(--text)", lineHeight: 1.1 }}>
+          {stats.created + stats.hidden}
+        </div>
+        <div style={{ fontSize: 10, color: "var(--muted)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em" }}>
+          Total de asignaciones
+        </div>
+      </div>
+
+      {/* Mini KPIs — una sola fila dentro de la tarjeta, separados por líneas */}
       <div
         style={{
           display: "grid",
-          gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))",
-          gap: 10,
+          gridTemplateColumns: "repeat(auto-fit, minmax(110px, 1fr))",
         }}
       >
-        {miniStats.map((s) => (
+        {miniStats.map((s, i) => (
           <div
             key={s.label}
             style={{
-              padding: "10px 12px",
-              border: "1px solid var(--border)",
-              borderRadius: 12,
-              background: "var(--card)",
+              padding: "6px 8px",
+              borderLeft: i > 0 ? "1px solid var(--border)" : "none",
               display: "flex",
+              flexDirection: "column",
               alignItems: "center",
-              gap: 10,
+              gap: 5,
+              textAlign: "center",
             }}
           >
-            <span style={{ fontSize: 18 }} aria-hidden="true">{s.icon}</span>
-            <div>
-              <div
-                style={{
-                  fontSize: 20,
-                  fontWeight: 900,
-                  fontFamily: "var(--font-mono)",
-                  color: s.color,
-                  lineHeight: 1.1,
-                }}
-              >
-                {s.value}
-              </div>
-              <div
-                style={{
-                  fontSize: 10,
-                  color: "var(--muted)",
-                  fontWeight: 700,
-                  textTransform: "uppercase",
-                  letterSpacing: "0.05em",
-                }}
-              >
-                {s.label}
-              </div>
+            <div
+              style={{
+                width: 34,
+                height: 34,
+                borderRadius: 10,
+                background: s.bg,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                fontSize: 16,
+              }}
+              aria-hidden="true"
+            >
+              {s.icon}
+            </div>
+            <div
+              style={{
+                fontSize: 22,
+                fontWeight: 900,
+                fontFamily: "var(--font-mono)",
+                color: s.color,
+                lineHeight: 1.1,
+              }}
+            >
+              {s.value}
+            </div>
+            <div
+              style={{
+                fontSize: 10,
+                color: "var(--muted)",
+                fontWeight: 700,
+                textTransform: "uppercase",
+                letterSpacing: "0.05em",
+              }}
+            >
+              {s.label}
             </div>
           </div>
         ))}
@@ -262,7 +288,18 @@ function AssignmentsPanel({ orgUnitId }) {
         </div>
       )}
 
+      {/* Botón para desplegar el detalle por asignación (colapsado por defecto) */}
+      <button
+        className="btn"
+        onClick={() => setShowList((v) => !v)}
+        aria-expanded={showList}
+        style={{ alignSelf: "center", fontSize: 12, padding: "7px 16px", borderRadius: 10 }}
+      >
+        📋 {showList ? "Ocultar detalle" : `Ver detalle de asignaciones (${rows.length})`} {showList ? "▴" : "▾"}
+      </button>
+
       {/* Listado por asignación */}
+      {showList && (
       <div
         style={{
           display: "flex",
@@ -355,6 +392,9 @@ function AssignmentsPanel({ orgUnitId }) {
 
               <div style={{ flexShrink: 0, textAlign: "center", minWidth: 70 }}>
                 <div
+                  title={r.withFb > r.withSub
+                    ? "Incluye estudiantes calificados sin entrega (p. ej. nota 0)"
+                    : "Estudiantes con calificación / total de estudiantes"}
                   style={{
                     fontSize: 12,
                     fontWeight: 900,
@@ -366,7 +406,7 @@ function AssignmentsPanel({ orgUnitId }) {
                       : "var(--muted)",
                   }}
                 >
-                  {r.withFb}/{r.withSub}
+                  {Math.min(r.withFb, r.totalUsers)}/{r.totalUsers}
                   {r.isGraded && <span style={{ marginLeft: 3 }}>✓</span>}
                 </div>
                 <div style={{ fontSize: 9, color: "var(--muted)", fontWeight: 700, textTransform: "uppercase" }}>
@@ -377,6 +417,7 @@ function AssignmentsPanel({ orgUnitId }) {
           );
         })}
       </div>
+      )}
     </div>
   );
 }

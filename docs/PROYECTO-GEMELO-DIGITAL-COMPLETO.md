@@ -5,7 +5,10 @@
 > cada cosa. Pensado para que cualquier persona técnica que herede el
 > proyecto pueda continuarlo sin pedir contexto a nadie.
 >
-> **Última actualización**: junio 2026.
+> **Última actualización**: 31 de julio de 2026 — rediseño del dashboard
+> docente y del portal del estudiante (ver sección 15). La versión Word
+> (`Gemelo-Digital-Documentacion-Completa.docx`) corresponde a junio 2026;
+> este Markdown es la versión canónica y más reciente.
 
 ---
 
@@ -18,36 +21,53 @@ agregada y predictiva sobre el desempeño de cada curso.
 
 ### Funcionalidades principales
 
-#### Vista de docente
-- **Dashboard del curso** con KPIs agregados: promedio de notas, cobertura
-  de evaluación, distribución de riesgo, alertas, etc.
+#### Vista de docente (rediseñada en julio 2026, estilo dashboard analítico)
+- **Fila de KPIs** con tarjetas centradas: nota promedio (donut 0–10),
+  estudiantes inscritos, en riesgo (alto+medio) y contenidos publicados
+  vs mínimo esperado.
+- **Riesgo académico** — medidor semicircular tipo velocímetro
+  (`GaugeMeter`) con el % de estudiantes en riesgo y leyenda alto/medio/bajo.
+- **Distribución de notas** — histograma por rangos de 1 punto.
+- **Contenidos y cobertura** — ritmo de publicación del profesor
+  (cumplimiento vs mínimo), índice de cumplimiento evaluativo y
+  **contenidos consumidos por estudiantes** (promedio de temas abiertos,
+  vía user progress de Brightspace).
 - **Estudiantes prioritarios** — quiénes necesitan intervención y por qué.
-- **SmartAlerts** — alertas inteligentes (cobertura baja, desempeño bajo,
-  concentración de riesgo, etc.).
-- **GradePredictions** — predicción de notas finales por estudiante.
-- **DueDateCalendar** — calendario con todas las fechas de entrega.
-- **EvidenceReports** — reporte detallado de evidencias por estudiante.
-- **AINarrativeSummary** — resumen narrativo del curso generado por IA.
-- **CoursesComparison** — comparación entre cursos del mismo docente.
-- **CourseTrends** — tendencias del curso a lo largo del semestre
-  (persistidas en DB, históricas).
-- **Descarga de evidencias** y feedback del docente.
+- **Resultados de aprendizaje** — RA del curso en 2 columnas, ordenados
+  de menor a mayor desempeño, con botón Vincular.
+- **Asignaciones del curso** (`AssignmentsPanel`) — creadas, con entregas
+  (+% de entrega), calificadas y vencidas; listado detallado colapsable.
+- **Accesos al curso** — recencia del último acceso por estudiante
+  (hoy / 7 días / +14 días / nunca) y top de desconectados, del
+  `LastAccessed` del classlist.
+- **Pestañas dedicadas** (sidebar): Estudiantes (tabla completa con
+  columna de último acceso), Calendario de entregas, Tendencias, Rutas de
+  atención, Predicción de notas, Evidencias, RA y Asistente IA.
+- **SmartAlerts** y **AINarrativeSummary** (resumen narrativo IA) al final
+  del dashboard.
+- **Descarga de evidencias**, export CSV y feedback del docente.
 
-#### Vista de estudiante
-- **Portal personal** con todos sus cursos.
-- **Mis cursos** y su rendimiento individual.
-- **Cortes** y evidencias vencidas.
+#### Vista de estudiante (rediseñada en julio 2026, mismo estilo)
+- **Fila de KPIs**: mi nota actual (donut /10), asignaciones calificadas
+  (% + pendientes y vencidas), cobertura y mi estado.
+- **Mis Resultados de Aprendizaje** — anillo por RA con estado y la
+  **explicación de cada resultado** (descripción del outcome).
+- **Cortes** y evidencias vencidas/pendientes/calificadas.
 - **Calendario personal** con fechas de entrega.
 - **Proyección explicada** — predicción de nota final con explicación.
+- **Prescripción del docente** y ruta de mejora.
 
 #### Vista de coordinador
 - **Vista superior** de todos los cursos bajo su responsabilidad.
 - **Filtros por semestre** y año académico.
 
 #### Vista de superadmin
-- **Búsqueda por ID** de cualquier curso o usuario.
-- **Modo impersonar** — ver el sistema desde la perspectiva de otro
-  usuario para diagnóstico/soporte.
+- **Búsqueda por ID** de cualquier curso o usuario (RoleHome).
+- **Toggle Vista profesor / Vista estudiante** en el topbar: "Vista
+  estudiante" abre un selector emergente (buscar por nombre o ID) y
+  muestra el portal del estudiante elegido tal como él lo ve.
+- **Modo impersonar** — también accesible desde el drawer de un
+  estudiante ("Ver portal de este estudiante").
 
 ### Cómo se accede
 
@@ -123,12 +143,17 @@ agregada y predictiva sobre el desempeño de cada curso.
 ### Frontend
 - **Framework**: React 19
 - **Bundler**: Vite 8
-- **Routing**: React Router
-- **Estado global**: Context API (AuthContext, CourseContext, I18nContext,
-  ThemeContext, ToastContext)
-- **Charts**: Recharts 3.7
-- **Estilos**: CSS Modules
-- **Lenguaje**: JavaScript (ES2022+) + algunos archivos TypeScript
+- **Routing**: React Router DOM v7
+- **Estado global**: Context API (AuthContext, I18nContext, ThemeContext,
+  ToastContext; CourseContext existe pero no está conectado)
+- **Charts**: Recharts 3.7 + componentes SVG propios (`CircularRing`,
+  `GaugeMeter`)
+- **Estilos**: CSS-in-JS — un solo string inyectado en runtime desde
+  `src/styles/global.js` (variables CSS, dark mode con clase `.dark`);
+  no se usan CSS Modules ni Tailwind
+- **Tests**: Vitest (`npm test`) — tests de helpers, colores y smoke del
+  dashboard
+- **Lenguaje**: JavaScript (ES2022+), sin TypeScript activo
 
 ### Infraestructura
 - **Cloud**: AWS (región us-east-1, North Virginia)
@@ -147,20 +172,144 @@ agregada y predictiva sobre el desempeño de cada curso.
 ### Repositorio principal (production)
 - **URL**: https://github.com/JCortes87/proyecto-gemelos-digitales-JC
 - **Dueño actual**: JCortes87
-- **Branch productiva**: `main` (cada merge a esta rama dispara deploy automático)
+- **Branch productiva**: `main` — **cada merge a esta rama dispara el
+  deploy automático a producción** (GitHub Actions OIDC). Este es el
+  único repo cuyo push tiene efecto en producción.
+- **Remote local**: `produccion` en la carpeta de trabajo actual.
 - **Branch de trabajo histórica**: `sync/upstream-abril-2026` (puede usarse para PRs)
 
-### Repositorio del colaborador (referencia, solo lectura)
+### Repositorio de respaldo v2.0
+- **URL**: https://github.com/JCortes87/gemelo-digital-v2.0
+- **Rol**: **SOLO respaldo**. Recibe copia de `main` y de las ramas de
+  cambios nuevos. Es el remote `origin` en la carpeta de trabajo local
+  (que está clonada del repo de Juan David).
+- **NO tiene CI/CD**: pushear aquí no despliega nada. El deploy a
+  producción es exclusivo del repo principal
+  (`proyecto-gemelos-digitales-JC`), cuyo rol IAM OIDC solo confía en ese
+  repo.
+- **Flujo de trabajo actual (EXPLÍCITO — así se despliega SIEMPRE)**:
+  1. Los cambios se desarrollan localmente en una rama nueva.
+  2. La rama se pushea a `produccion` (repo principal) y a `origin`
+     (respaldo v2.0).
+  3. Se abre un **Pull Request** de esa rama hacia `main` del repo
+     principal (`proyecto-gemelos-digitales-JC`).
+  4. **El merge del PR lo hace únicamente el dueño del repo (JCortes87)
+     desde GitHub**, después de revisar los cambios. Nadie más mergea, y
+     NUNCA se hace push directo a `main`.
+  5. Ese merge a `main` es lo único que dispara el deploy automático a
+     producción (GitHub Actions).
+
+### Repositorio del colaborador — REGLA FIJA: NO SE TOCA EN ABSOLUTO
 - **URL**: https://github.com/juandavid639/Proyecto-Gemelos-Digitales
 - **Dueño**: Juan David
-- **Uso**: referencia para mirar su versión histórica. **NUNCA se debe
-  empujar a este repo** desde nuestro setup. Está configurado como remote
-  `colaborador` con push deshabilitado.
+- **REGLA FIJA E INNEGOCIABLE**: este repositorio **no se toca en
+  absoluto**: ni push, ni PRs, ni issues, ni ninguna operación de
+  escritura, bajo ninguna circunstancia. Esta regla no requiere
+  confirmación en cada sesión de trabajo — aplica siempre.
+- **Único uso permitido**: `git fetch colaborador` (solo lectura) para
+  actualizarnos con sus avances cuando sea necesario.
+- **Protección técnica**: está configurado como remote `colaborador` con
+  push deshabilitado (`DISABLED-no-push-to-upstream`), así que cualquier
+  push falla antes de llegar a GitHub.
 
 ### Repositorio fork inicial (archivo, no usar)
 - **URL**: https://github.com/JCortes87/gemelo-digital-backend-JC
 - **Estado**: archivado. Era un experimento inicial. Tiene una rama
   `integracion/manual-controlada` con trabajo histórico.
+
+### Flujo detallado de publicación — push del desarrollador, merge manual del dueño
+
+Este es el procedimiento exacto con el que se sube **cada** cambio.
+Aplica a cualquier persona (o asistente) que desarrolle en este proyecto.
+
+#### Resumen de remotes
+
+| Remote local | Repositorio | ¿Se puede pushear? | Para qué sirve |
+|---|---|---|---|
+| `produccion` | `JCortes87/proyecto-gemelos-digitales-JC` | Sí — **solo ramas, nunca `main`** | Abrir PRs; el merge a `main` despliega a producción |
+| `origin` | `JCortes87/gemelo-digital-v2.0` | Sí | **Solo respaldo** — sin CI/CD, no despliega nada |
+| `colaborador` | `juandavid639/Proyecto-Gemelos-Digitales` | **NO (bloqueado)** | Solo `git fetch` de referencia. **No se toca jamás** |
+
+#### Parte 1 — Lo que hace quien desarrolla (hasta aquí llega, sin excepción)
+
+1. Crear una rama nueva con prefijo tipo conventional commits:
+   ```bash
+   git checkout -b feat/nombre-descriptivo   # o fix/, style/, docs/
+   ```
+2. Hacer los cambios y **verificar antes de commitear**: `npm test`,
+   `npm run build` y lint sin errores nuevos.
+3. Commit con mensaje **en imperativo** y prefijo
+   (`feat(dashboard): agrega …`, `fix(auth): corrige …`).
+4. Pushear la **misma rama a los dos repos del dueño**:
+   ```bash
+   git push produccion nombre-de-la-rama   # sube la rama al repo principal (NO despliega)
+   git push origin nombre-de-la-rama       # copia de respaldo en v2.0
+   ```
+   Pushear una rama a `produccion` **no despliega nada** — los workflows
+   solo se disparan con cambios en `main`.
+5. Abrir el Pull Request hacia `main` del repo principal (GitHub imprime
+   el enlace al hacer el push):
+   `https://github.com/JCortes87/proyecto-gemelos-digitales-JC/pull/new/<rama>`
+6. **Fin del trabajo del desarrollador.** Prohibido para quien
+   desarrolla: mergear el PR, pushear directo a `main`, y cualquier
+   operación de escritura sobre `colaborador` (el repo de Juan).
+
+#### Parte 2 — Lo que hace el dueño (JCortes87), manualmente
+
+1. Abrir el PR en GitHub → pestaña **Files changed** → revisar el diff.
+2. Botón verde **"Merge pull request"** → **"Confirm merge"**. Este clic
+   es el único evento que despliega a producción.
+3. Verificar en la pestaña **Actions** que los workflows queden en verde
+   (frontend ~3 min; backend ~10 min; solo corren los que correspondan a
+   los paths tocados; `docs/**` no dispara ninguno).
+4. Comprobar en `https://gemelo.cesa.edu.co` en **ventana de incógnito**
+   (o `Ctrl+Shift+R`).
+5. Si un workflow falla, producción no se ve afectada (el contenedor y
+   los archivos anteriores siguen sirviendo); ver sección de rollback.
+
+#### Redacción de commits y Pull Requests (convención fija)
+
+Los mensajes de commit y los textos de los PR siguen **siempre** el
+mismo formato. Aplica a cualquier persona o asistente que desarrolle:
+
+- **Idioma**: español.
+- **Modo imperativo**: verbos que describen lo que hace el cambio al
+  aplicarse — "agrega", "ajusta", "corrige", "mueve", "elimina",
+  "renombra". Nunca en pasado ("se agregó") ni en tono conversacional
+  ("te dejé listo…", "aquí van los cambios…").
+- **Prefijo tipo conventional commits** con ámbito entre paréntesis:
+  `feat(dashboard):`, `fix(auth):`, `style(portal):`, `docs:`,
+  `chore:`, `perf:`, `sec:`.
+- **Título del PR = título del commit principal**: una sola línea,
+  prefijo + resumen en imperativo. No inventar un título distinto.
+- **Descripción del PR / cuerpo del commit**: lista de viñetas, cada
+  una en imperativo, diciendo qué cambia y — cuando no sea obvio — por
+  qué. Sin narrativa personal ni saludos.
+
+Ejemplos **correctos**:
+
+```
+feat(dashboard): agrega tarjeta de accesos al curso con recencia por estudiante
+fix(ui): corrige la pestaña inicial del dashboard (abría en Estudiantes)
+docs: detalla el procedimiento de publicacion paso a paso
+```
+
+Ejemplos **incorrectos**:
+
+```
+Cambios varios                          ← no dice qué hace
+Se agregó la tarjeta de accesos         ← pasado, no imperativo
+Hola, aquí te dejo lo del dashboard     ← conversacional
+```
+
+#### Reglas duras (no negociables)
+
+- `main` del repo principal **solo** cambia mediante merge de PR hecho
+  por el dueño. Nunca push directo, nunca merge local, nunca `--force`.
+- El repo de Juan David (`colaborador`) **no se toca en absoluto** — ni
+  push, ni PRs, ni escritura de ningún tipo. Único uso: `git fetch`.
+- `gemelo-digital-v2.0` es respaldo: pushear ahí no despliega ni
+  reemplaza el PR — es una copia de seguridad de las ramas y de `main`.
 
 ---
 
@@ -197,6 +346,12 @@ agregada y predictiva sobre el desempeño de cada curso.
 | `GET /.well-known/jwks.json` | JWKS público para LTI 1.3 |
 | `POST /lti/login` | OIDC login initiation (LTI 1.3) |
 | `POST /lti/launch` | LTI launch endpoint |
+| `GET /gemelo/course/{ou}/grade-items` | Grade items + dropbox con due dates (DB-first). Lo usa el calendario |
+| `GET /brightspace/course/{ou}/dropbox/folders` | Asignaciones crudas de Brightspace (con TotalUsersWithSubmissions/Feedback). Lo usa AssignmentsPanel |
+| `GET /brightspace/course/{ou}/classlist` | Classlist crudo (incluye `LastAccessed` por estudiante). Lo usan la tarjeta de Accesos y la columna Último acceso |
+| `GET /brightspace/course/{ou}/content/consumption` | **Nuevo (jul 2026)**: consumo de contenidos por estudiante → `{perUser, perUserTopics}` (user progress con fallback a completions por tema) |
+| `GET /brightspace/course/{ou}/instructors` | **Nuevo (jul 2026)**: profesores del curso con rol real (LP enrollments) — lo usa "Accesos del profesor" |
+| `GET /brightspace/course/{ou}/content/topics` | **Nuevo (jul 2026)**: elementos de contenido con Url/TopicType (recorre la estructura de cada módulo) — permite clasificar por tipo (PDF, Word…) |
 
 ---
 
@@ -417,12 +572,16 @@ Definidas en el `taskdef` de ECS (sección `environment`):
 
 ### Hacer un cambio de código y desplegarlo
 
-1. Hacer el cambio localmente en la rama que prefieras (típicamente
-   `sync/upstream-abril-2026` o crear una nueva).
-2. `git add` + `git commit` con mensaje descriptivo.
-3. Abrir un Pull Request a `main` en GitHub.
-4. Revisar y mergear el PR.
-5. GitHub Actions deploya automáticamente.
+Seguir el **flujo detallado de publicación** de la sección 4. En corto:
+
+1. `git checkout -b feat/nombre-descriptivo` (o `fix/`, `style/`, `docs/`).
+2. Cambios + verificación (`npm test`, `npm run build`, lint) +
+   `git commit` con mensaje en imperativo.
+3. `git push produccion <rama>` y `git push origin <rama>` (respaldo).
+4. Abrir PR hacia `main` de `proyecto-gemelos-digitales-JC`.
+5. **El dueño (JCortes87) revisa y mergea manualmente el PR** — ese
+   merge dispara el deploy automático. Nunca push directo a `main` y
+   nunca tocar el repo de Juan (`colaborador`).
 
 ### Ver los logs del backend en producción
 
@@ -583,6 +742,148 @@ Permite disparar deploys manuales desde la pestaña Actions de GitHub sin
 necesidad de hacer un commit. Útil para re-desplegar la misma versión
 (por ejemplo si una variable de entorno cambió en taskdef y necesitas
 que el container la lea).
+
+---
+
+## 15. Actualización julio 2026 — rediseño del dashboard y portal
+
+Trabajo realizado el 31 de julio de 2026 (ramas pusheadas al repo
+principal y respaldadas en `gemelo-digital-v2.0`; cada una se mergeó a
+`main` vía PR con deploy automático):
+
+### Dashboard docente (`TeacherDashboard.jsx` + `pages/teacher/`)
+- **Fila de 4 KPIs** estilo tarjeta centrada: nota promedio (donut),
+  estudiantes, en riesgo, contenidos publicados (con tooltip que aclara
+  que cuenta temas de contenido, no asignaciones).
+- **`GaugeMeter`** (nuevo en `primitives.jsx`): medidor semicircular tipo
+  velocímetro con zonas verde/ámbar/rojo; reemplaza la dona de riesgo.
+- **Fila de 4 tarjetas de igual altura**: riesgo académico, distribución
+  de notas, contenidos y cobertura, estudiantes prioritarios.
+- **Fila RA + Asignaciones + Accesos**: RA en 2 columnas con botón
+  Vincular; `AssignmentsPanel` (nuevo componente) con contadores
+  creadas/con entregas/calificadas/vencidas, % global de entregas y
+  detalle colapsable; tarjeta de accesos al curso por recencia.
+- **Pestañas nuevas** en el sidebar: Estudiantes (tabla, con columna
+  "Último acceso"), Calendario y Tendencias — antes apiladas en el
+  dashboard. Atajos de teclado 4/5/6 y paleta actualizados.
+- **Tarjetas con banda de encabezado** (fondo suave, título centrado) en
+  toda el área docente y el portal (componente `Card`).
+- **Fix**: el dashboard abría en la pestaña Estudiantes al montar
+  (estado `activeSection` inicializaba en `"students"`); la pestaña por
+  defecto vuelve a ser Dashboard.
+- SmartAlerts, tip de "nuevas funciones" y resumen semanal IA se movieron
+  al final del dashboard (pendiente: convertirlos en notificaciones).
+
+### Portal del estudiante (`StudentPortal.jsx`)
+- KPIs rediseñados al mismo estilo: mi nota actual, **asignaciones
+  calificadas** (nuevo, con pendientes/vencidas), cobertura y mi estado.
+- Los RA conservan la explicación de cada resultado.
+
+### Superadmin
+- Botón **"Vista estudiante"** abre un selector emergente de estudiante
+  (busca por nombre/ID) y muestra su portal; reemplaza al menú
+  "Ver como…" del topbar.
+
+### Backend
+- Nuevo endpoint `GET /brightspace/course/{ou}/content/consumption`
+  (proxy, best-effort) que agrega el user progress de contenido por
+  estudiante usando el scope `content:completions:read` ya autorizado.
+
+### Entorno de desarrollo local (esta carpeta)
+- Backend: venv en `gemelo-digital-backend/.venv`, certificado
+  autofirmado en `gemelo-digital-backend/certs/` (gitignoreado) y `.env`
+  local (gitignoreado; el `BRIGHTSPACE_SCOPE` viejo se comentó porque
+  pedía `grades:grades:read`, un scope ya no autorizado — se usa el
+  default del código). Arranque:
+  `.venv\Scripts\python -m uvicorn main:app --port 8000 --ssl-keyfile certs/localhost-key.pem --ssl-certfile certs/localhost-cert.pem`
+- Frontend: `npm run dev` (proxy a `https://localhost:8000` con cert
+  autofirmado, ya configurado en `vite.config.js`).
+- Los secretos `SESSION_SECRET`/`LTI_STATE_SECRET` se generaron aleatorios
+  para local (obligatorios porque `TOOL_BASE_URL` es https).
+
+### Iteraciones posteriores de la misma sesión
+- Tarjeta de cobertura recortada y renombrada a **"Cumplimiento
+  evaluativo"** (se eliminó la sección de ritmo de contenidos, duplicada
+  con el KPI superior).
+- **Accesos al curso**: labels aclarados ("Entraron hoy", "Entraron en
+  los últimos 7 días", "Sin entrar hace +14 días", "Nunca han entrado");
+  los 4 items son desplegables y muestran quiénes son (clic en el nombre
+  abre el gemelo del estudiante). Sección **"Accesos del profesor"** con
+  el último ingreso del docente (rol real vía nuevo endpoint
+  `/brightspace/course/{ou}/instructors` sobre LP enrollments; fallback:
+  no-estudiantes del classlist).
+- **Contenidos consumidos** movido a la tarjeta de Accesos, con dos
+  barras (promedio de temas abiertos y % de estudiantes que abrieron) y
+  botón **"Acceso a contenidos"** que despliega quiénes y qué contenidos
+  abrió cada estudiante (icono por tipo inferido del título). El endpoint
+  `/content/consumption` devuelve también `perUserTopics` y tiene doble
+  estrategia (user progress con fallback a completions por tema).
+- **Asignaciones**: el panel cuenta y lista solo las **publicadas**
+  ("Activas") y agrega el contador "No publicadas" (ocultas). El dato de
+  calificadas por asignación se muestra sobre el total de estudiantes
+  (Brightspace cuenta feedback dado incluso a quienes no entregaron, por
+  eso podía verse >100%).
+- **KPI "Contenidos publicados"** con desglose por tipo desplegable
+  (PDF, Word, Excel, PowerPoint, video, enlace, HTML, otro — tipo
+  inferido del título del tema).
+- Terminología: los archivos/páginas dentro de los módulos de contenido
+  se llaman **"elementos"** en la UI (KPI "Elementos publicados",
+  "Elementos consumidos", "Tipos de elemento") para no confundirlos con
+  los módulos de contenido de Brightspace. La clasificación por tipo usa
+  la **Url real del archivo** vía el endpoint nuevo
+  `/brightspace/course/{ou}/content/topics` (el content/root no trae Url
+  y por título casi todo caía en "Otro").
+- Categorías de tipo de elemento acordadas: **HTML** (páginas construidas
+  en Brightspace), **PDF**, **Excel**, **Word**, **Imágenes** (todos los
+  formatos), **Audios**, **Videos**, **Enlace** (externos o internos) y
+  **Otros**. El total del KPI y el desglose salen de la misma fuente
+  (`/content/topics`) para que siempre sumen igual.
+- "Accesos del profesor" oculta cuentas institucionales/de servicio
+  (p. ej. "CESA Laboratorio", "Desarrollo profesoral" — regex
+  `SERVICE_ACCOUNT_RE` en TeacherDashboard.jsx) y ya no muestra el rol,
+  solo el nombre del profesor.
+- **Fix superadmin**: al refrescar en `/dashboard` sin curso
+  seleccionado, el usuario superadmin (p. ej. Desarrollo Profesoral) ya
+  no cae en el selector de cursos de profesor — se redirige siempre a su
+  consola de administración (RoleHome).
+- **Topbar reorganizado**: el buscador y el toggle Vista profesor /
+  estudiante se mantienen; Comandos, Inicio, Mis cursos, Panel de
+  coordinación, idioma, tema e imprimir se agruparon en un **menú
+  desplegable** (icono de 9 puntos) a la izquierda del usuario. Se
+  eliminó el menú muerto "Ver como…" del topbar.
+- **Asignaciones**: la tarjeta muestra arriba el **total de
+  asignaciones** (activas + no publicadas) y debajo el desglose.
+- **Portal del estudiante rediseñado (2-3 ago)**: tarjeta "Mi nota" con
+  **anillo circular** (`CircularRing`, el mismo tipo de gráfico de los
+  Resultados de Aprendizaje, coloreado según umbrales), desglose por
+  **corte 1/2/3** y nota final calculada cuando los 3 cortes están
+  calificados; tarjeta "Mis asignaciones" con % entregadas y %
+  calificadas (desplegables con el detalle y la nota de cada una, cruzada
+  con el gradebook vía `gradeItemId`); "Notas de mis asignaciones" con
+  gráfica y tabla; **calendario de próximas entregas debajo de
+  Resultados de Aprendizaje**. Nuevo endpoint
+  `GET /brightspace/course/{ou}/dropbox/student/{userId}/status`
+  (entrega/calificación por asignación publicada, con soporte de
+  entregas grupales).
+- Limitación documentada: la **duración de las sesiones** (tiempo
+  conectado, pedido para la tarjeta de accesos y la tabla de
+  estudiantes) no está disponible vía API REST de Brightspace; solo
+  existe en Data Hub (datasets de sesiones). La tarjeta y la columna
+  muestran recencia del último acceso, no duración. Para tener duración
+  habría que habilitar Data Hub con el admin de Brightspace e ingerir
+  los datasets vía el scheduler.
+
+### Convenciones
+- Mensajes de commit y títulos de PR **en imperativo** ("ajusta…",
+  "agrega…"), con prefijo tipo conventional commits (feat/fix/style).
+
+### Pendientes que dejó esta sesión
+- Convertir el tip de "nuevas funciones" en un sistema de notificaciones.
+- Verificar en producción que "Contenidos consumidos" muestre datos (si
+  aparece "no disponible", ajustar la ruta del user progress en el
+  endpoint nuevo).
+- Regenerar el documento Word (`docs/build/generate-docx.js`) con este
+  contenido — la versión .docx sigue siendo la de junio.
 
 ---
 

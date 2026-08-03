@@ -821,6 +821,246 @@ async def brightspace_classlist(
     return {"count": len(items), "items": items}
 
 
+@router.get("/brightspace/course/{org_unit_id}/content/topics")
+async def brightspace_content_topics(request: Request, org_unit_id: int):
+    """Elementos de contenido del curso con metadatos completos (Url,
+    TopicType, ActivityType), recorriendo la estructura de cada módulo.
+    El /content/root/ solo trae 'shells' sin Url, y sin la Url no se puede
+    saber el tipo de archivo (PDF, Word, etc.).
+
+    Devuelve {count, items: [{Id, Title, Url, TopicType, ActivityType,
+    IsHidden, LastModifiedDate}]}.
+    """
+    token, err = _require_token_from_request(request)
+    if err:
+        return err
+    headers = _auth_headers(token)
+
+    root_url = f"{BRIGHTSPACE_BASE_URL}/d2l/api/le/{LE_VERSION}/{org_unit_id}/content/root/"
+    root_status, root_data = await _bs_get_cached(root_url, headers)
+    if root_status != 200:
+        return JSONResponse(status_code=root_status, content=root_data)
+
+    queue = [
+        m.get("Id") for m in (root_data if isinstance(root_data, list) else [])
+        if isinstance(m, dict) and m.get("Id") is not None and m.get("IsHidden") is not True
+    ]
+    seen_modules = set(queue)
+    topics = []
+    sem = asyncio.Semaphore(8)
+
+    async def _structure_of(mid):
+        url = (
+            f"{BRIGHTSPACE_BASE_URL}/d2l/api/le/{LE_VERSION}"
+            f"/{org_unit_id}/content/modules/{mid}/structure/"
+        )
+        async with sem:
+            status, data = await _bs_get_cached(url, headers)
+        return data if (status == 200 and isinstance(data, list)) else []
+
+    # BFS por niveles para soportar módulos anidados (máx 100 módulos)
+    for _ in range(6):
+        if not queue or len(seen_modules) > 100:
+            break
+        batch = queue[:50]
+        queue = queue[50:]
+        results = await asyncio.gather(*[_structure_of(m) for m in batch])
+        for items in results:
+            for it in items:
+                if not isinstance(it, dict):
+                    continue
+                if it.get("Type") == 0:
+                    mid = it.get("Id")
+                    if mid is not None and mid not in seen_modules and it.get("IsHidden") is not True:
+                        seen_modules.add(mid)
+                        queue.append(mid)
+                elif it.get("Type") == 1:
+                    topics.append({
+                        "Id": it.get("Id"),
+                        "Title": it.get("Title") or it.get("ShortTitle"),
+                        "Url": it.get("Url"),
+                        "TopicType": it.get("TopicType"),
+                        "ActivityType": it.get("ActivityType"),
+                        "IsHidden": it.get("IsHidden"),
+                        "LastModifiedDate": it.get("LastModifiedDate"),
+                    })
+
+    return {"count": len(topics), "items": topics}
+
+
+@router.get("/brightspace/course/{org_unit_id}/instructors")
+async def brightspace_course_instructors(request: Request, org_unit_id: int):
+    """Usuarios del curso con rol de profesor/instructor (LP enrollments,
+    que a diferencia del classlist sí trae el nombre del rol).
+
+    Devuelve {items: [{Identifier, DisplayName, RoleName}]}.
+    """
+    token, err = _require_token_from_request(request)
+    if err:
+        return err
+    headers = _auth_headers(token)
+
+    keywords = ("instructor", "profesor", "docente", "teacher", "facilitador")
+    items = []
+    bookmark = None
+    for _ in range(5):  # máx 5 páginas de ~100
+        url = (
+            f"{BRIGHTSPACE_BASE_URL}/d2l/api/lp/{LP_VERSION}"
+            f"/enrollments/orgUnits/{org_unit_id}/users/"
+        )
+        if bookmark:
+            url += f"?bookmark={urllib.parse.quote(str(bookmark))}"
+        status, data = await _bs_get_cached(url, headers)
+        if status != 200 or not isinstance(data, dict):
+            break
+        for rec in (data.get("Items") or []):
+            if not isinstance(rec, dict):
+                continue
+            user = rec.get("User") or {}
+            role = rec.get("Role") or {}
+            role_name = str(role.get("Name") or "")
+            if any(k in role_name.lower() for k in keywords):
+                items.append({
+                    "Identifier": user.get("Identifier"),
+                    "DisplayName": user.get("DisplayName"),
+                    "RoleName": role_name,
+                })
+        paging = data.get("PagingInfo") or {}
+        bookmark = paging.get("Bookmark")
+        if not paging.get("HasMoreItems") or not bookmark:
+            break
+
+    return {"count": len(items), "items": items}
+
+
+@router.get("/brightspace/course/{org_unit_id}/content/consumption")
+async def brightspace_content_consumption(request: Request, org_unit_id: int):
+    """Resumen de consumo de contenidos por estudiante: cuantos temas del
+    curso ha visitado cada uno segun el user progress de Brightspace
+    (scope content:completions:read, ya incluido en el SCOPE por defecto).
+
+    Devuelve {perUser: {userId: temasVisitados}, usersQueried, usersWithData}.
+    Best-effort: si Brightspace no expone el progreso (403/404) devuelve
+    perUser vacio para que el frontend muestre "no disponible".
+    """
+    token, err = _require_token_from_request(request)
+    if err:
+        return err
+    headers = _auth_headers(token)
+
+    cl_url = f"{BRIGHTSPACE_BASE_URL}/d2l/api/le/{LE_VERSION}/{org_unit_id}/classlist/"
+    cl_status, cl_data = await _bs_get_cached(cl_url, headers)
+    if cl_status != 200:
+        return JSONResponse(status_code=cl_status, content=cl_data)
+    users = cl_data if isinstance(cl_data, list) else (cl_data.get("Items") or [])
+    user_ids = [str(u.get("Identifier")) for u in users if isinstance(u, dict) and u.get("Identifier")]
+
+    sem = asyncio.Semaphore(8)
+    per_user: dict = {}
+    per_user_topics: dict = {}
+    method = None
+
+    def _topic_id_of(rec) -> Optional[str]:
+        if not isinstance(rec, dict):
+            return None
+        for k in ("ContentObjectId", "TopicId", "ObjectId", "Id"):
+            if rec.get(k) is not None:
+                return str(rec[k])
+        return None
+
+    # ── Estrategia 1: user progress por estudiante ──────────────────────
+    async def _progress_for(uid: str):
+        url = (
+            f"{BRIGHTSPACE_BASE_URL}/d2l/api/le/{LE_VERSION}"
+            f"/{org_unit_id}/content/userprogress/{uid}"
+        )
+        async with sem:
+            status, data = await _bs_get_cached(url, headers)
+        if status != 200:
+            return uid, None, []
+        items = data if isinstance(data, list) else (data.get("Objects") or data.get("Items") or [])
+        if not isinstance(items, list):
+            return uid, None, []
+        topics = [t for t in (_topic_id_of(it) for it in items) if t]
+        return uid, len(items), topics[:500]
+
+    if user_ids:
+        probe_uid, probe_val, probe_topics = await _progress_for(user_ids[0])
+        if probe_val is not None:
+            method = "userprogress"
+            per_user[probe_uid] = probe_val
+            per_user_topics[probe_uid] = probe_topics
+            rest = await asyncio.gather(*[_progress_for(u) for u in user_ids[1:100]])
+            for uid, n, topics in rest:
+                if n is not None:
+                    per_user[uid] = n
+                    per_user_topics[uid] = topics
+
+    # ── Estrategia 2 (fallback): completions por tema ───────────────────
+    # Una llamada por tema devuelve los registros de TODOS los usuarios.
+    if method is None:
+        root_url = f"{BRIGHTSPACE_BASE_URL}/d2l/api/le/{LE_VERSION}/{org_unit_id}/content/root/"
+        root_status, root_data = await _bs_get_cached(root_url, headers)
+        topic_ids = []
+        if root_status == 200 and isinstance(root_data, list):
+            for mod in root_data:
+                if not isinstance(mod, dict) or mod.get("IsHidden") is True:
+                    continue
+                for it in (mod.get("Structure") or []):
+                    if (
+                        isinstance(it, dict)
+                        and it.get("IsHidden") is not True
+                        and it.get("Type") == 1
+                        and it.get("Id") is not None
+                    ):
+                        topic_ids.append(it["Id"])
+
+        async def _completions_for_topic(tid):
+            url = (
+                f"{BRIGHTSPACE_BASE_URL}/d2l/api/le/{LE_VERSION}"
+                f"/{org_unit_id}/content/topics/{tid}/completions/"
+            )
+            async with sem:
+                status, data = await _bs_get_cached(url, headers)
+            if status != 200:
+                return tid, []
+            items = data if isinstance(data, list) else (data.get("Objects") or data.get("Items") or [])
+            return tid, (items if isinstance(items, list) else [])
+
+        if topic_ids:
+            all_completions = await asyncio.gather(
+                *[_completions_for_topic(t) for t in topic_ids[:200]]
+            )
+            found_any = False
+            for tid, records in all_completions:
+                for rec in records:
+                    if not isinstance(rec, dict):
+                        continue
+                    uid = rec.get("UserId") or rec.get("userId")
+                    if uid is None:
+                        continue
+                    found_any = True
+                    key = str(uid)
+                    per_user[key] = per_user.get(key, 0) + 1
+                    per_user_topics.setdefault(key, []).append(str(tid))
+            if found_any:
+                method = "topic_completions"
+                # Los estudiantes sin registros quedan en 0 explícito para
+                # que el frontend los cuente en el promedio.
+                for uid in user_ids:
+                    per_user.setdefault(uid, 0)
+                    per_user_topics.setdefault(uid, [])
+
+    return {
+        "orgUnitId": org_unit_id,
+        "perUser": per_user,
+        "perUserTopics": per_user_topics,
+        "method": method,
+        "usersQueried": len(user_ids),
+        "usersWithData": len(per_user),
+    }
+
+
 @router.get("/brightspace/users/{user_id}")
 async def brightspace_user(request: Request, user_id: int):
     token, err = _require_token_from_request(request)
@@ -967,6 +1207,142 @@ async def brightspace_dropbox_submissions(
     )
     status, data = await _bs_get(url, _auth_headers(token))
     return JSONResponse(status_code=status, content=data)
+
+
+@router.get("/brightspace/course/{org_unit_id}/dropbox/student/{user_id}/status")
+async def brightspace_dropbox_student_status(
+    request: Request, org_unit_id: int, user_id: int
+):
+    """Estado de las asignaciones (dropbox) para UN estudiante: cuáles entregó
+    (tiene submission) y cuáles ya tienen feedback/calificación del docente.
+
+    Devuelve por asignación publicada: id, nombre, fecha de entrega,
+    hasSubmission, submittedAt, isGraded y gradeItemId (para que el frontend
+    pueda emparejar la nota del gradebook). Las carpetas cuya lista de
+    submissions no se pudo leer quedan con hasSubmission=None y el response
+    marca partial=True."""
+    token, err = _require_token_from_request(request)
+    if err:
+        return err
+    headers = _auth_headers(token)
+
+    status_f, folders_data = await _bs_get(
+        f"{BRIGHTSPACE_BASE_URL}/d2l/api/le/{LE_VERSION}/{org_unit_id}/dropbox/folders/",
+        headers,
+    )
+    if status_f != 200:
+        return JSONResponse(status_code=status_f, content=folders_data)
+    folders = folders_data if isinstance(folders_data, list) else (
+        (folders_data or {}).get("Objects") or (folders_data or {}).get("Items") or []
+    )
+    visible = [f for f in folders if isinstance(f, dict) and f.get("IsHidden") is not True]
+
+    # Grupos: si una carpeta es de entrega grupal, la submission vive en la
+    # entidad GRUPO. Resolvemos una sola vez los grupos del estudiante por
+    # cada categoría de grupo usada.
+    group_ids_by_category: dict = {}
+
+    async def _user_group_ids(group_type_id):
+        key = str(group_type_id)
+        if key in group_ids_by_category:
+            return group_ids_by_category[key]
+        ids: set = set()
+        try:
+            _, groups_data = await _bs_get(
+                f"{BRIGHTSPACE_BASE_URL}/d2l/api/lp/{LP_VERSION}"
+                f"/{org_unit_id}/groupcategories/{group_type_id}/groups/",
+                headers,
+            )
+            if isinstance(groups_data, list):
+                for g in groups_data:
+                    if not isinstance(g, dict):
+                        continue
+                    enroll = [str(x) for x in (g.get("Enrollments") or [])]
+                    if str(user_id) in enroll and g.get("GroupId") is not None:
+                        ids.add(str(g.get("GroupId")))
+        except Exception as e:
+            logger.warning("group resolve failed cat=%s user=%s: %s", group_type_id, user_id, e)
+        group_ids_by_category[key] = ids
+        return ids
+
+    async def _folder_status(f):
+        fid = f.get("Id")
+        assess = f.get("Assessment") or {}
+        grade_item_id = assess.get("GradeItemId") or f.get("GradeItemId")
+        due = f.get("DueDate") or (f.get("Availability") or {}).get("EndDate")
+        base = {
+            "id": fid,
+            "name": f.get("Name") or f"Asignación {fid}",
+            "dueDate": due,
+            "gradeItemId": grade_item_id,
+            "hasSubmission": None,
+            "submittedAt": None,
+            "isGraded": None,
+        }
+        if not fid:
+            return base
+        entity_ids = {str(user_id)}
+        if f.get("GroupTypeId") is not None:
+            entity_ids |= await _user_group_ids(f.get("GroupTypeId"))
+        try:
+            s, subs_data = await _bs_get(
+                f"{BRIGHTSPACE_BASE_URL}/d2l/api/le/{LE_VERSION}"
+                f"/{org_unit_id}/dropbox/folders/{fid}/submissions/",
+                headers,
+            )
+            if s != 200:
+                return base
+            subs_list = subs_data if isinstance(subs_data, list) else (
+                (subs_data or {}).get("Items") or (subs_data or {}).get("items") or []
+            )
+            mine = []
+            for entry in subs_list:
+                if not isinstance(entry, dict):
+                    continue
+                eid = (
+                    entry.get("EntityId")
+                    or entry.get("UserId")
+                    or (entry.get("Entity") or {}).get("EntityId")
+                )
+                if str(eid) in entity_ids:
+                    mine.append(entry)
+            flat = []
+            has_feedback = False
+            for entry in mine:
+                inner = entry.get("Submissions") or entry.get("submissions") or []
+                if isinstance(inner, list):
+                    flat.extend([x for x in inner if isinstance(x, dict)])
+                if entry.get("Feedback"):
+                    has_feedback = True
+            flat.sort(key=lambda x: x.get("SubmissionDate") or "", reverse=True)
+            base["hasSubmission"] = len(flat) > 0
+            base["submittedAt"] = (flat[0].get("SubmissionDate") if flat else None)
+            base["isGraded"] = has_feedback
+        except Exception as e:
+            logger.warning(
+                "dropbox student status failed folder=%s user=%s: %s", fid, user_id, e
+            )
+        return base
+
+    import asyncio
+    items = list(await asyncio.gather(*[_folder_status(f) for f in visible]))
+
+    def _due_key(x):
+        return (x.get("dueDate") is None, x.get("dueDate") or "", str(x.get("name") or ""))
+    items.sort(key=_due_key)
+
+    known = [i for i in items if i.get("hasSubmission") is not None]
+    return {
+        "orgUnitId": org_unit_id,
+        "userId": user_id,
+        "items": items,
+        "counts": {
+            "total": len(items),
+            "submitted": sum(1 for i in known if i.get("hasSubmission")),
+            "graded": sum(1 for i in items if i.get("isGraded")),
+        },
+        "partial": len(known) < len(items),
+    }
 
 
 @router.get("/brightspace/course/{org_unit_id}/dropbox/folder/{folder_id}/student/{user_id}/download")

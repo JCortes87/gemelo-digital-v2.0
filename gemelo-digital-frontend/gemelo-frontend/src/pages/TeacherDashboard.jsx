@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { useNavigate, useSearchParams, Navigate } from "react-router-dom";
 import { Presentation, GraduationCap, ArrowRight, LogOut } from "lucide-react";
 import {
   ResponsiveContainer,
@@ -51,8 +51,58 @@ import { injectStyles } from "./teacher/dashboardStyles";
 import useMediaQuery from "../hooks/useMediaQuery";
 import {
   StatusBadge, CircularRing, ThresholdsModal, Card, Stat, Divider,
-  ProgressBar, InfoTooltip, SortTh, CoverageBars,
+  ProgressBar, InfoTooltip, SortTh, CoverageBars, GaugeMeter,
 } from "./teacher/primitives";
+
+// Tipo de un elemento de contenido. Prioriza la URL del archivo (lo más
+// confiable), luego el TopicType de Brightspace (3 = enlace externo) y por
+// último el título. Los "elementos" son los archivos/páginas dentro de los
+// módulos de contenido del curso.
+// Categorías acordadas: HTML (páginas construidas en Brightspace), PDF,
+// Excel, Word, Imágenes (todos los formatos), Audios (todos), Videos
+// (todos), Enlace (links externos o internos) y Otros para el resto.
+function contentTypeLabel(title, url, topicType) {
+  const check = (s) => {
+    if (!s) return null;
+    if (s.includes(".pdf")) return "PDF";
+    if (/\.(docx?|rtf)(\?|$|\b)/.test(s)) return "Word";
+    if (/\.(xlsx?|csv)(\?|$|\b)/.test(s)) return "Excel";
+    if (/\.(png|jpe?g|gif|svg|webp|bmp|tiff?|ico)(\?|$|\b)/.test(s)) return "Imágenes";
+    if (/\.(mp3|wav|ogg|m4a|aac|wma)(\?|$|\b)/.test(s)) return "Audios";
+    if (/\.(mp4|mov|avi|webm|mkv|wmv|flv)(\?|$|\b)/.test(s)) return "Videos";
+    if (/\.html?(\?|$|\b)/.test(s)) return "HTML";
+    return null;
+  };
+  const u = String(url || "").toLowerCase();
+  const fromUrl = check(u);
+  if (fromUrl) return fromUrl;
+  if (Number(topicType) === 3) return "Enlace";
+  if (/^https?:/.test(u)) return "Enlace";
+  const fromTitle = check(String(title || "").toLowerCase());
+  if (fromTitle) return fromTitle;
+  if (/https?:|www\.|link|enlace/.test(String(title || "").toLowerCase())) return "Enlace";
+  return "Otros";
+}
+
+const CONTENT_TYPE_ICONS = {
+  HTML: "🌐", PDF: "📕", Excel: "📗", Word: "📘",
+  "Imágenes": "🖼️", Audios: "🎧", Videos: "🎬", Enlace: "🔗", Otros: "📄",
+};
+
+// Cuentas institucionales/de servicio que no deben aparecer como profesor
+const SERVICE_ACCOUNT_RE = /^cesa\b|laboratorio|desarrollo profesoral|soporte|capacitaci|prueba|demo|test/i;
+
+// Formatea el último acceso de un estudiante como texto relativo corto.
+function fmtLastAccess(iso) {
+  if (!iso) return "Nunca";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "—";
+  const days = (Date.now() - d.getTime()) / 86400000;
+  if (days < 1) return "Hoy";
+  if (days < 2) return "Ayer";
+  if (days < 30) return `Hace ${Math.floor(days)} días`;
+  return d.toLocaleDateString("es-CO", { day: "2-digit", month: "short", year: "numeric" });
+}
 import { AnnouncementsModal, OnboardingTutorial } from "./teacher/onboarding";
 import {
   LoginScreen, CesaLoader, UnlinkedItemsList, AlertsPanel, Drawer,
@@ -99,7 +149,9 @@ export default function TeacherDashboard() {
 
   // ── Voice command state ─────────────────────────────────
   const [voiceFeedback, setVoiceFeedback] = useState("");
-  const [activeSection, setActiveSection] = useState("students");
+  // null al inicio: solo cambia cuando un comando de voz/paleta navega.
+  // (Si arranca en "students", el efecto de navegación abre esa pestaña al montar.)
+  const [activeSection, setActiveSection] = useState(null);
   const [advancedQuery, setAdvancedQuery] = useState({ mode: "text", target: null });
 
   const [darkMode, setDarkMode] = useState(false);
@@ -263,6 +315,16 @@ export default function TeacherDashboard() {
   const [outcomesMap, setOutcomesMap] = useState({});
   const [learningOutcomesPayload, setLearningOutcomesPayload] = useState(null);
   const [contentRoot, setContentRoot] = useState([]);
+  // Accesos al curso (userId -> LastAccessed ISO o null) y consumo de contenidos
+  const [lastAccessMap, setLastAccessMap] = useState({});
+  // Classlist crudo (para derivar el equipo docente por diferencia con estudiantes)
+  const [classlistItems, setClasslistItems] = useState([]);
+  // Profesores/instructores del curso (LP enrollments trae el nombre del rol)
+  const [instructors, setInstructors] = useState(null); // null = cargando
+  // Elementos de contenido con metadatos completos (Url/TopicType) para
+  // clasificar por tipo (PDF, Word, etc.) — el content/root no trae Url
+  const [contentTopics, setContentTopics] = useState(null);
+  const [consumption, setConsumption] = useState(null);
   const [overview, setOverview] = useState(null);
   const [studentsList, setStudentsList] = useState(null);
   const [studentRows, setStudentRows] = useState([]);
@@ -320,8 +382,10 @@ export default function TeacherDashboard() {
 
   // SuperAdmin impersonation: view a student's portal
   const [impersonateStudent, setImpersonateStudent] = useState(null); // { userId, name }
-  // Solo superadmin: alternar entre vista profesor y vista estudiante del curso actual
-  const [adminView, setAdminView] = useState("teacher"); // "teacher" | "student"
+  // Solo superadmin: "Vista estudiante" abre un selector de estudiante (modal)
+  // y muestra el portal del estudiante elegido vía impersonateStudent.
+  const [studentPickerOpen, setStudentPickerOpen] = useState(false);
+  const [pickerSearch, setPickerSearch] = useState("");
 
   // Quick filter (active filter chip applied to the students table)
   // Values: null, "risk_high", "risk_medium", "no_coverage", "overdue", "pending_grade", "approved"
@@ -975,6 +1039,64 @@ export default function TeacherDashboard() {
   }, [orgUnitId, refreshKey]);
 
   /**
+   * Accesos al curso (LastAccessed del classlist) y consumo de contenidos
+   * por estudiante (user progress). Best-effort: si fallan, las tarjetas
+   * muestran "no disponible" sin romper el dashboard.
+   */
+  useEffect(() => {
+    if (!orgUnitId) return;
+    let alive = true;
+    setLastAccessMap({});
+    setClasslistItems([]);
+    setInstructors(null);
+    setContentTopics(null);
+    setConsumption(null);
+
+    (async () => {
+      try {
+        const ins = await apiGetCached(`/brightspace/course/${orgUnitId}/instructors`, { ttl: 300_000 });
+        if (alive) setInstructors(Array.isArray(ins?.items) ? ins.items : []);
+      } catch {
+        if (alive) setInstructors([]);
+      }
+    })();
+
+    (async () => {
+      try {
+        const ct = await apiGetCached(`/brightspace/course/${orgUnitId}/content/topics`, { ttl: 300_000 });
+        if (alive) setContentTopics(Array.isArray(ct?.items) ? ct.items : []);
+      } catch {
+        if (alive) setContentTopics([]);
+      }
+    })();
+
+    (async () => {
+      try {
+        const cl = await apiGetCached(`/brightspace/course/${orgUnitId}/classlist`, { ttl: 300_000 });
+        if (!alive) return;
+        const items = Array.isArray(cl?.items) ? cl.items : [];
+        const map = {};
+        for (const u of items) {
+          if (u?.Identifier != null) map[String(u.Identifier)] = u.LastAccessed || null;
+        }
+        setLastAccessMap(map);
+        setClasslistItems(items);
+      } catch { /* opcional */ }
+    })();
+
+    (async () => {
+      try {
+        const c = await apiGetCached(`/brightspace/course/${orgUnitId}/content/consumption`, { ttl: 300_000 });
+        if (alive) setConsumption(c && typeof c === "object" ? c : { perUser: {} });
+      } catch {
+        if (alive) setConsumption({ perUser: {} });
+      }
+    })();
+
+    return () => { alive = false; };
+  }, [orgUnitId, refreshKey]);
+
+  /**
    * Load student detail
    */
   useEffect(() => {
@@ -1519,12 +1641,199 @@ const contentKpis = useMemo(() => {
     const minExpected = Math.max(1, Math.ceil(weeks / 2));
     const progressRatio = minExpected > 0 ? clamp(createdCount / minExpected, 0, 2) : null;
 
-    return { createdCount, minExpected, progressRatio };
+    // Desglose por tipo de los mismos contenidos que cuenta createdCount
+    const typeCounts = {};
+    for (const mod of root) {
+      if (mod?.IsHidden === true) continue;
+      for (const it of (Array.isArray(mod?.Structure) ? mod.Structure : [])) {
+        const itDate = toDate(it?.LastModifiedDate);
+        if (it?.IsHidden !== true && Number(it?.Type) === 1 && itDate && itDate >= start) {
+          const label = contentTypeLabel(it?.Title || it?.ShortTitle);
+          typeCounts[label] = (typeCounts[label] || 0) + 1;
+        }
+      }
+    }
+    const typeBreakdown = Object.entries(typeCounts)
+      .map(([label, count]) => ({ label, count }))
+      .sort((a, b) => b.count - a.count);
+
+    return { createdCount, minExpected, progressRatio, typeBreakdown };
   }, [contentRoot, courseInfo?.StartDate, courseInfo?.EndDate]);
 
   const contentRhythmMeta = useMemo(() => {
     return contentRhythmStatus(contentKpis?.progressRatio);
   }, [contentKpis]);
+
+  // Total de temas de contenido visibles del curso (para % de consumo)
+  const totalContentTopics = useMemo(() => {
+    let n = 0;
+    for (const mod of (Array.isArray(contentRoot) ? contentRoot : [])) {
+      if (mod?.IsHidden === true) continue;
+      for (const it of (Array.isArray(mod?.Structure) ? mod.Structure : [])) {
+        if (it?.IsHidden !== true && Number(it?.Type) === 1) n += 1;
+      }
+    }
+    return n;
+  }, [contentRoot]);
+
+  // Consumo de contenidos por estudiantes (temas visitados / total temas)
+  const consumptionStats = useMemo(() => {
+    if (consumption == null) return null; // cargando
+    const per = consumption?.perUser || {};
+    const perTopics = consumption?.perUserTopics || {};
+    const ids = studentRows.map((r) => String(r.userId));
+    const vals = ids.map((id) => per[id]).filter((v) => v != null);
+    if (!vals.length) return { available: false };
+    const opened = vals.filter((v) => v > 0).length;
+    const avgPct = totalContentTopics > 0
+      ? (vals.reduce((a, b) => a + Math.min(Number(b) || 0, totalContentTopics), 0) / (vals.length * totalContentTopics)) * 100
+      : null;
+    const openedPct = vals.length > 0 ? (opened / vals.length) * 100 : null;
+    // Detalle por estudiante: cuántos temas y cuáles (ids), ordenado desc
+    const detail = studentRows
+      .map((r) => {
+        const id = String(r.userId);
+        if (per[id] == null) return null;
+        return {
+          userId: r.userId,
+          name: r.displayName,
+          count: Number(per[id]) || 0,
+          topicIds: Array.isArray(perTopics[id]) ? perTopics[id] : [],
+        };
+      })
+      .filter(Boolean)
+      .sort((a, b) => b.count - a.count);
+    return { available: true, opened, total: vals.length, avgPct, openedPct, detail };
+  }, [consumption, studentRows, totalContentTopics]);
+
+  // Accesos al curso por recencia (a partir de LastAccessed del classlist).
+  // Cada bucket lleva su lista completa: se despliega al hacer clic.
+  const accessStats = useMemo(() => {
+    if (!studentRows.length || !Object.keys(lastAccessMap).length) return null;
+    const now = Date.now();
+    const todayList = [];   // entraron en las últimas 24 h
+    const weekList = [];    // entraron en los últimos 7 días (incluye hoy)
+    const staleList = [];   // llevan más de 14 días SIN entrar
+    const neverList = [];   // nunca han entrado al curso
+    for (const r of studentRows) {
+      const iso = lastAccessMap[String(r.userId)];
+      if (!iso) {
+        neverList.push({ userId: r.userId, name: r.displayName, days: null });
+        continue;
+      }
+      const days = (now - new Date(iso).getTime()) / 86400000;
+      const entry = { userId: r.userId, name: r.displayName, days: Math.floor(days) };
+      if (days <= 1) todayList.push(entry);
+      if (days <= 7) weekList.push(entry);
+      else if (days > 14) staleList.push(entry);
+    }
+    todayList.sort((a, b) => a.days - b.days);
+    weekList.sort((a, b) => a.days - b.days);
+    staleList.sort((a, b) => b.days - a.days);
+    neverList.sort((a, b) => String(a.name).localeCompare(String(b.name), "es"));
+    return {
+      today: todayList.length,
+      week: weekList.length,
+      stale: staleList.length,
+      never: neverList.length,
+      total: studentRows.length,
+      todayList, weekList, staleList, neverList,
+    };
+  }, [studentRows, lastAccessMap]);
+
+  // Qué lista de accesos está desplegada: "today" | "week" | "stale" | "never" | null
+  const [accessListOpen, setAccessListOpen] = useState(null);
+
+  // Profesores del curso: preferimos los roles reales de LP enrollments
+  // (Instructor/Profesor/Docente). Si el endpoint no devuelve nada, caemos
+  // al equipo no-estudiante del classlist como antes.
+  const teacherAccessList = useMemo(() => {
+    let list = [];
+    if (Array.isArray(instructors) && instructors.length > 0) {
+      list = instructors
+        .filter((u) => u?.Identifier != null)
+        .map((u) => ({
+          userId: String(u.Identifier),
+          name: u.DisplayName || `Usuario ${u.Identifier}`,
+          iso: lastAccessMap[String(u.Identifier)] ?? null,
+        }));
+    } else if (classlistItems.length && studentRows.length) {
+      const studentIds = new Set(studentRows.map((r) => String(r.userId)));
+      list = classlistItems
+        .filter((u) => u?.Identifier != null && !studentIds.has(String(u.Identifier)))
+        .map((u) => ({
+          userId: String(u.Identifier),
+          name: u.DisplayName || `${u.FirstName || ""} ${u.LastName || ""}`.trim() || `Usuario ${u.Identifier}`,
+          iso: u.LastAccessed || null,
+        }));
+    }
+    // Ocultar cuentas institucionales/de servicio: solo el profesor real
+    return list.filter((t) => !SERVICE_ACCOUNT_RE.test(String(t.name).trim()));
+  }, [instructors, lastAccessMap, classlistItems, studentRows]);
+
+  // Metadatos de los elementos de contenido (id -> título/url/tipo) para el
+  // detalle de consumo y la clasificación por tipo. Prefiere el endpoint
+  // /content/topics (trae Url); cae al content/root si aún no llegó.
+  const contentTopicMeta = useMemo(() => {
+    const map = new Map();
+    if (Array.isArray(contentTopics) && contentTopics.length) {
+      for (const t of contentTopics) {
+        if (t?.Id != null) {
+          map.set(String(t.Id), {
+            title: t.Title || `Elemento ${t.Id}`,
+            url: t.Url || null,
+            topicType: t.TopicType ?? null,
+          });
+        }
+      }
+      return map;
+    }
+    for (const mod of (Array.isArray(contentRoot) ? contentRoot : [])) {
+      if (mod?.IsHidden === true) continue;
+      for (const it of (Array.isArray(mod?.Structure) ? mod.Structure : [])) {
+        if (it?.Id != null && Number(it?.Type) === 1) {
+          map.set(String(it.Id), { title: it.Title || it.ShortTitle || `Elemento ${it.Id}`, url: null, topicType: null });
+        }
+      }
+    }
+    return map;
+  }, [contentTopics, contentRoot]);
+
+  // KPI de elementos publicados: total, desglose por tipo y ritmo, todo
+  // derivado de la MISMA fuente para que el desglose siempre sume el total.
+  // Preferimos /content/topics (con Url para clasificar); fallback al root.
+  const elementsStats = useMemo(() => {
+    if (Array.isArray(contentTopics) && contentTopics.length) {
+      const start = toDate(courseInfo?.StartDate);
+      const counts = {};
+      let total = 0;
+      for (const t of contentTopics) {
+        if (t?.IsHidden === true) continue;
+        const d = toDate(t?.LastModifiedDate);
+        if (start && (!d || d < start)) continue;
+        const label = contentTypeLabel(t?.Title, t?.Url, t?.TopicType);
+        counts[label] = (counts[label] || 0) + 1;
+        total += 1;
+      }
+      const breakdown = Object.entries(counts)
+        .map(([label, count]) => ({ label, count }))
+        .sort((a, b) => b.count - a.count);
+      const minExpected = contentKpis?.minExpected ?? null;
+      const ratio = minExpected ? clamp(total / minExpected, 0, 2) : null;
+      return { total, breakdown, rhythm: contentRhythmStatus(ratio) };
+    }
+    return {
+      total: contentKpis?.createdCount ?? null,
+      breakdown: contentKpis?.typeBreakdown || [],
+      rhythm: contentRhythmMeta,
+    };
+  }, [contentTopics, courseInfo?.StartDate, contentKpis, contentRhythmMeta]);
+
+  // Detalle de consumo desplegable
+  const [consumptionDetailOpen, setConsumptionDetailOpen] = useState(false);
+  const [consumptionStudentOpen, setConsumptionStudentOpen] = useState(null);
+  // Desglose por tipo en el KPI de contenidos publicados
+  const [contentTypesOpen, setContentTypesOpen] = useState(false);
   const performanceBands = useMemo(() => {
   const bands = [
     { name: "Excelente", key: "excellent", value: 0, color: COLORS.ok },
@@ -1719,6 +2028,13 @@ const contentKpis = useMemo(() => {
     );
   }
   if (!authUser) return <LoginScreen orgUnitId={orgUnitId} />;
+
+  // Superadmin sin curso seleccionado → SIEMPRE a su consola (RoleHome).
+  // El selector de cursos de profesor no es útil para el usuario admin
+  // (p. ej. Desarrollo Profesoral) y aparecía al refrescar en /dashboard.
+  if ((!orgUnitId || orgUnitId === 0) && isSuperAdmin) {
+    return <Navigate to="/" replace />;
+  }
 
   // Sin curso seleccionado → mostrar selector automáticamente (visual de tarjetas, igual que RoleHome)
   if (!orgUnitId || orgUnitId === 0) {
@@ -2000,10 +2316,11 @@ const contentKpis = useMemo(() => {
         locale={locale}
         toggleLocale={toggleLocale}
         isSuperAdmin={isSuperAdmin}
-        studentRows={studentRows}
-        onImpersonate={setImpersonateStudent}
-        adminView={adminView}
-        onAdminViewChange={isSuperAdmin ? setAdminView : undefined}
+        adminView={impersonateStudent ? "student" : "teacher"}
+        onAdminViewChange={isSuperAdmin ? (v) => {
+          if (v === "student") setStudentPickerOpen(true);
+          else { setImpersonateStudent(null); setStudentPickerOpen(false); }
+        } : undefined}
       />
 
       {/* ── Main content ── */}
@@ -2134,225 +2451,120 @@ const contentKpis = useMemo(() => {
           </div>
         </div>
 
-        {/* ── KPIs principales del curso ── */}
+        {/* ── KPIs principales del curso (estilo tarjetas centradas, compacto) ── */}
         <div
           className="fade-up fade-up-1"
           style={{
             display: "grid",
             gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(4, 1fr)",
-            gap: 16,
-            marginBottom: 16,
+            gap: 12,
+            marginBottom: 12,
+            alignItems: "stretch",
           }}
         >
-          {/* Estudiantes */}
-          <div className="kpi-card" style={{ display: "flex", alignItems: "center", gap: 14 }}>
-            <div style={{
-              width: 64, height: 64, borderRadius: "50%", flexShrink: 0,
-              background: "var(--brand-light)", display: "flex", alignItems: "center",
-              justifyContent: "center", fontSize: 26,
-            }} aria-hidden="true">👥</div>
-            <div style={{ minWidth: 0 }}>
-              <div style={{ fontSize: 11, fontWeight: 800, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.06em" }}>
-                Estudiantes
-              </div>
-              <div style={{ fontSize: 28, fontWeight: 900, color: "var(--text)", fontFamily: "var(--font-mono)", lineHeight: 1.15 }}>
-                {studentsCount || "—"}
-              </div>
-              <div style={{ fontSize: 11, color: "var(--muted)" }}>Inscritos en el curso</div>
+          {/* Nota promedio — donut */}
+          <div className="kpi-card" style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 8, padding: isMobile ? 12 : 14, textAlign: "center" }}>
+            <div style={{ fontSize: 12, fontWeight: 800, color: "var(--text)", letterSpacing: "0.01em" }}>
+              Nota promedio
             </div>
-          </div>
-
-          {/* Nota promedio */}
-          <div className="kpi-card" style={{ display: "flex", alignItems: "center", gap: 14 }}>
             <CircularRing
               pct={avgPerfPct != null && Number(avgPerfPct) > 0 ? avgPerfPct : 0}
-              size={64}
-              stroke={7}
+              size={isMobile ? 84 : 96}
+              stroke={10}
               color={avgPerfPct != null && Number(avgPerfPct) > 0 ? colorForPct(avgPerfPct, thresholds) : "var(--border)"}
               label={avgPerfPct == null || Number(avgPerfPct) === 0 ? "—" : fmtGrade10FromPct(avgPerfPct)}
-              fontSize={13}
+              fontSize={isMobile ? 15 : 18}
             />
-            <div style={{ minWidth: 0 }}>
-              <div style={{ fontSize: 11, fontWeight: 800, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.06em" }}>
-                Nota promedio
-              </div>
-              <div style={{ fontSize: 28, fontWeight: 900, color: avgPerfPct != null && Number(avgPerfPct) > 0 ? colorForPct(avgPerfPct, thresholds) : "var(--muted)", fontFamily: "var(--font-mono)", lineHeight: 1.15 }}>
-                {avgPerfPct == null || Number(avgPerfPct) === 0 ? "—" : fmtGrade10FromPct(avgPerfPct)}
-              </div>
-              <div style={{ fontSize: 11, color: "var(--muted)" }}>Escala 0–10 · gradebook</div>
-            </div>
+            <div style={{ fontSize: 10, color: "var(--muted)" }}>Escala 0–10 · gradebook</div>
           </div>
 
-          {/* En riesgo */}
-          <div className="kpi-card" style={{ display: "flex", alignItems: "center", gap: 14 }}>
-            <CircularRing
-              pct={atRiskPct != null ? Math.min(100, atRiskPct) : 0}
-              size={64}
-              stroke={7}
-              color={
-                atRiskPct == null ? "var(--border)"
-                  : atRiskPct > 40 ? COLORS.critical
-                  : atRiskPct > 20 ? COLORS.watch
-                  : COLORS.ok
-              }
-              label={atRiskPct == null ? "—" : String(atRiskCount)}
-              fontSize={14}
-            />
-            <div style={{ minWidth: 0 }}>
-              <div style={{ fontSize: 11, fontWeight: 800, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.06em" }}>
-                En riesgo
-              </div>
-              <div style={{
-                fontSize: 28, fontWeight: 900, fontFamily: "var(--font-mono)", lineHeight: 1.15,
-                color: atRiskPct == null ? "var(--muted)" : atRiskPct > 40 ? COLORS.critical : atRiskPct > 20 ? COLORS.watch : COLORS.ok,
-              }}>
-                {atRiskPct == null ? "—" : atRiskCount}
-              </div>
-              <div style={{ fontSize: 11, color: "var(--muted)" }}>
-                {atRiskPct == null ? "Sin datos aún" : `${fmtPct(atRiskPct)} del curso (alto + medio)`}
-              </div>
+          {/* Estudiantes — número grande */}
+          <div className="kpi-card" style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 6, padding: isMobile ? 12 : 14, textAlign: "center" }}>
+            <div style={{ fontSize: 12, fontWeight: 800, color: "var(--text)", letterSpacing: "0.01em" }}>
+              Estudiantes
             </div>
+            <div style={{ fontSize: isMobile ? 30 : 38, fontWeight: 900, color: "var(--text)", fontFamily: "var(--font-mono)", lineHeight: 1 }}>
+              {studentsCount || "—"}
+            </div>
+            <div style={{ fontSize: 10, color: "var(--muted)" }}>Inscritos en el curso</div>
           </div>
 
-          {/* Contenidos creados */}
-          <div className="kpi-card" style={{ display: "flex", alignItems: "center", gap: 14 }}>
+          {/* En riesgo — número grande coloreado */}
+          <div className="kpi-card" style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 6, padding: isMobile ? 12 : 14, textAlign: "center" }}>
+            <div style={{ fontSize: 12, fontWeight: 800, color: "var(--text)", letterSpacing: "0.01em" }}>
+              En riesgo
+            </div>
             <div style={{
-              width: 64, height: 64, borderRadius: "50%", flexShrink: 0,
-              background: contentKpis?.createdCount != null ? `${contentRhythmMeta.bg}` : "var(--bg)",
-              display: "flex", alignItems: "center", justifyContent: "center", fontSize: 26,
-            }} aria-hidden="true">📚</div>
-            <div style={{ minWidth: 0 }}>
-              <div style={{ fontSize: 11, fontWeight: 800, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.06em" }}>
-                Contenidos creados
-              </div>
-              <div style={{ fontSize: 28, fontWeight: 900, color: contentKpis?.createdCount != null ? contentRhythmMeta.color : "var(--muted)", fontFamily: "var(--font-mono)", lineHeight: 1.15 }}>
-                {contentKpis?.createdCount ?? "—"}
-              </div>
-              <div style={{ fontSize: 11, color: "var(--muted)" }}>
-                {contentKpis?.minExpected != null ? `Mínimo esperado: ${contentKpis.minExpected}` : "Desde inicio del curso"}
-              </div>
+              fontSize: isMobile ? 30 : 38, fontWeight: 900, fontFamily: "var(--font-mono)", lineHeight: 1,
+              color: atRiskPct == null ? "var(--muted)" : atRiskPct > 40 ? COLORS.critical : atRiskPct > 20 ? COLORS.watch : COLORS.ok,
+            }}>
+              {atRiskPct == null ? "—" : atRiskCount}
+            </div>
+            <div style={{ fontSize: 10, color: "var(--muted)" }}>
+              {atRiskPct == null ? "Sin datos aún" : `${fmtPct(atRiskPct)} del curso (alto + medio)`}
             </div>
           </div>
-        </div>
 
-        {/* ── Alertas inteligentes (fusiona Radar docente + heurísticas locales) ── */}
-        <div className="fade-up fade-up-1" style={{ marginBottom: 16 }}>
-          <ErrorBoundary sectionName="Alertas inteligentes">
-            <SmartAlerts
-              studentRows={studentRows}
-              overview={overview}
-              courseInfo={courseInfo}
-              contentKpis={contentKpis}
-              backendAlerts={overview?.alerts}
-              onStudentClick={selectStudentById}
-            />
-          </ErrorBoundary>
-        </div>
-
-        {/* ── Resumen semanal IA (narrativa) ── */}
-        <div className="fade-up fade-up-1" style={{ marginBottom: 16 }}>
-          <ContextualTip
-            id="batch4_intro_v3"
-            title="✨ Nuevas funciones disponibles"
-            description="Tu dashboard ahora tiene resumen narrativo con IA, predicción de notas finales (menú lateral), alertas inteligentes, tendencias históricas y más. Haz Ctrl+K para la paleta de comandos, o presiona ? para ver todos los atajos."
-          />
-          <Card title={<span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>🤖 Resumen semanal <InfoTooltip text="Resumen narrativo en lenguaje natural del estado del curso. Se genera automáticamente a partir de los datos actuales. Puedes escucharlo con TTS." /></span>} accent="brand">
-            <ErrorBoundary sectionName="Resumen semanal">
-              <AINarrativeSummary
-                studentRows={studentRows}
-                overview={overview}
-                courseInfo={courseInfo}
-                raDashboard={raDashboard}
-                contentKpis={contentKpis}
-              />
-            </ErrorBoundary>
-          </Card>
-        </div>
-
-        {/* ── Estado de asignaciones ── */}
-        <div className="fade-up fade-up-2" style={{ marginBottom: 16 }}>
-          <Card
-            title={<span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>📝 Asignaciones del curso <InfoTooltip text="Estado de las asignaciones (dropbox) que has creado en Brightspace: cuántas tienen entregas de estudiantes (con % de entrega), cuántas ya están completamente calificadas y cuántas vencieron. Ordenadas por fecha de entrega." /></span>}
-            accent="brand"
-          >
-            <ErrorBoundary sectionName="Asignaciones del curso">
-              <AssignmentsPanel orgUnitId={orgUnitId} />
-            </ErrorBoundary>
-          </Card>
+          {/* Contenidos creados — número grande + ritmo */}
+          <div className="kpi-card" style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 6, padding: isMobile ? 12 : 14, textAlign: "center" }}>
+            <div style={{ fontSize: 12, fontWeight: 800, color: "var(--text)", letterSpacing: "0.01em", display: "inline-flex", alignItems: "center", gap: 4 }}>
+              Elementos publicados <InfoTooltip text="Elementos dentro de los módulos de contenido del curso (PDF, Word, Excel, páginas, enlaces…) creados o actualizados desde el inicio del curso. No incluye asignaciones (dropbox) — esas se cuentan aparte en la tarjeta de Asignaciones." />
+            </div>
+            <div style={{ fontSize: isMobile ? 30 : 38, fontWeight: 900, color: elementsStats.total != null ? elementsStats.rhythm.color : "var(--muted)", fontFamily: "var(--font-mono)", lineHeight: 1 }}>
+              {elementsStats.total ?? "—"}
+            </div>
+            <div style={{ fontSize: 10, color: "var(--muted)" }}>
+              {contentKpis?.minExpected != null ? `Mínimo esperado: ${contentKpis.minExpected}` : "Desde inicio del curso"}
+            </div>
+            {elementsStats.total != null && (
+              <span className="badge" style={{ background: elementsStats.rhythm.bg, color: elementsStats.rhythm.color, fontSize: 10 }}>
+                {elementsStats.rhythm.label}
+              </span>
+            )}
+            {(elementsStats.breakdown?.length ?? 0) > 0 && (
+              <>
+                <button
+                  onClick={() => setContentTypesOpen((v) => !v)}
+                  aria-expanded={contentTypesOpen}
+                  style={{
+                    border: "none", background: "transparent", cursor: "pointer",
+                    fontSize: 10, fontWeight: 700, color: "var(--brand)",
+                    fontFamily: "var(--font)", padding: "2px 6px",
+                  }}
+                >
+                  Tipos de elemento {contentTypesOpen ? "▴" : "▾"}
+                </button>
+                {contentTypesOpen && (
+                  <div style={{ display: "flex", flexDirection: "column", gap: 3, width: "100%", maxHeight: 110, overflowY: "auto" }}>
+                    {elementsStats.breakdown.map((t) => (
+                      <div key={t.label} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, fontSize: 11, padding: "1px 8px" }}>
+                        <span style={{ color: "var(--text)", fontWeight: 600 }}>
+                          <span aria-hidden="true" style={{ marginRight: 4 }}>{CONTENT_TYPE_ICONS[t.label] || "📄"}</span>
+                          {t.label}
+                        </span>
+                        <span style={{ fontFamily: "var(--font-mono)", fontWeight: 800, color: "var(--brand)" }}>{t.count}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </>
+            )}
+          </div>
         </div>
 
         <div
           className="fade-up fade-up-2"
           style={{
             display: "grid",
-            gridTemplateColumns: isMobile ? "1fr" : isNarrow ? "1fr 1fr" : "minmax(260px,2fr) minmax(180px,1fr) minmax(200px,1.4fr) minmax(180px,1.2fr)",
-            gap: 16,
-            marginBottom: 16,
-            alignItems: "start",
+            gridTemplateColumns: isMobile ? "1fr" : isNarrow ? "1fr 1fr" : "repeat(4, minmax(220px, 1fr))",
+            gap: 12,
+            marginBottom: 12,
+            alignItems: "stretch",
           }}
         >
-          <div ref={overviewRef}>
-          <Card title="Gestión del curso" right={<StatusBadge status={courseStatus} />} accent="brand">
-            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
-              <div
-                style={{
-                  fontSize: 11,
-                  color: "var(--muted)",
-                  fontWeight: 700,
-                  textTransform: "uppercase",
-                  letterSpacing: "0.05em",
-                }}
-              >
-                Ritmo de contenidos del profesor
-              </div>
-              <InfoTooltip text="Se mide el contenido o módulo actualizados/creados desde el inicio del curso." />
-              <div style={{ marginLeft: "auto" }}>
-                <span
-                  className="badge"
-                  style={{ background: contentRhythmMeta.bg, color: contentRhythmMeta.color }}
-                >
-                  <span
-                    className="pulse-dot"
-                    style={{ background: contentRhythmMeta.color, width: 6, height: 6 }}
-                  />
-                  {contentRhythmMeta.label}
-                </span>
-              </div>
-            </div>
-
-            <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 4 }}>
-              <strong style={{ color: "var(--text)", fontFamily: "var(--font-mono)" }}>{contentKpis?.createdCount ?? "—"}</strong> contenidos creados
-              {" · "}mínimo esperado <strong style={{ color: "var(--text)", fontFamily: "var(--font-mono)" }}>{contentKpis?.minExpected ?? "—"}</strong>
-            </div>
-
-            {contentKpis?.progressRatio != null && (
-              <div style={{ marginTop: 10 }}>
-                <ProgressBar
-                  value={Math.min(100, contentKpis.progressRatio * 100)}
-                  color={contentRhythmMeta.color}
-                  animate={false}
-                  showLabel={false}
-                />
-                <div
-                  style={{
-                    fontSize: 11,
-                    color: "var(--muted)",
-                    marginTop: 6,
-                    display: "flex",
-                    justifyContent: "space-between",
-                  }}
-                >
-                  <span>Cumplimiento vs mínimo</span>
-                  <span style={{ fontFamily: "var(--font-mono)", fontWeight: 800 }}>
-                    {Math.round(contentKpis.progressRatio * 100)}%
-                  </span>
-                </div>
-              </div>
-            )}
-
-            <Divider />
-
-            <div style={{ marginTop: 14 }}>
+          <div ref={overviewRef} style={{ order: 3, display: "flex" }}>
+          <Card style={{ flex: 1 }} title={<span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>📋 Cumplimiento evaluativo <InfoTooltip text="Índice de cumplimiento evaluativo del curso: % del peso calificado, pendiente de calificación y vencido sin registro." /></span>} right={<StatusBadge status={courseStatus} />} accent="brand">
+            <div style={{ marginTop: 4 }}>
               {avgCov == null || Number(avgCov) === 0 ? (
                 <div style={{ fontSize: 12, color: "var(--muted)" }}>
                   Cobertura no disponible (sin evidencias calificadas)
@@ -2369,37 +2581,17 @@ const contentKpis = useMemo(() => {
           </Card>
           </div>
 
-          {/* ── Riesgo académico + Distribución apilados en 1 columna ── */}
-          <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-            <Card title={<span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>Riesgo académico <InfoTooltip text="Distribución de los estudiantes según su nota actual: Alto (<5.0), Medio (5.0–7.0), Bajo (≥7.0). Calculado solo con notas reales del gradebook, excluye columnas 'Corte'." /></span>} accent="pending">
-              <div
-                role="img"
-                aria-label="Gráfico de pastel: distribución de estudiantes por nivel de riesgo académico"
-                style={{ width: "100%", height: 200 }}
-              >
-                <ResponsiveContainer>
-                  <PieChart>
-                    <Pie
-                      data={riskData}
-                      dataKey="value"
-                      nameKey="name"
-                      innerRadius={55}
-                      outerRadius={82}
-                      paddingAngle={3}
-                    >
-                      {riskData.map((entry) => (
-                        <Cell key={entry.key} fill={colorForRisk(entry.key)} />
-                      ))}
-                    </Pie>
-                    <Tooltip
-                      formatter={(value) => {
-                        const v = Number(value || 0);
-                        const pct = totalStudents > 0 ? (v / totalStudents) * 100 : 0;
-                        return [`${v} (${pct.toFixed(1)}%)`, "Estudiantes"];
-                      }}
-                    />
-                  </PieChart>
-                </ResponsiveContainer>
+          {/* ── Riesgo académico ── */}
+          <div style={{ order: 1, display: "flex" }}>
+            <Card style={{ flex: 1 }} title={<span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>⚠️ Riesgo académico <InfoTooltip text="Distribución de los estudiantes según su nota actual: Alto (<5.0), Medio (5.0–7.0), Bajo (≥7.0). Calculado solo con notas reales del gradebook, excluye columnas 'Corte'." /></span>} accent="pending">
+              <div style={{ display: "flex", justifyContent: "center", padding: "4px 0 6px" }}>
+                <GaugeMeter
+                  pct={atRiskPct ?? 0}
+                  size={150}
+                  centerLabel={atRiskPct == null ? "—" : fmtPct(atRiskPct)}
+                  centerColor={atRiskPct == null ? "var(--muted)" : atRiskPct > 40 ? COLORS.critical : atRiskPct > 20 ? COLORS.watch : COLORS.ok}
+                  sublabel={totalStudents ? `${atRiskCount} de ${totalStudents} estudiantes en riesgo` : "Sin datos aún"}
+                />
               </div>
 
               <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
@@ -2438,13 +2630,17 @@ const contentKpis = useMemo(() => {
                 })}
               </div>
             </Card>
-
-            <GradeDistributionCard studentRows={studentRows} thresholds={thresholds} />
           </div>
 
-          <div ref={priorityRef}>
+          {/* ── Distribución de notas ── */}
+          <div style={{ order: 2, display: "flex" }}>
+            <GradeDistributionCard studentRows={studentRows} thresholds={thresholds} style={{ flex: 1 }} />
+          </div>
+
+          <div ref={priorityRef} style={{ order: 4, display: "flex" }}>
           <Card
-            title={<span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>Estudiantes prioritarios <InfoTooltip text="Estudiantes que requieren tu atención inmediata: nota crítica (<5), cobertura baja (<60%), ítems vencidos sin calificar o pendientes de calificación. Ordenados por nivel de riesgo." /></span>} accent="critical"
+            style={{ flex: 1 }}
+            title={<span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>🚨 Estudiantes prioritarios <InfoTooltip text="Estudiantes que requieren tu atención inmediata: nota crítica (<5), cobertura baja (<60%), ítems vencidos sin calificar o pendientes de calificación. Ordenados por nivel de riesgo." /></span>} accent="critical"
             right={
               assignmentRiskData.length > 0
                 ? <span className="tag" style={{ background: "var(--critical-bg)", color: "#B42318" }}>Requieren atención</span>
@@ -2461,7 +2657,7 @@ const contentKpis = useMemo(() => {
                 <div style={{ fontSize: 11, color: "var(--muted)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: 4 }}>
                   Nota &lt;5 · cobertura baja · ítems vencidos
                 </div>
-                <div style={{ overflowY: "auto", maxHeight: 420, paddingRight: 2, display: "flex", flexDirection: "column", gap: 6 }}>
+                <div style={{ overflowY: "auto", maxHeight: 300, paddingRight: 2, display: "flex", flexDirection: "column", gap: 6 }}>
                 {assignmentRiskData.map((item) => {
                   const covColor = colorForPct(item.coveragePct, thresholds);
                   const hasOverdue = item.notSubmittedWeightPct > 0;
@@ -2565,7 +2761,7 @@ const contentKpis = useMemo(() => {
                 </div>
               </div>
             ) : (
-              <div className="empty-state" style={{ minHeight: 160 }}>
+              <div className="empty-state" style={{ minHeight: 110 }}>
                 <span className="empty-state-icon">✅</span>
                 <span style={{ fontSize: 12 }}>Sin estudiantes críticos</span>
                 <span style={{ fontSize: 11, color: "var(--muted)", textAlign: "center" }}>
@@ -2576,9 +2772,23 @@ const contentKpis = useMemo(() => {
           </Card>
           </div>
 
-          <div ref={learningOutcomesRef}>
+        </div>
+
+        {/* ── Fila: Resultados de aprendizaje + Asignaciones + Accesos ── */}
+        <div
+          className="fade-up fade-up-2"
+          style={{
+            display: "grid",
+            gridTemplateColumns: isMobile ? "1fr" : isNarrow ? "1fr 1fr" : "1.15fr 1.15fr 0.75fr",
+            gap: 12,
+            marginBottom: 12,
+            alignItems: "stretch",
+          }}
+        >
+        <div ref={learningOutcomesRef} style={{ display: "flex" }}>
           <Card
-            title={<span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>Prioridad académica <InfoTooltip text="Resultados de Aprendizaje (RA) del curso ordenados de menor a mayor desempeño. El RA en primera posición es donde tus estudiantes están más débiles — prioriza refuerzo ahí." /></span>}
+            style={{ flex: 1 }}
+            title={<span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>🎯 Resultados de aprendizaje <InfoTooltip text="Resultados de Aprendizaje (RA) del curso ordenados de menor a mayor desempeño. El RA en primera posición es donde tus estudiantes están más débiles — prioriza refuerzo ahí." /></span>}
             accent="brand"
             right={
               <button
@@ -2646,6 +2856,7 @@ const contentKpis = useMemo(() => {
                   })}
                 </div>
               )}
+              <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "repeat(2, 1fr)", gap: 8 }}>
               {(raTab === "quiz" ? quizOutcomesData : learningOutcomesData)
                 .slice()
                 .sort((a, b) => a.avgPct - b.avgPct)
@@ -2717,6 +2928,7 @@ const contentKpis = useMemo(() => {
                     </div>
                   );
                 })}
+              </div>
 
               {!(raTab === "quiz" ? quizOutcomesData : learningOutcomesData).length && (
                 <div className="empty-state">
@@ -2737,6 +2949,297 @@ const contentKpis = useMemo(() => {
           </Card>
         </div>
 
+        {/* ── Estado de asignaciones (entregado / calificado / vencido) ── */}
+        <div style={{ display: "flex" }}>
+          <Card
+            style={{ flex: 1 }}
+            title={<span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>📝 Asignaciones del curso <InfoTooltip text="Estado de las asignaciones (dropbox) que has creado en Brightspace: cuántas tienen entregas de estudiantes (con % de entrega), cuántas ya están completamente calificadas y cuántas vencieron. Ordenadas por fecha de entrega." /></span>}
+            accent="brand"
+          >
+            <ErrorBoundary sectionName="Asignaciones del curso">
+              <AssignmentsPanel orgUnitId={orgUnitId} />
+            </ErrorBoundary>
+          </Card>
+        </div>
+
+        {/* ── Accesos al curso (LastAccessed del classlist) ── */}
+        <div style={{ display: "flex" }}>
+          <Card
+            style={{ flex: 1 }}
+            title={<span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>🔑 Accesos al curso <InfoTooltip text="Último acceso de cada estudiante al curso en Brightspace (dato del classlist). Útil para detectar estudiantes desconectados. En la pestaña Estudiantes ves el último acceso de cada uno." /></span>}
+            accent="brand"
+          >
+            {accessStats == null ? (
+              <div className="empty-state" style={{ minHeight: 90 }}>
+                <span className="pulse-dot" style={{ background: COLORS.brand, width: 8, height: 8 }} />
+                <span style={{ fontSize: 11 }}>Cargando accesos…</span>
+              </div>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
+                {[
+                  { key: "today", label: "Entraron hoy", value: accessStats.today, color: COLORS.ok },
+                  { key: "week", label: "Entraron en los últimos 7 días", value: accessStats.week, color: COLORS.brand },
+                  { key: "stale", label: "Sin entrar hace +14 días", value: accessStats.stale, color: accessStats.stale > 0 ? COLORS.watch : "var(--muted)" },
+                  { key: "never", label: "Nunca han entrado", value: accessStats.never, color: accessStats.never > 0 ? COLORS.critical : "var(--muted)" },
+                ].map((row) => {
+                  const canExpand = row.value > 0;
+                  const isOpen = accessListOpen === row.key;
+                  const rowInner = (
+                    <>
+                      <div style={{ width: 8, height: 8, borderRadius: "50%", background: row.color, flexShrink: 0 }} />
+                      <div style={{ flex: 1, fontSize: 12, color: "var(--text)", fontWeight: 600, textAlign: "left" }}>{row.label}</div>
+                      <div style={{ fontSize: 13, fontWeight: 900, fontFamily: "var(--font-mono)", color: row.color }}>{row.value}</div>
+                      <div style={{ fontSize: 10, color: "var(--muted)", width: 40, textAlign: "right" }}>
+                        {accessStats.total > 0 ? `${((row.value / accessStats.total) * 100).toFixed(0)}%` : ""}
+                      </div>
+                      {canExpand && (
+                        <span style={{ fontSize: 10, color: "var(--muted)", flexShrink: 0 }}>{isOpen ? "▴" : "▾"}</span>
+                      )}
+                    </>
+                  );
+                  return canExpand ? (
+                    <button
+                      key={row.key}
+                      onClick={() => setAccessListOpen((v) => (v === row.key ? null : row.key))}
+                      aria-expanded={isOpen}
+                      title="Clic para ver quiénes son"
+                      style={{
+                        display: "flex", alignItems: "center", gap: 8,
+                        background: isOpen ? "var(--bg)" : "transparent",
+                        border: "none", borderRadius: 8, padding: "3px 4px",
+                        cursor: "pointer", fontFamily: "var(--font)", width: "100%",
+                      }}
+                    >
+                      {rowInner}
+                    </button>
+                  ) : (
+                    <div key={row.key} style={{ display: "flex", alignItems: "center", gap: 8, padding: "3px 4px" }}>
+                      {rowInner}
+                    </div>
+                  );
+                })}
+
+                {accessListOpen && (() => {
+                  const lists = {
+                    today: accessStats.todayList,
+                    week: accessStats.weekList,
+                    stale: accessStats.staleList,
+                    never: accessStats.neverList,
+                  };
+                  const colors = { today: COLORS.ok, week: COLORS.brand, stale: COLORS.watch, never: COLORS.critical };
+                  const rightLabel = (s) => {
+                    if (accessListOpen === "never") return "Nunca";
+                    if (s.days === 0) return "Hoy";
+                    if (s.days === 1) return "Ayer";
+                    return `Hace ${s.days} días`;
+                  };
+                  const list = lists[accessListOpen] || [];
+                  if (!list.length) return null;
+                  return (
+                    <div style={{
+                      maxHeight: 170, overflowY: "auto",
+                      border: "1px solid var(--border)", borderRadius: 10,
+                      background: "var(--bg)", padding: "4px 2px",
+                      display: "flex", flexDirection: "column", gap: 2,
+                    }}>
+                      {list.map((s) => (
+                        <button
+                          key={s.userId}
+                          onClick={() => {
+                            const row = studentRows.find((r) => r.userId === s.userId);
+                            if (row) setSelectedStudent(row);
+                          }}
+                          title="Ver el gemelo de este estudiante"
+                          style={{
+                            display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8,
+                            border: "none", background: "transparent", cursor: "pointer",
+                            padding: "4px 8px", borderRadius: 6, fontSize: 11,
+                            fontFamily: "var(--font)", color: "var(--text)", textAlign: "left", width: "100%",
+                          }}
+                          onMouseEnter={(e) => { e.currentTarget.style.background = "var(--brand-light)"; }}
+                          onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}
+                        >
+                          <span style={{ fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.name}</span>
+                          <span style={{ color: colors[accessListOpen], fontWeight: 800, fontFamily: "var(--font-mono)", flexShrink: 0 }}>
+                            {rightLabel(s)}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  );
+                })()}
+
+                <Divider />
+
+                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                  <div style={{ fontSize: 10, color: "var(--muted)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                    Accesos del profesor
+                  </div>
+                  <InfoTooltip text="Último ingreso al curso de cada miembro del equipo docente (roles no-estudiante del classlist de Brightspace)." />
+                </div>
+                {teacherAccessList.length === 0 ? (
+                  <div style={{ fontSize: 11, color: "var(--muted)" }}>Dato no disponible.</div>
+                ) : (
+                  teacherAccessList.slice(0, 4).map((t) => (
+                    <div key={t.userId} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, fontSize: 11 }}>
+                      <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "var(--text)", fontWeight: 700 }}>
+                        {t.name}
+                      </span>
+                      <span style={{ color: t.iso ? "var(--text)" : COLORS.critical, fontWeight: 800, fontFamily: "var(--font-mono)", flexShrink: 0 }}>
+                        {fmtLastAccess(t.iso)}
+                      </span>
+                    </div>
+                  ))
+                )}
+
+                <Divider />
+
+                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                  <div style={{ fontSize: 10, color: "var(--muted)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                    Elementos consumidos
+                  </div>
+                  <InfoTooltip text="Elementos de contenido (PDF, Word, páginas, enlaces, etc.) que los estudiantes han abierto en Brightspace, según su progreso de contenido del curso." />
+                </div>
+                {consumptionStats == null ? (
+                  <div style={{ fontSize: 11, color: "var(--muted)" }}>Cargando…</div>
+                ) : !consumptionStats.available ? (
+                  <div style={{ fontSize: 11, color: "var(--muted)" }}>Dato no disponible para este curso.</div>
+                ) : (
+                  <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                    {consumptionStats.avgPct != null && (
+                      <div>
+                        <ProgressBar
+                          value={Math.min(100, consumptionStats.avgPct)}
+                          color={colorForPct(consumptionStats.avgPct, thresholds)}
+                          animate={false}
+                          showLabel={false}
+                        />
+                        <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 6, display: "flex", justifyContent: "space-between" }}>
+                          <span>Promedio de elementos abiertos</span>
+                          <span style={{ fontFamily: "var(--font-mono)", fontWeight: 800 }}>{fmtPct(consumptionStats.avgPct)}</span>
+                        </div>
+                      </div>
+                    )}
+                    {consumptionStats.openedPct != null && (
+                      <div>
+                        <ProgressBar
+                          value={Math.min(100, consumptionStats.openedPct)}
+                          color={colorForPct(consumptionStats.openedPct, thresholds)}
+                          animate={false}
+                          showLabel={false}
+                        />
+                        <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 6, display: "flex", justifyContent: "space-between" }}>
+                          <span>{consumptionStats.opened} de {consumptionStats.total} estudiantes han abierto elementos</span>
+                          <span style={{ fontFamily: "var(--font-mono)", fontWeight: 800 }}>{fmtPct(consumptionStats.openedPct)}</span>
+                        </div>
+                      </div>
+                    )}
+
+                    <button
+                      className="btn"
+                      onClick={() => { setConsumptionDetailOpen((v) => !v); setConsumptionStudentOpen(null); }}
+                      aria-expanded={consumptionDetailOpen}
+                      style={{ alignSelf: "center", fontSize: 11, padding: "5px 12px", borderRadius: 8 }}
+                    >
+                      👥 {consumptionDetailOpen ? "Ocultar detalle" : "Acceso a contenidos"} {consumptionDetailOpen ? "▴" : "▾"}
+                    </button>
+
+                    {consumptionDetailOpen && (
+                      <div style={{
+                        maxHeight: 220, overflowY: "auto",
+                        border: "1px solid var(--border)", borderRadius: 10,
+                        background: "var(--bg)", padding: "4px 2px",
+                        display: "flex", flexDirection: "column", gap: 2,
+                      }}>
+                        {(consumptionStats.detail || []).map((s) => {
+                          const isOpen = consumptionStudentOpen === s.userId;
+                          const hasTopics = s.topicIds.length > 0;
+                          return (
+                            <div key={s.userId}>
+                              <button
+                                onClick={() => setConsumptionStudentOpen((v) => (v === s.userId ? null : s.userId))}
+                                title={hasTopics ? "Ver qué contenidos abrió" : "Sin detalle de temas"}
+                                style={{
+                                  display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8,
+                                  border: "none", background: isOpen ? "var(--brand-light)" : "transparent",
+                                  cursor: "pointer", padding: "4px 8px", borderRadius: 6, fontSize: 11,
+                                  fontFamily: "var(--font)", color: "var(--text)", textAlign: "left", width: "100%",
+                                }}
+                              >
+                                <span style={{ fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.name}</span>
+                                <span style={{ display: "inline-flex", alignItems: "center", gap: 4, flexShrink: 0 }}>
+                                  <span style={{ fontWeight: 800, fontFamily: "var(--font-mono)", color: s.count > 0 ? "var(--brand)" : "var(--muted)" }}>
+                                    {s.count} {s.count === 1 ? "elemento" : "elementos"}
+                                  </span>
+                                  {hasTopics && <span style={{ fontSize: 9, color: "var(--muted)" }}>{isOpen ? "▴" : "▾"}</span>}
+                                </span>
+                              </button>
+                              {isOpen && hasTopics && (
+                                <div style={{ padding: "2px 8px 6px 16px", display: "flex", flexDirection: "column", gap: 3 }}>
+                                  {[...new Set(s.topicIds)].map((tid) => {
+                                    const meta = contentTopicMeta.get(String(tid));
+                                    const title = meta?.title || `Elemento ${tid}`;
+                                    const typeLabel = contentTypeLabel(title, meta?.url, meta?.topicType);
+                                    return (
+                                      <div key={tid} style={{ fontSize: 10, color: "var(--muted-strong)", display: "flex", gap: 5, alignItems: "flex-start" }}>
+                                        <span aria-hidden="true" style={{ flexShrink: 0 }} title={typeLabel}>{CONTENT_TYPE_ICONS[typeLabel] || "📄"}</span>
+                                        <span style={{ lineHeight: 1.35 }}>{title}</span>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              )}
+                              {isOpen && !hasTopics && (
+                                <div style={{ padding: "2px 8px 6px 16px", fontSize: 10, color: "var(--muted)" }}>
+                                  Sin detalle de elementos disponible para este estudiante.
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+          </Card>
+        </div>
+
+        </div>
+
+        {/* ── Alertas inteligentes (fusiona Radar docente + heurísticas locales) ── */}
+        <div className="fade-up fade-up-3" style={{ marginBottom: 12 }}>
+          <ErrorBoundary sectionName="Alertas inteligentes">
+            <SmartAlerts
+              studentRows={studentRows}
+              overview={overview}
+              courseInfo={courseInfo}
+              contentKpis={contentKpis}
+              backendAlerts={overview?.alerts}
+              onStudentClick={selectStudentById}
+            />
+          </ErrorBoundary>
+        </div>
+
+        {/* ── Resumen semanal IA (narrativa) ── */}
+        <div className="fade-up fade-up-3" style={{ marginBottom: 12 }}>
+          <ContextualTip
+            id="batch4_intro_v3"
+            title="✨ Nuevas funciones disponibles"
+            description="Tu dashboard ahora tiene resumen narrativo con IA, predicción de notas finales (menú lateral), alertas inteligentes, tendencias históricas y más. Haz Ctrl+K para la paleta de comandos, o presiona ? para ver todos los atajos."
+          />
+          <Card title={<span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>🤖 Resumen semanal <InfoTooltip text="Resumen narrativo en lenguaje natural del estado del curso. Se genera automáticamente a partir de los datos actuales. Puedes escucharlo con TTS." /></span>} accent="brand">
+            <ErrorBoundary sectionName="Resumen semanal">
+              <AINarrativeSummary
+                studentRows={studentRows}
+                overview={overview}
+                courseInfo={courseInfo}
+                raDashboard={raDashboard}
+                contentKpis={contentKpis}
+              />
+            </ErrorBoundary>
+          </Card>
         </div>
 
         </>}
@@ -3187,6 +3690,12 @@ const contentKpis = useMemo(() => {
                       )}
                       <SortTh label="Nota" {...makeSort("grade10")} />
                       <SortTh label="Cobertura" {...makeSort("coverage")} title="% del curso con evidencias calificadas" />
+                      <th
+                        title="Último acceso del estudiante al curso en Brightspace"
+                        style={{ padding: "10px 10px", fontSize: 11, fontWeight: 700, textTransform: "uppercase", color: "var(--muted)", textAlign: "left", whiteSpace: "nowrap" }}
+                      >
+                        Último acceso
+                      </th>
                       <th />
                     </tr>
                   </thead>
@@ -3293,6 +3802,22 @@ const contentKpis = useMemo(() => {
                               <ProgressBar value={s.coveragePct} color={colorForPct(s.coveragePct, thresholds)} animate={false} />
                             )}
                           </td>
+                          <td style={{ padding: "10px 10px", whiteSpace: "nowrap" }}>
+                            {(() => {
+                              const iso = lastAccessMap[String(s.userId)];
+                              const txt = Object.keys(lastAccessMap).length ? fmtLastAccess(iso) : "—";
+                              const days = iso ? (Date.now() - new Date(iso).getTime()) / 86400000 : null;
+                              const color = !Object.keys(lastAccessMap).length ? "var(--muted)"
+                                : iso == null ? COLORS.critical
+                                : days > 14 ? COLORS.watch
+                                : "var(--text)";
+                              return (
+                                <span title={iso ? new Date(iso).toLocaleString("es-CO") : "Sin accesos registrados"} style={{ fontSize: 12, fontWeight: 700, color }}>
+                                  {txt}
+                                </span>
+                              );
+                            })()}
+                          </td>
                           <td style={{ padding: "10px 10px", textAlign: "right" }}>
                             <button
                               className="btn"
@@ -3308,7 +3833,7 @@ const contentKpis = useMemo(() => {
                       if (!sortedStudents.length) {
                         return (
                           <tr>
-                            <td colSpan={10} style={{ padding: 24, textAlign: "center", color: "var(--muted)", fontSize: 13 }}>
+                            <td colSpan={12} style={{ padding: 24, textAlign: "center", color: "var(--muted)", fontSize: 13 }}>
                               Sin resultados para el filtro.
                             </td>
                           </tr>
@@ -4190,40 +4715,105 @@ const contentKpis = useMemo(() => {
         )}
       </Drawer>
 
-      {/* SuperAdmin — vista estudiante del curso actual (sesión propia) */}
-      {isSuperAdmin && adminView === "student" && !impersonateStudent && (
-        <div style={{
-          position: "fixed", inset: 0, zIndex: 305,
-          background: "var(--page-bg, #f5f7fb)",
-          overflow: "auto",
-        }}>
-          <div style={{
-            position: "sticky", top: 0, zIndex: 5,
-            padding: "8px 20px",
-            background: "linear-gradient(90deg, var(--brand) 0%, #1e40af 100%)",
-            color: "#fff",
-            display: "flex", alignItems: "center", justifyContent: "space-between",
-            gap: 12, flexWrap: "wrap",
-            fontSize: 12, fontWeight: 700,
-          }}>
-            <span>🎓 Vista estudiante (administrador) — estás viendo el portal con tu propia sesión. Para ver los datos de un estudiante específico usa "Ver como…"</span>
-            <button
-              onClick={() => setAdminView("teacher")}
-              style={{
-                background: "#fff", border: "none", borderRadius: 6,
-                padding: "4px 12px", fontSize: 11, fontWeight: 800,
-                cursor: "pointer", color: "var(--brand)", flexShrink: 0,
-              }}
-            >
-              👨‍🏫 Volver a vista profesor
-            </button>
+      {/* SuperAdmin — selector de estudiante para "Vista estudiante" */}
+      {isSuperAdmin && studentPickerOpen && (
+        <div
+          onClick={() => { setStudentPickerOpen(false); setPickerSearch(""); }}
+          style={{
+            position: "fixed", inset: 0, zIndex: 320,
+            background: "rgba(15,23,42,0.45)",
+            display: "flex", alignItems: "flex-start", justifyContent: "center",
+            paddingTop: "12vh",
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            role="dialog"
+            aria-label="Elegir estudiante para vista estudiante"
+            style={{
+              width: "min(480px, 92vw)", maxHeight: "70vh",
+              background: "var(--card)", borderRadius: 16,
+              border: "1px solid var(--border)", boxShadow: "var(--shadow-lg)",
+              display: "flex", flexDirection: "column", overflow: "hidden",
+            }}
+          >
+            <div style={{ padding: "14px 16px", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+              <div style={{ fontSize: 13, fontWeight: 800, color: "var(--text)" }}>
+                🎓 Vista estudiante — elige un estudiante
+              </div>
+              <button
+                onClick={() => { setStudentPickerOpen(false); setPickerSearch(""); }}
+                aria-label="Cerrar"
+                style={{ background: "none", border: "none", fontSize: 16, cursor: "pointer", color: "var(--muted)" }}
+              >
+                ✕
+              </button>
+            </div>
+            <div style={{ padding: "10px 16px", borderBottom: "1px solid var(--border)" }}>
+              <input
+                value={pickerSearch}
+                onChange={(e) => setPickerSearch(e.target.value)}
+                placeholder="Buscar por nombre o ID…"
+                autoFocus
+                style={{
+                  width: "100%", padding: "9px 12px", fontSize: 13,
+                  border: "1px solid var(--border)", borderRadius: 10,
+                  background: "var(--bg)", color: "var(--text)",
+                  fontFamily: "var(--font)", outline: "none",
+                }}
+              />
+            </div>
+            <div style={{ flex: 1, overflowY: "auto", padding: "4px 0" }}>
+              {(Array.isArray(studentRows) ? studentRows : [])
+                .filter((s) => {
+                  if (!pickerSearch.trim()) return true;
+                  const q = pickerSearch.toLowerCase();
+                  return (s.displayName || "").toLowerCase().includes(q) || String(s.userId).includes(q);
+                })
+                .slice(0, 50)
+                .map((s) => (
+                  <button
+                    key={s.userId}
+                    onClick={() => {
+                      setImpersonateStudent({ userId: s.userId, name: s.displayName });
+                      setStudentPickerOpen(false);
+                      setPickerSearch("");
+                    }}
+                    style={{
+                      display: "flex", alignItems: "center", gap: 10,
+                      width: "100%", padding: "9px 16px", border: "none",
+                      background: "transparent", cursor: "pointer",
+                      fontSize: 13, fontFamily: "var(--font)",
+                      color: "var(--text)", textAlign: "left",
+                    }}
+                    onMouseEnter={(e) => { e.currentTarget.style.background = "var(--brand-light)"; }}
+                    onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}
+                  >
+                    <div style={{
+                      width: 30, height: 30, borderRadius: "50%",
+                      background: "var(--brand-light)", display: "flex",
+                      alignItems: "center", justifyContent: "center",
+                      fontSize: 12, fontWeight: 800, color: "var(--brand)", flexShrink: 0,
+                    }}>{(s.displayName || "?").charAt(0).toUpperCase()}</div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {s.displayName}
+                      </div>
+                      <div style={{ fontSize: 10, color: "var(--muted)" }}>ID {s.userId}</div>
+                    </div>
+                    <span style={{ fontSize: 10, fontWeight: 700, color: "var(--brand)" }}>Ver portal →</span>
+                  </button>
+                ))}
+              {(Array.isArray(studentRows) ? studentRows : []).length === 0 && (
+                <div style={{ padding: "20px 16px", textAlign: "center", color: "var(--muted)", fontSize: 12 }}>
+                  Carga un curso primero para ver sus estudiantes.
+                </div>
+              )}
+            </div>
+            <div style={{ padding: "8px 16px", borderTop: "1px solid var(--border)", fontSize: 10, color: "var(--muted)", textAlign: "center" }}>
+              Verás el portal exactamente como lo ve el estudiante elegido
+            </div>
           </div>
-          <React.Suspense fallback={<SharedCesaLoader title="Portal del Estudiante" subtitle="Cargando vista estudiante" />}>
-            <StudentPortal
-              orgUnitIdOverride={orgUnitId}
-              allowOverviewPanel={isSuperAdmin}
-            />
-          </React.Suspense>
         </div>
       )}
 

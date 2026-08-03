@@ -15,14 +15,13 @@ import {
 } from "recharts";
 import { useAuth } from "../context/AuthContext";
 import { apiGet, apiGetCached, apiPost } from "../utils/api";
-import { COLORS, STATUS_CONFIG, colorForPct, colorForRisk } from "../utils/colors";
+import { COLORS, STATUS_CONFIG, colorForPct } from "../utils/colors";
 import {
   fmtPct,
   fmtGrade10FromPct,
   normStatus,
   computeRiskFromPct,
   suggestRouteForStudent,
-  flattenOutcomeDescriptions,
   buildCorteGroups,
 } from "../utils/helpers";
 import { isStudentRole } from "../utils/roles";
@@ -86,14 +85,23 @@ function StatusBadge({ status }) {
   );
 }
 
-function Card({ title, right, children, accent }) {
+function Card({ title, right, children, accent, style = {} }) {
   return (
-    <div className="kpi-card" style={{ borderRadius: "var(--radius-lg)", boxShadow: "var(--shadow)", border: "1px solid var(--border)", position: "relative", overflow: "hidden" }}>
-      {accent && <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 3, background: `var(--${accent})`, borderRadius: "var(--radius-lg) var(--radius-lg) 0 0" }} />}
+    <div className="kpi-card" style={{ ...style, borderRadius: "var(--radius-lg)", boxShadow: "var(--shadow)", border: "1px solid var(--border)", position: "relative", overflow: "hidden" }}>
+      {accent && <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 3, background: `var(--${accent})`, borderRadius: "var(--radius-lg) var(--radius-lg) 0 0", zIndex: 1 }} />}
       {(title || right) && (
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16, gap: 12, paddingTop: accent ? 4 : 0 }}>
-          <div style={{ fontSize: 14, fontWeight: 800, color: "var(--text)", letterSpacing: "-0.02em", lineHeight: 1.3 }}>{title}</div>
-          <div style={{ flexShrink: 0 }}>{right}</div>
+        <div
+          style={{
+            // Banda de encabezado tipo dashboard (igual que la vista docente)
+            display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12,
+            background: "var(--bg)",
+            margin: "-20px -20px 14px",
+            padding: accent ? "13px 16px 10px" : "10px 16px",
+            borderBottom: "1px solid var(--border)",
+          }}
+        >
+          <div style={{ fontSize: 13, fontWeight: 800, color: "var(--text)", letterSpacing: "-0.01em", lineHeight: 1.3, flex: 1, textAlign: "center" }}>{title}</div>
+          {right != null && <div style={{ flexShrink: 0 }}>{right}</div>}
         </div>
       )}
       {children}
@@ -278,7 +286,6 @@ export default function StudentPortal({ orgUnitIdOverride, userIdOverride, allow
 
   // Course selection (students typically come from LTI with orgUnitId)
   // Override props allow SuperAdmin to view this portal for any user/course.
-  const isOverride = !!(orgUnitIdOverride && userIdOverride);
   const [orgUnitId, setOrgUnitId] = useState(() => {
     if (orgUnitIdOverride) return Number(orgUnitIdOverride);
     if (initialOrgUnitId) return initialOrgUnitId;
@@ -356,6 +363,11 @@ export default function StudentPortal({ orgUnitIdOverride, userIdOverride, allow
   const [courseInfo, setCourseInfo] = useState(null);
   const [learningOutcomesPayload, setLearningOutcomesPayload] = useState(null);
 
+  // Estado de mis asignaciones (dropbox): cuáles entregué y cuáles están calificadas
+  const [assignStatus, setAssignStatus] = useState(null); // null = cargando, false = error
+  const [showSubmittedList, setShowSubmittedList] = useState(false);
+  const [showGradedList, setShowGradedList] = useState(false);
+
   const impersonateUser = !userIdOverride ? sessionStorage.getItem("gemelo_impersonate_user") : null;
   const userId = userIdOverride || (impersonateUser ? Number(impersonateUser) : null) || authUser?.user_id;
   // Clean up impersonation flag after reading it
@@ -416,6 +428,25 @@ export default function StudentPortal({ orgUnitIdOverride, userIdOverride, allow
     return () => { alive = false; controller.abort(); };
   }, [orgUnitId, userId]);
 
+  // Estado de entregas por asignación (dropbox) del estudiante
+  useEffect(() => {
+    if (!orgUnitId || !userId) return;
+    let alive = true;
+    (async () => {
+      setAssignStatus(null);
+      try {
+        const data = await apiGetCached(
+          `/brightspace/course/${orgUnitId}/dropbox/student/${userId}/status`,
+          { ttl: 300_000 }
+        );
+        if (alive) setAssignStatus(data && Array.isArray(data.items) ? data : false);
+      } catch {
+        if (alive) setAssignStatus(false);
+      }
+    })();
+    return () => { alive = false; };
+  }, [orgUnitId, userId]);
+
   // Derived data
   const summary = studentData?.summary || {};
   const thresholds = { critical: 50, watch: 70 };
@@ -431,26 +462,59 @@ export default function StudentPortal({ orgUnitIdOverride, userIdOverride, allow
     : [];
 
   // Separate evidences by category for cleaner display
-  const corteItems = useMemo(
-    () => evidences.filter((e) => e?.isCorte === true),
-    [evidences]
-  );
   const nonCorteItems = useMemo(
     () => evidences.filter((e) => e?.isCorte !== true),
     [evidences]
-  );
-  const overdueItems = useMemo(
-    () => nonCorteItems.filter((e) => e?.status === "overdue_unscored" || (e?.isOverdue && e?.scorePct == null)),
-    [nonCorteItems]
-  );
-  const pendingItems = useMemo(
-    () => nonCorteItems.filter((e) => e?.scorePct == null && e?.status !== "overdue_unscored" && !e?.isOverdue),
-    [nonCorteItems]
   );
   const gradedItems = useMemo(
     () => nonCorteItems.filter((e) => e?.scorePct != null),
     [nonCorteItems]
   );
+  // Nota por corte: usa las mismas agrupaciones del gradebook que el resumen por cortes
+  const corteGroups = useMemo(
+    () => buildCorteGroups(evidences, studentData?.gradebook?.gradeCategories || []),
+    [evidences, studentData]
+  );
+  const corteNotes = useMemo(
+    () =>
+      corteGroups
+        .filter((g) => g.period != null)
+        .map((g) => {
+          const main = g.aggregates.find((a) => a.scorePct != null) || g.aggregates[0];
+          return { period: g.period, name: g.name, scorePct: main?.scorePct ?? null };
+        }),
+    [corteGroups]
+  );
+  // Con los 3 cortes calificados, la nota que muestra el donut es la final calculada
+  const isFinalGrade = corteNotes.length >= 3 && corteNotes.every((c) => c.scorePct != null);
+
+  // Asignaciones (dropbox) cruzadas con la nota del gradebook vía gradeItemId
+  const gradeByObjectId = useMemo(() => {
+    const m = new Map();
+    for (const e of evidences) {
+      if (e?.gradeObjectId != null) m.set(String(e.gradeObjectId), e);
+    }
+    return m;
+  }, [evidences]);
+  const assignRows = useMemo(() => {
+    const items = assignStatus && Array.isArray(assignStatus.items) ? assignStatus.items : [];
+    return items.map((it) => {
+      const ev = it.gradeItemId != null ? gradeByObjectId.get(String(it.gradeItemId)) : null;
+      const scorePct = ev?.scorePct ?? null;
+      return { ...it, scorePct, isGraded: !!it.isGraded || scorePct != null };
+    });
+  }, [assignStatus, gradeByObjectId]);
+  const submittedRows = useMemo(() => assignRows.filter((r) => r.hasSubmission === true), [assignRows]);
+  const gradedRows = useMemo(() => assignRows.filter((r) => r.isGraded), [assignRows]);
+  const overdueNotSubmitted = useMemo(() => {
+    const now = new Date();
+    return assignRows.filter((r) => {
+      if (r.hasSubmission !== false) return false;
+      const d = r.dueDate ? new Date(r.dueDate) : null;
+      return d && !Number.isNaN(d.getTime()) && d < now;
+    });
+  }, [assignRows]);
+
   const prescription = Array.isArray(studentData?.prescription)
     ? studentData.prescription
     : [];
@@ -492,8 +556,6 @@ export default function StudentPortal({ orgUnitIdOverride, userIdOverride, allow
       .map((e) => ({ name: (e.name || "").slice(0, 20), pct: Number(e.scorePct ?? 0) }));
   }, [nonCorteItems]);
 
-  const pendingUngradedPct = Number(summary?.pendingUngradedWeightPct ?? 0);
-  const overdueUnscoredPct = Number(summary?.overdueUnscoredWeightPct ?? 0);
 
   // ── No course selected ──
   if (!orgUnitId || orgUnitId === 0) {
@@ -734,7 +796,7 @@ export default function StudentPortal({ orgUnitIdOverride, userIdOverride, allow
       )}
 
       {/* ── Content ── */}
-      <main id="main-content" tabIndex={-1} style={{ padding: isMobile ? "16px 14px" : "24px 28px", maxWidth: 900, margin: "0 auto" }}>
+      <main id="main-content" tabIndex={-1} style={{ padding: isMobile ? "16px 14px" : "24px 28px", maxWidth: 1100, margin: "0 auto" }}>
         {/* Page Header */}
         <div style={{ marginBottom: 20 }}>
           <div style={{ fontSize: 10, fontWeight: 800, color: "var(--brand)", textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: 4 }}>
@@ -748,83 +810,155 @@ export default function StudentPortal({ orgUnitIdOverride, userIdOverride, allow
           </div>
         </div>
 
-        {/* ── KPI Hero Row ── */}
-        <div style={{ display: "flex", gap: 12, alignItems: "stretch", flexWrap: "wrap", marginBottom: 20 }}>
-          {/* Nota ring */}
-          <div style={{ flex: "1 1 140px", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "20px 10px", background: "var(--card)", borderRadius: 16, border: "1px solid var(--border)", boxShadow: "var(--shadow)", gap: 6 }}>
-            <CircularRing
-              pct={summary?.currentPerformancePct ?? 0}
-              size={100} stroke={9}
-              color={colorForPct(summary?.currentPerformancePct, thresholds)}
-              label={fmtGrade10FromPct(summary?.currentPerformancePct)}
-              sublabel="/10" fontSize={24}
-            />
-            <div style={{ fontSize: 10, fontWeight: 800, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.08em" }}>Mi Nota Actual</div>
-          </div>
-
-          {/* Cobertura ring */}
-          <div style={{ flex: "1 1 140px", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "20px 10px", background: "var(--card)", borderRadius: 16, border: "1px solid var(--border)", boxShadow: "var(--shadow)", gap: 6 }}>
-            <CircularRing
-              pct={summary?.coveragePct ?? 0}
-              size={100} stroke={9}
-              color={colorForPct(summary?.coveragePct, thresholds)}
-              label={fmtPct(summary?.coveragePct)}
-              fontSize={16}
-            />
-            <div style={{ fontSize: 10, fontWeight: 800, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.08em" }}>Cobertura</div>
-            <div style={{ fontSize: 10, color: "var(--muted)" }}>
-              {summary?.gradedItemsCount ?? 0}/{summary?.totalItemsCount ?? 0} ítems
-            </div>
-          </div>
-
-          {/* Risk + pending info */}
-          <div style={{ flex: "2 1 200px", display: "flex", flexDirection: "column", justifyContent: "center", padding: "20px 16px", background: "var(--card)", borderRadius: 16, border: "1px solid var(--border)", boxShadow: "var(--shadow)", gap: 10 }}>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-              <span style={{ fontSize: 10, fontWeight: 800, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.08em" }}>Mi Estado</span>
-              <StatusBadge status={risk} />
-            </div>
-            {pendingUngradedPct > 0 && (
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "6px 10px", borderRadius: 8, background: "var(--watch-bg)", border: "1px solid var(--watch-border)" }}>
-                <span style={{ fontSize: 11, fontWeight: 700, color: "var(--watch)" }}>⏳ Pendiente de calificación</span>
-                <span style={{ fontSize: 12, fontWeight: 900, fontFamily: "var(--font-mono)", color: "var(--watch)" }}>{fmtPct(pendingUngradedPct)}</span>
-              </div>
-            )}
-            {overdueUnscoredPct > 0 && (
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "6px 10px", borderRadius: 8, background: "var(--critical-bg)", border: "1px solid var(--critical-border)" }}>
-                <span style={{ fontSize: 11, fontWeight: 700, color: "var(--critical)" }}>🔴 Entregas vencidas</span>
-                <span style={{ fontSize: 12, fontWeight: 900, fontFamily: "var(--font-mono)", color: "var(--critical)" }}>{fmtPct(overdueUnscoredPct)}</span>
-              </div>
-            )}
-            {pendingUngradedPct === 0 && overdueUnscoredPct === 0 && (
-              <div style={{ fontSize: 12, color: "var(--ok)", fontWeight: 700 }}>✅ Sin entregas pendientes</div>
-            )}
-          </div>
-        </div>
-
-        {/* ── Ruta de Mejora ── */}
-        {route && (
-          <div style={{ marginBottom: 20 }}>
-            <Card title="Mi Ruta de Mejora" right={<StatusBadge status={risk} />} accent="brand">
-              <div style={{ fontSize: 13, color: "var(--muted)", marginBottom: 10 }}>{route.summary}</div>
-              <div style={{ background: "linear-gradient(135deg, var(--brand) 0%, var(--brand-2, #003EA6) 100%)", borderRadius: 12, padding: 16, color: "#fff" }}>
-                <div style={{ fontSize: 14, fontWeight: 800, marginBottom: 10 }}>{route.title}</div>
-                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                  {(route.actions || []).map((a, i) => (
-                    <div key={i} style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
-                      <span style={{ background: "rgba(255,255,255,0.2)", width: 22, height: 22, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 900, flexShrink: 0 }}>{i + 1}</span>
-                      <span style={{ fontSize: 13, lineHeight: 1.4, opacity: 0.95 }}>{a}</span>
-                    </div>
-                  ))}
+        {/* ── Fila principal: Mi nota + Mis asignaciones (estilo dashboard docente) ── */}
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr",
+            gap: 12,
+            alignItems: "stretch",
+            marginBottom: 20,
+          }}
+        >
+          {/* Mi nota — actual o final calculada, con desglose por corte */}
+          <Card title={isFinalGrade ? "🏁 Mi nota final" : "📊 Mi nota actual"} accent="brand" style={{ height: "100%" }}>
+            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 12 }}>
+              <CircularRing
+                pct={summary?.currentPerformancePct ?? 0}
+                size={isMobile ? 96 : 112} stroke={11}
+                color={colorForPct(summary?.currentPerformancePct, thresholds)}
+                label={fmtGrade10FromPct(summary?.currentPerformancePct)}
+                sublabel="/10" fontSize={isMobile ? 19 : 22}
+              />
+              {isFinalGrade ? (
+                <div style={{ fontSize: 11, fontWeight: 800, color: "var(--ok)", background: "var(--ok-bg)", border: "1px solid var(--ok-border)", borderRadius: 99, padding: "4px 12px", textAlign: "center" }}>
+                  ✓ Nota final calculada — los {corteNotes.length} cortes ya tienen calificación
                 </div>
+              ) : (
+                <div style={{ fontSize: 10, color: "var(--muted)", textAlign: "center" }}>
+                  Escala 0–10 · se actualiza a medida que tus docentes califican
+                </div>
+              )}
+              {corteNotes.length > 0 && (
+                <div style={{ display: "grid", gridTemplateColumns: `repeat(${Math.min(corteNotes.length, 3)}, 1fr)`, gap: 8, width: "100%" }}>
+                  {corteNotes.map((c) => {
+                    const col = c.scorePct != null ? colorForPct(c.scorePct, thresholds) : "var(--muted)";
+                    return (
+                      <div key={c.period} style={{ border: "1px solid var(--border)", borderRadius: 10, padding: "10px 8px", background: "var(--bg)", textAlign: "center" }}>
+                        <div style={{ fontSize: 10, fontWeight: 800, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                          Corte {c.period}
+                        </div>
+                        <div style={{ fontSize: 20, fontWeight: 900, fontFamily: "var(--font-mono)", color: col, lineHeight: 1.2, marginTop: 2 }}>
+                          {c.scorePct != null ? (c.scorePct / 10).toFixed(1) : "—"}
+                        </div>
+                        <div style={{ fontSize: 9, color: "var(--muted)" }}>
+                          {c.scorePct != null ? "/10" : "sin calificar"}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </Card>
+
+          {/* Mis asignaciones — % entregadas y % calificadas con desplegables */}
+          <Card title="📥 Mis asignaciones" accent="brand" style={{ height: "100%" }}>
+            {assignStatus === null ? (
+              <div style={{ textAlign: "center", color: "var(--muted)", fontSize: 12, padding: "30px 0" }}>
+                Cargando asignaciones…
               </div>
-            </Card>
-          </div>
-        )}
+            ) : assignStatus === false || assignRows.length === 0 ? (
+              <div style={{ textAlign: "center", color: "var(--muted)", fontSize: 12, padding: "30px 10px" }}>
+                {assignStatus === false
+                  ? "No se pudo cargar el estado de tus entregas."
+                  : "Este curso no tiene asignaciones publicadas."}
+              </div>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+                {[
+                  {
+                    key: "submitted", icon: "📤", label: "Asignaciones entregadas",
+                    rows: submittedRows, open: showSubmittedList, setOpen: setShowSubmittedList,
+                    empty: "Aún no has entregado asignaciones.",
+                    renderRight: (r) => (
+                      <span style={{ fontSize: 10, color: "var(--muted)", flexShrink: 0 }}>
+                        {r.submittedAt ? `Entregada: ${formatDueDate(r.submittedAt)}` : "Entregada"}
+                      </span>
+                    ),
+                  },
+                  {
+                    key: "graded", icon: "✅", label: "Asignaciones calificadas",
+                    rows: gradedRows, open: showGradedList, setOpen: setShowGradedList,
+                    empty: "Aún no tienes asignaciones calificadas.",
+                    renderRight: (r) => (
+                      <span style={{ fontSize: 13, fontWeight: 900, fontFamily: "var(--font-mono)", color: r.scorePct != null ? colorForPct(r.scorePct, thresholds) : "var(--ok)", flexShrink: 0 }}>
+                        {r.scorePct != null ? `${(r.scorePct / 10).toFixed(1)}/10` : "✓"}
+                      </span>
+                    ),
+                  },
+                ].map((sec) => {
+                  const pct = assignRows.length > 0 ? (sec.rows.length / assignRows.length) * 100 : 0;
+                  return (
+                    <div key={sec.key}>
+                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
+                        <span style={{ fontSize: 11, fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                          {sec.icon} {sec.label}
+                        </span>
+                        <span style={{ fontSize: 13, fontWeight: 900, fontFamily: "var(--font-mono)", color: colorForPct(pct, thresholds) }}>
+                          {fmtPct(pct)}{" "}
+                          <span style={{ fontSize: 10, color: "var(--muted)", fontWeight: 700 }}>
+                            ({sec.rows.length}/{assignRows.length})
+                          </span>
+                        </span>
+                      </div>
+                      <ProgressBar value={pct} color={colorForPct(pct, thresholds)} />
+                      <button
+                        onClick={() => sec.setOpen((v) => !v)}
+                        aria-expanded={sec.open}
+                        style={{ marginTop: 6, background: "none", border: "none", cursor: "pointer", fontSize: 11, fontWeight: 700, color: "var(--brand)", padding: 0, display: "inline-flex", alignItems: "center", gap: 4 }}
+                      >
+                        {sec.open ? "Ocultar" : "Ver cuáles"} <span style={{ fontSize: 9 }}>{sec.open ? "▲" : "▼"}</span>
+                      </button>
+                      {sec.open && (
+                        <div style={{ display: "flex", flexDirection: "column", gap: 4, marginTop: 6, maxHeight: 180, overflowY: "auto" }}>
+                          {sec.rows.length === 0 ? (
+                            <div style={{ fontSize: 11, color: "var(--muted)", fontStyle: "italic" }}>{sec.empty}</div>
+                          ) : (
+                            sec.rows.map((r) => (
+                              <div key={`${sec.key}-${r.id}`} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 10px", borderRadius: 8, background: "var(--bg)", border: "1px solid var(--border)" }}>
+                                <span style={{ flex: 1, fontSize: 12, fontWeight: 600, color: "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={r.name}>
+                                  {r.name}
+                                </span>
+                                {sec.renderRight(r)}
+                              </div>
+                            ))
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+
+                {overdueNotSubmitted.length > 0 && (
+                  <div style={{ fontSize: 11, fontWeight: 700, color: "var(--critical)", background: "var(--critical-bg)", border: "1px solid var(--critical-border)", borderRadius: 8, padding: "6px 10px" }}>
+                    ⏰ Tienes {overdueNotSubmitted.length} asignación{overdueNotSubmitted.length !== 1 ? "es" : ""} sin entregar con la fecha vencida.
+                  </div>
+                )}
+                {assignStatus?.partial && (
+                  <div style={{ fontSize: 10, color: "var(--muted)" }}>
+                    Algunas asignaciones no reportan estado de entrega.
+                  </div>
+                )}
+              </div>
+            )}
+          </Card>
+        </div>
 
         {/* ── Resultados de Aprendizaje ── */}
         {macroUnits.length > 0 && (
           <div style={{ marginBottom: 20 }}>
-            <Card title="Mis Resultados de Aprendizaje" accent="brand">
+            <Card title="🎯 Mis Resultados de Aprendizaje" accent="brand">
               <div style={{ display: "flex", flexWrap: "wrap", gap: 10, justifyContent: "center", marginBottom: 14 }}>
                 {macroUnits.map((item) => {
                   const ringColor = colorForPct(item.pct, thresholds);
@@ -855,252 +989,22 @@ export default function StudentPortal({ orgUnitIdOverride, userIdOverride, allow
           </div>
         )}
 
-        {/* ── Cortes agrupados ── */}
-        {(() => {
-          const gradeCategories = studentData?.gradebook?.gradeCategories || [];
-          const corteGroups = buildCorteGroups(evidences, gradeCategories);
-          if (corteGroups.length === 0) return null;
-          return (
+        {/* ── Calendario de entregas del curso (debajo de RA) ── */}
+        {orgUnitId ? (
           <div style={{ marginBottom: 20 }}>
-            <Card title="Resumen por Cortes" accent="brand">
-              <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 14, padding: "8px 12px", background: "var(--bg)", borderRadius: 8, borderLeft: "3px solid var(--brand)" }}>
-                📊 Cada sección muestra sus <strong>ponderados acumulados</strong> y las evidencias que la componen. Los resúmenes agregados <strong>no cuentan dos veces</strong> en tu promedio.
+            <Card title="📅 Mis próximas entregas">
+              <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 12, lineHeight: 1.5 }}>
+                Aquí ves todas las entregas del curso organizadas por fecha. Pasa el cursor sobre una tarea para ver cuántos días te quedan y el rango completo de fechas disponible para entregar. Las entregas marcadas con <strong style={{ color: "#dc2626" }}>¡!</strong> vencen en menos de 2 días.
               </div>
-
-              {(() => {
-                return (
-                  <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-                    {corteGroups.map((g, gi) => {
-                      const k = g.period ?? (gi + 1);
-                      const corteList = g.aggregates;
-                      const evList = g.components;
-
-                      // Best overall score to color the header: pick the first
-                      // graded corte for this period
-                      const mainCorte = corteList.find((e) => e.scorePct != null) || corteList[0];
-                      const headerPct = mainCorte?.scorePct;
-                      const headerColor = headerPct != null ? colorForPct(headerPct, thresholds) : "var(--muted)";
-                      const label = g.name;
-
-                      return (
-                        <div key={g.id} style={{
-                          borderRadius: 14,
-                          border: `1.5px solid ${headerColor === "var(--muted)" ? "var(--border)" : `${headerColor}55`}`,
-                          overflow: "hidden",
-                          background: "var(--card)",
-                        }}>
-                          {/* Header */}
-                          <div style={{
-                            padding: "12px 16px",
-                            background: headerColor === "var(--muted)" ? "var(--bg)" : `${headerColor}14`,
-                            borderBottom: `1px solid ${headerColor === "var(--muted)" ? "var(--border)" : `${headerColor}33`}`,
-                            display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap",
-                          }}>
-                            <div style={{
-                              width: 36, height: 36, borderRadius: 10,
-                              background: headerColor === "var(--muted)" ? "var(--bg)" : headerColor,
-                              color: headerColor === "var(--muted)" ? "var(--muted)" : "#fff",
-                              display: "flex", alignItems: "center", justifyContent: "center",
-                              fontSize: 14, fontWeight: 900,
-                            }}>
-                              {g.period ?? (gi + 1)}
-                            </div>
-                            <div style={{ flex: 1, minWidth: 0 }}>
-                              <div style={{ fontSize: 11, fontWeight: 800, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.06em" }}>
-                                {g.period != null ? `Corte ${g.period}` : "Sección"}
-                              </div>
-                              <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text)", marginTop: 1 }}>
-                                {label}
-                              </div>
-                            </div>
-                            {headerPct != null && (
-                              <div style={{ textAlign: "right" }}>
-                                <div style={{ fontSize: 9, fontWeight: 800, color: "var(--muted)", textTransform: "uppercase" }}>Acumulado</div>
-                                <div style={{ fontSize: 22, fontWeight: 900, fontFamily: "var(--font-mono)", color: headerColor, lineHeight: 1 }}>
-                                  {(headerPct / 10).toFixed(1)}
-                                  <span style={{ fontSize: 11, color: "var(--muted)", fontWeight: 600, marginLeft: 2 }}>/10</span>
-                                </div>
-                              </div>
-                            )}
-                          </div>
-
-                          <div style={{ padding: "12px 16px" }}>
-                            {/* Additional corte columns if there's more than one summary in this period */}
-                            {corteList.length > 1 && (
-                              <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 10 }}>
-                                {corteList.filter((c) => c !== mainCorte).map((c, idx) => {
-                                  const col = c.scorePct != null ? colorForPct(c.scorePct, thresholds) : "var(--muted)";
-                                  return (
-                                    <span key={`c-${idx}`} style={{
-                                      fontSize: 11, fontWeight: 700,
-                                      padding: "4px 10px", borderRadius: 8,
-                                      background: `${col}15`,
-                                      border: `1px solid ${col}44`,
-                                      color: col,
-                                      display: "inline-flex", alignItems: "center", gap: 5,
-                                    }}>
-                                      {c.name}: <strong style={{ fontFamily: "var(--font-mono)" }}>
-                                        {c.scorePct != null ? (c.scorePct / 10).toFixed(1) : "—"}
-                                      </strong>
-                                    </span>
-                                  );
-                                })}
-                              </div>
-                            )}
-
-                            {/* Evidences that belong to this corte */}
-                            {evList.length > 0 ? (
-                              <div>
-                                <div style={{ fontSize: 10, fontWeight: 800, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 6 }}>
-                                  Evidencias incluidas ({evList.length})
-                                </div>
-                                <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                                  {evList.map((e, idx) => {
-                                    const col = e.scorePct != null ? colorForPct(e.scorePct, thresholds) : "var(--muted)";
-                                    const isGraded = e.scorePct != null;
-                                    return (
-                                      <div key={`ev-${idx}`} style={{
-                                        display: "flex", alignItems: "center", gap: 8,
-                                        padding: "6px 10px", borderRadius: 8,
-                                        background: "var(--bg)",
-                                        border: "1px solid var(--border)",
-                                        fontSize: 12,
-                                      }}>
-                                        <span style={{ width: 6, height: 6, borderRadius: "50%", background: col, flexShrink: 0 }} />
-                                        <span style={{ flex: 1, fontWeight: 600, color: "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                                          {e.name || `Ítem ${e.gradeObjectId}`}
-                                        </span>
-                                        {e.categoryName && (
-                                          <span style={{ fontSize: 9, padding: "2px 6px", borderRadius: 10, background: "var(--brand-light)", color: "var(--brand)", fontWeight: 700 }}>
-                                            {e.categoryName}
-                                          </span>
-                                        )}
-                                        {e.weightPct > 0 && (
-                                          <span style={{ fontSize: 10, color: "var(--muted)", fontFamily: "var(--font-mono)" }}>
-                                            {Number(e.weightPct).toFixed(0)}%
-                                          </span>
-                                        )}
-                                        <span style={{
-                                          fontFamily: "var(--font-mono)", fontWeight: 800, fontSize: 13,
-                                          color: col, minWidth: 34, textAlign: "right",
-                                        }}>
-                                          {isGraded ? (e.scorePct / 10).toFixed(1) : "—"}
-                                        </span>
-                                      </div>
-                                    );
-                                  })}
-                                </div>
-                              </div>
-                            ) : (
-                              <div style={{ fontSize: 11, color: "var(--muted)", fontStyle: "italic", textAlign: "center", padding: "6px 0" }}>
-                                Sin evidencias individuales detectadas en este corte
-                              </div>
-                            )}
-
-                            {/* If the main corte item has a formula, show it */}
-                            {mainCorte?.formula && (
-                              <div style={{ marginTop: 10, padding: "8px 10px", borderRadius: 8, background: "rgba(99, 102, 241, 0.08)", border: "1px dashed rgba(99, 102, 241, 0.35)", fontSize: 11 }}>
-                                <div style={{ fontWeight: 800, color: "rgb(79, 70, 229)", marginBottom: 2 }}>
-                                  🧮 Fórmula del docente
-                                </div>
-                                <div style={{ fontFamily: "var(--font-mono)", color: "var(--muted)", lineHeight: 1.4, wordBreak: "break-word" }}>
-                                  {mainCorte.formula}
-                                </div>
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                );
-              })()}
+              <DueDateCalendar orgUnitId={orgUnitId} studentEvidences={evidences} />
             </Card>
           </div>
-          );
-        })()}
-
-        {/* ── Entregas Vencidas (resaltadas) ── */}
-        {overdueItems.length > 0 && (
-          <div style={{ marginBottom: 20 }}>
-            <Card title={`⚠️ Entregas Vencidas (${overdueItems.length})`} accent="critical">
-              <div style={{ fontSize: 12, color: "var(--critical)", fontWeight: 700, marginBottom: 12, padding: "8px 12px", background: "var(--critical-bg)", borderRadius: 8, border: "1px solid var(--critical-border)" }}>
-                Estas evidencias ya pasaron su fecha de entrega y no han sido calificadas. Contacta a tu docente lo antes posible.
-              </div>
-              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                {overdueItems.map((e, i) => (
-                  <div key={`overdue-${i}`} style={{
-                    display: "flex", alignItems: "center", justifyContent: "space-between",
-                    padding: "12px 14px", borderRadius: 10,
-                    border: "1px solid var(--critical-border)",
-                    background: "var(--critical-bg)",
-                    gap: 10,
-                  }}>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text)", marginBottom: 4, overflow: "hidden", textOverflow: "ellipsis" }}>
-                        {e.name || `Ítem ${e.gradeObjectId}`}
-                      </div>
-                      <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-                        <span style={{ fontSize: 11, color: "var(--critical)", fontWeight: 700 }}>
-                          🗓 Venció: {formatDueDate(e.dueDate)}
-                        </span>
-                        <span style={{ fontSize: 11, color: "var(--muted)" }}>
-                          Peso: {fmtPct(e.weightPct)}
-                        </span>
-                      </div>
-                    </div>
-                    <span className="badge" style={{ background: "var(--critical)", color: "#fff", border: "none", padding: "4px 10px", fontSize: 10, fontWeight: 800 }}>
-                      VENCIDA
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </Card>
-          </div>
-        )}
-
-        {/* ── Entregas Pendientes (no vencidas) ── */}
-        {pendingItems.length > 0 && (
-          <div style={{ marginBottom: 20 }}>
-            <Card title={`⏳ Entregas Pendientes (${pendingItems.length})`}>
-              <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 12 }}>
-                Evidencias que aún puedes entregar. Revisa las fechas de vencimiento.
-              </div>
-              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                {pendingItems.map((e, i) => (
-                  <div key={`pending-${i}`} style={{
-                    display: "flex", alignItems: "center", justifyContent: "space-between",
-                    padding: "10px 12px", borderRadius: 8,
-                    border: "1px solid var(--border)",
-                    background: "var(--bg)",
-                    gap: 10,
-                  }}>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontSize: 12, fontWeight: 700, color: "var(--text)", marginBottom: 2, overflow: "hidden", textOverflow: "ellipsis" }}>
-                        {e.name || `Ítem ${e.gradeObjectId}`}
-                      </div>
-                      <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-                        {e.dueDate && (
-                          <span style={{ fontSize: 11, color: "var(--muted)" }}>
-                            🗓 Entrega: {formatDueDate(e.dueDate)}
-                          </span>
-                        )}
-                        <span style={{ fontSize: 11, color: "var(--muted)" }}>
-                          Peso: {fmtPct(e.weightPct)}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </Card>
-          </div>
-        )}
+        ) : null}
 
         {/* ── Historial de Evidencias Calificadas ── */}
         {gradedItems.length > 0 && (
           <div style={{ marginBottom: 20 }}>
-            <Card title={`Mis Evidencias Calificadas (${gradedItems.length})`} accent="brand">
+            <Card title={`🧮 Notas de mis asignaciones (${gradedItems.length})`} accent="brand">
               {/* Chart */}
               {chartData.length > 1 && (
                 <div
@@ -1156,18 +1060,6 @@ export default function StudentPortal({ orgUnitIdOverride, userIdOverride, allow
             </Card>
           </div>
         )}
-
-        {/* ── Calendario de entregas del curso ── */}
-        {orgUnitId ? (
-          <div style={{ marginBottom: 20 }}>
-            <Card title="📅 Mis próximas entregas">
-              <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 12, lineHeight: 1.5 }}>
-                Aquí ves todas las entregas del curso organizadas por fecha. Pasa el cursor sobre una tarea para ver cuántos días te quedan y el rango completo de fechas disponible para entregar. Las entregas marcadas con <strong style={{ color: "#dc2626" }}>¡!</strong> vencen en menos de 2 días.
-              </div>
-              <DueDateCalendar orgUnitId={orgUnitId} studentEvidences={evidences} />
-            </Card>
-          </div>
-        ) : null}
 
         {/* ── Proyección ── */}
         {projection && Array.isArray(projection.scenarios) && projection.scenarios.length > 0 && (
@@ -1226,6 +1118,26 @@ export default function StudentPortal({ orgUnitIdOverride, userIdOverride, allow
                   </div>
                 </>
               )}
+            </Card>
+          </div>
+        )}
+
+        {/* ── Ruta de Mejora ── */}
+        {route && (
+          <div style={{ marginBottom: 20 }}>
+            <Card title="Mi Ruta de Mejora" right={<StatusBadge status={risk} />} accent="brand">
+              <div style={{ fontSize: 13, color: "var(--muted)", marginBottom: 10 }}>{route.summary}</div>
+              <div style={{ background: "linear-gradient(135deg, var(--brand) 0%, var(--brand-2, #003EA6) 100%)", borderRadius: 12, padding: 16, color: "#fff" }}>
+                <div style={{ fontSize: 14, fontWeight: 800, marginBottom: 10 }}>{route.title}</div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                  {(route.actions || []).map((a, i) => (
+                    <div key={i} style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
+                      <span style={{ background: "rgba(255,255,255,0.2)", width: 22, height: 22, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 900, flexShrink: 0 }}>{i + 1}</span>
+                      <span style={{ fontSize: 13, lineHeight: 1.4, opacity: 0.95 }}>{a}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
             </Card>
           </div>
         )}

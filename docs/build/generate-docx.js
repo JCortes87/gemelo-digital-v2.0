@@ -157,7 +157,7 @@ children.push(new Paragraph({
 children.push(new Paragraph({
   alignment: AlignmentType.CENTER,
   spacing: { after: 200 },
-  children: [new TextRun({ text: "Estado consolidado a junio de 2026", italics: true, size: 24 })],
+  children: [new TextRun({ text: "Estado consolidado a julio de 2026", italics: true, size: 24 })],
 }));
 children.push(new Paragraph({
   alignment: AlignmentType.CENTER,
@@ -195,7 +195,7 @@ children.push(bullet("Cómo recuperarse ante problemas (rollback, snapshots)."))
 children.push(bullet("Quién es quién y cómo coordinarse con CESA y el colaborador."));
 
 children.push(H2("1.1 Última actualización del proyecto"));
-children.push(P("Junio de 2026. Última sesión de trabajo importante: integración de la arquitectura completa del colaborador (Juan David) con todas las features modernas (vista de estudiante, calendario, predicciones, alertas inteligentes, etc.) más nuestros aportes propios (refresh-token, fix de estudiantes fantasma, CI/CD vía GitHub Actions OIDC)."));
+children.push(P("31 de julio de 2026. Última sesión de trabajo importante: rediseño completo del dashboard docente y del portal del estudiante con estilo de dashboard analítico (fila de KPIs, velocímetro de riesgo, panel de asignaciones, accesos al curso, consumo de contenidos), pestañas dedicadas para Estudiantes/Calendario/Tendencias, selector de estudiante en \"Vista estudiante\" para el superadmin, y nuevo repositorio de respaldo gemelo-digital-v2.0. Detalle en la sección 15.13. La sesión anterior (junio 2026) integró la arquitectura del colaborador (Juan David) + refresh-token, fix de estudiantes fantasma y CI/CD vía GitHub Actions OIDC."));
 
 children.push(H2("1.2 Estado actual"));
 children.push(P("En producción HOY (después del deploy de junio):"));
@@ -225,39 +225,36 @@ children.push(new Paragraph({
 
 children.push(H3("Carpeta de trabajo en tu PC (la única que importa)"));
 children.push(P("Hoy estamos trabajando exclusivamente en esta carpeta:"));
-children.push(...codeBlock(`C:\\Users\\jose.cortesh\\OneDrive - Colegio de Estudios Superiores de Administracion\\Escritorio\\Gemelo digital\\GEMELO-DIGITAL-V2`));
+children.push(...codeBlock(`C:\\Users\\jcort\\Desktop\\GEMELO DIGITAL\\Proyecto-Gemelos-Digitales`));
 children.push(P("Características de esta carpeta:"));
 children.push(bullet("Es la única carpeta activa del proyecto. Cualquier cambio que hagas debe ocurrir aquí."));
-children.push(bullet("Está clonada desde tu repo de GitHub (JCortes87/proyecto-gemelos-digitales-JC)."));
-children.push(bullet("Vive dentro de OneDrive, así que se sincroniza automáticamente como respaldo personal."));
+children.push(bullet("Está clonada del repo de Juan David, pero con los remotes reconfigurados: origin apunta a tu repo de respaldo (gemelo-digital-v2.0) y produccion apunta a tu repo principal (proyecto-gemelos-digitales-JC)."));
 children.push(bullet("Si alguna vez accidentalmente trabajas en otra carpeta, los cambios NO van a producción aunque uses los mismos comandos git."));
 
 children.push(P("Para abrir esta carpeta rápido:"));
 children.push(bullet("Explorador de Windows: copia la ruta de arriba y pégala en la barra de direcciones."));
-children.push(bullet("Terminal PowerShell: cd \"C:\\Users\\jose.cortesh\\...\\GEMELO-DIGITAL-V2\" (usa Tab para autocompletar)."));
-children.push(bullet("VS Code: File → Open Folder y navegar hasta GEMELO-DIGITAL-V2."));
+children.push(bullet("Terminal PowerShell: cd \"C:\\Users\\jcort\\Desktop\\GEMELO DIGITAL\\Proyecto-Gemelos-Digitales\" (usa Tab para autocompletar)."));
+children.push(bullet("VS Code: File → Open Folder y navegar hasta Proyecto-Gemelos-Digitales."));
 
 children.push(H3("Carpetas anteriores que NO debes usar"));
-children.push(P("Estas carpetas existen en tu PC pero están obsoletas. NO toques nada en ellas:"));
+children.push(P("Estas carpetas existieron en el setup anterior (PC del trabajo, usuario jose.cortesh) y están obsoletas. NO toques nada en ellas si aún existen:"));
 children.push(table2col([
+  ["GEMELO-DIGITAL-V2 (OneDrive, PC anterior)", "Carpeta de trabajo del setup anterior (junio 2026). Ya no se usa."],
   ["GEMELO-DIGITAL (sin V2)", "Versión vieja del proyecto. Ya no se usa. NO trabajar aquí."],
   ["repo-juan-reciente", "Carpeta de trabajo histórica. NO trabajar aquí."],
   ["repo-juan", "Carpeta de trabajo histórica. NO trabajar aquí."],
   ["backup-backend", "Backup de respaldo histórico. NO trabajar aquí."],
   ["gemelo definitivo", "Carpeta vieja. NO trabajar aquí."],
 ]));
-children.push(P("Aunque estas carpetas tengan archivos del proyecto, cambios hechos en ellas NO llegan a producción y pueden generar confusión. Solo GEMELO-DIGITAL-V2 importa."));
+children.push(P("Aunque estas carpetas tengan archivos del proyecto, cambios hechos en ellas NO llegan a producción y pueden generar confusión. Solo Proyecto-Gemelos-Digitales importa."));
 
-children.push(H3("Repositorio de GitHub donde estamos parados"));
-children.push(P("El repositorio activo es:"));
-children.push(table2col([
-  ["URL completa", "https://github.com/JCortes87/proyecto-gemelos-digitales-JC"],
-  ["Dueño", "JCortes87 (tu cuenta personal de GitHub)"],
-  ["Branch principal (production)", "main"],
-  ["Branch de trabajo", "Puedes crear branches nuevos derivados de main"],
-  ["Recibe pushes desde tu PC?", "SÍ — este es el repo \"origin\" en tu config git"],
-  ["Tiene CI/CD activo?", "SÍ — cada push a main dispara deploy automático"],
-]));
+children.push(H3("Repositorios de GitHub donde estamos parados"));
+children.push(P("La carpeta local tiene 3 remotes configurados, cada uno con un rol distinto:"));
+children.push(table3col([
+  ["produccion", "https://github.com/JCortes87/proyecto-gemelos-digitales-JC", "Repo principal. Cada merge a su rama main DISPARA EL DEPLOY AUTOMÁTICO a producción (CI/CD GitHub Actions)."],
+  ["origin", "https://github.com/JCortes87/gemelo-digital-v2.0", "Repo de RESPALDO. Recibe copia de las ramas y de main. NO tiene CI/CD: pushear aquí no despliega nada."],
+  ["colaborador", "https://github.com/juandavid639/Proyecto-Gemelos-Digitales", "Repo de Juan David. NO se toca para nada. Solo git fetch para actualizarnos cuando sea necesario. Push bloqueado."],
+], ["Remote", "Repositorio", "Rol"], [1500, 3760, 4100]));
 
 children.push(H3("Repositorio que NUNCA debes tocar"));
 
@@ -270,7 +267,7 @@ children.push(new Paragraph({
             right: { color: "8B0000", space: 1, style: BorderStyle.SINGLE, size: 16 } },
   spacing: { before: 200, after: 200 },
   children: [new TextRun({
-    text: "ATENCIÓN: NO empujar código al repo de Juan David bajo ninguna circunstancia.",
+    text: "REGLA FIJA: el repo de Juan David NO SE TOCA EN ABSOLUTO. Solo git fetch (lectura) para actualizarnos cuando sea necesario.",
     bold: true,
     size: 24,
     color: "8B0000",
@@ -280,16 +277,17 @@ children.push(new Paragraph({
 children.push(table2col([
   ["URL", "https://github.com/juandavid639/Proyecto-Gemelos-Digitales"],
   ["Dueño", "Juan David (NO tú)"],
+  ["Uso permitido", "SOLO actualizarnos: git fetch colaborador cuando sea necesario para ver/traer sus avances. Nada más."],
   ["¿Por qué no tocarlo?", "Es el repo personal del colaborador. Pushear ahí contamina su rama main con código que él no aprobó."],
   ["¿Cómo está bloqueado?", "El push a colaborador está configurado con URL inválida (DISABLED-no-push-to-upstream). Cualquier intento de push falla automáticamente antes de llegar a GitHub."],
-  ["¿Es seguro hacer git fetch desde aquí?", "SÍ. El fetch solo descarga datos a tu PC, no modifica el repo de él. Útil para ver sus avances."],
+  ["¿Es seguro hacer git fetch desde aquí?", "SÍ. El fetch solo descarga datos a tu PC, no modifica el repo de él."],
 ]));
 
 children.push(H3("Resumen visual — antes de tocar nada, verifica"));
 children.push(P("Tres verificaciones rápidas para confirmar que estás en el lugar correcto:"));
 children.push(table3col([
-  ["1. Estoy en GEMELO-DIGITAL-V2", "Mira la barra de ruta de tu explorador o terminal. Debe terminar en \"GEMELO-DIGITAL-V2\".", "Si no, navegar ahí antes de continuar."],
-  ["2. git remote -v muestra origin → JCortes87", "Abre terminal en la carpeta y corre el comando. La línea origin debe apuntar a github.com/JCortes87/proyecto-gemelos-digitales-JC.", "Si apunta a otro repo, estás en la carpeta equivocada."],
+  ["1. Estoy en Proyecto-Gemelos-Digitales", "Mira la barra de ruta de tu explorador o terminal. Debe terminar en \"Proyecto-Gemelos-Digitales\" (dentro de Desktop\\GEMELO DIGITAL).", "Si no, navegar ahí antes de continuar."],
+  ["2. git remote -v muestra los 3 remotes", "origin debe apuntar a github.com/JCortes87/gemelo-digital-v2.0 (respaldo) y produccion a github.com/JCortes87/proyecto-gemelos-digitales-JC (deploy).", "Si apuntan a otros repos, estás en la carpeta equivocada."],
   ["3. colaborador tiene push DISABLED", "El mismo comando git remote -v debe mostrar colaborador (push) DISABLED-no-push-to-upstream.", "Si está habilitado, configurarlo de nuevo para protección."],
 ], ["Verificación", "Cómo confirmar", "Si algo falla"], [2200, 4060, 3100]));
 
@@ -450,21 +448,22 @@ children.push(new Paragraph({ children: [new PageBreak()] }));
 children.push(H1("5. Repositorios del proyecto"));
 children.push(P("Esta sección es CRÍTICA. Entender qué repo recibe pushes y cuál no, es la diferencia entre operar bien el proyecto o tumbar el trabajo del colaborador. Léala con cuidado."));
 
-children.push(P("Existen 3 repositorios relevantes en GitHub. Cada uno tiene un propósito distinto. Solo UNO recibe pushes desde este setup."));
+children.push(P("Existen 4 repositorios relevantes en GitHub. Cada uno tiene un propósito distinto. Solo el repo principal despliega a producción; el v2.0 es únicamente respaldo."));
 
 children.push(H2("5.1 Repositorio principal (production) — JCortes87"));
 
-children.push(P("Este es el repo que vive el código que se despliega a producción. Cualquier push a la rama main de este repo dispara los workflows de GitHub Actions y deploya automáticamente."));
+children.push(P("Este es el repo donde vive el código que se despliega a producción. Cualquier merge a la rama main de este repo dispara los workflows de GitHub Actions y deploya automáticamente. En la carpeta local es el remote \"produccion\"."));
 
 children.push(table2col([
   ["URL completa", "https://github.com/JCortes87/proyecto-gemelos-digitales-JC"],
   ["URL corta para clonar", "git@github.com:JCortes87/proyecto-gemelos-digitales-JC.git"],
   ["Dueño actual", "JCortes87 (cuenta personal de GitHub)"],
   ["Visibilidad", "Privado (solo invitados ven el código)"],
+  ["Remote local", "produccion"],
   ["Branch productiva", "main — cualquier merge a esta branch DISPARA DEPLOY"],
   ["Branch de trabajo histórica", "sync/upstream-abril-2026 — usada históricamente para integrar cambios"],
   ["Branches de backup", "backup/pre-merge-jd-junio-10 (estado anterior al merge con JD)"],
-  ["Recibe pushes?", "SÍ — este es el único repo donde pusheamos"],
+  ["Recibe pushes?", "SÍ — aquí se pushean las ramas y se mergean los PR que van a producción"],
   ["CI/CD activo?", "SÍ — workflows en .github/workflows/"],
 ]));
 
@@ -477,17 +476,76 @@ children.push(bullet("docs/ — documentación del proyecto (incluye este docume
 children.push(bullet("frontend_dist/ — build pre-compilado del frontend (legacy, mantenido por JD)"));
 
 children.push(H3("Cómo está configurado el git localmente"));
-children.push(P("En la carpeta local GEMELO-DIGITAL-V2/, git tiene 2 remotes configurados:"));
-children.push(...codeBlock(`origin       https://github.com/JCortes87/proyecto-gemelos-digitales-JC.git (fetch)
-origin       https://github.com/JCortes87/proyecto-gemelos-digitales-JC.git (push)
+children.push(P("En la carpeta local Proyecto-Gemelos-Digitales/, git tiene 3 remotes configurados:"));
+children.push(...codeBlock(`origin       https://github.com/JCortes87/gemelo-digital-v2.0.git (fetch)
+origin       https://github.com/JCortes87/gemelo-digital-v2.0.git (push)
+produccion   https://github.com/JCortes87/proyecto-gemelos-digitales-JC.git (fetch)
+produccion   https://github.com/JCortes87/proyecto-gemelos-digitales-JC.git (push)
 colaborador  https://github.com/juandavid639/Proyecto-Gemelos-Digitales.git (fetch)
 colaborador  DISABLED-no-push-to-upstream (push)`));
 children.push(P("Lectura de esto:"));
-children.push(bullet("origin apunta a TU repo. Puedes hacer fetch (descargar) y push (subir) sin restricción."));
-children.push(bullet("colaborador apunta al repo de JD. PUEDES hacer fetch para ver sus cambios, pero el push está literalmente bloqueado con la URL inválida \"DISABLED-no-push-to-upstream\"."));
+children.push(bullet("origin apunta al repo de RESPALDO (gemelo-digital-v2.0). Puedes hacer fetch y push sin restricción, pero pushear aquí NO despliega nada."));
+children.push(bullet("produccion apunta al repo PRINCIPAL (proyecto-gemelos-digitales-JC). Los merges a su main despliegan a producción automáticamente."));
+children.push(bullet("colaborador apunta al repo de JD. PUEDES hacer fetch para actualizarte con sus cambios, pero el push está literalmente bloqueado con la URL inválida \"DISABLED-no-push-to-upstream\"."));
 children.push(bullet("Cualquier intento de \"git push colaborador <cualquier-cosa>\" falla con error de URL. Imposible empujar por accidente."));
 
-children.push(H2("5.2 Repositorio del colaborador (NO TOCAR)"));
+children.push(H2("5.2 Repositorio de respaldo — gemelo-digital-v2.0"));
+children.push(P("Repo creado en julio de 2026 como respaldo de los cambios nuevos. Es el remote \"origin\" de la carpeta de trabajo local."));
+children.push(table2col([
+  ["URL", "https://github.com/JCortes87/gemelo-digital-v2.0"],
+  ["Dueño", "JCortes87 (cuenta personal de GitHub)"],
+  ["Remote local", "origin"],
+  ["Rol", "SOLO RESPALDO. Recibe copia de main y de todas las ramas de trabajo."],
+  ["¿Tiene CI/CD?", "NO. Pushear aquí no despliega nada. El deploy a producción es exclusivo del repo principal, cuyo rol IAM OIDC solo confía en ese repo."],
+  ["Flujo de trabajo", "Los cambios se desarrollan localmente, se pushean como rama a origin (respaldo) y a produccion (principal), y se abre PR a main del principal. El merge del PR lo hace ÚNICAMENTE el dueño del repo (JCortes87) desde GitHub; ese merge es lo que despliega a producción."],
+]));
+
+children.push(H3("Regla del flujo de despliegue — quién hace qué"));
+children.push(P("Para que quede explícito y no haya ambigüedad:"));
+children.push(bullet("Quien desarrolla (persona o asistente) SOLO llega hasta: pushear la rama y abrir el Pull Request hacia main del repo principal."));
+children.push(bullet("El MERGE del Pull Request lo hace únicamente el dueño del repo (JCortes87) desde GitHub, después de revisar los cambios en \"Files changed\"."));
+children.push(bullet("NUNCA se hace push directo a main, ni merge local a main, ni merge del PR por parte de quien desarrolló el cambio."));
+children.push(bullet("Solo el merge a main del repo principal dispara el deploy automático a producción. Nada de lo que pase en origin (respaldo) o en local despliega nada."));
+
+children.push(H3("Resumen de remotes en la carpeta local"));
+children.push(table2col([
+  ["produccion", "JCortes87/proyecto-gemelos-digitales-JC — push permitido SOLO de ramas (nunca main). Aquí se abren los PR; el merge a main despliega."],
+  ["origin", "JCortes87/gemelo-digital-v2.0 — solo respaldo, sin CI/CD. Pushear aquí no despliega nada."],
+  ["colaborador", "juandavid639/Proyecto-Gemelos-Digitales — push BLOQUEADO (DISABLED-no-push-to-upstream). Solo git fetch de referencia. NO SE TOCA."],
+], ["Remote", "Repositorio y regla"]));
+
+children.push(H3("Procedimiento paso a paso — Parte 1: quien desarrolla"));
+children.push(bullet("1. Crear rama nueva con prefijo conventional commits: git checkout -b feat/nombre-descriptivo (o fix/, style/, docs/)."));
+children.push(bullet("2. Hacer los cambios y VERIFICAR antes de commitear: npm test, npm run build y lint sin errores nuevos."));
+children.push(bullet("3. git commit con mensaje en imperativo y prefijo (ej. feat(dashboard): agrega tarjeta de accesos)."));
+children.push(bullet("4. Pushear la MISMA rama a los dos repos del dueño: git push produccion <rama> y git push origin <rama>. Pushear la rama a produccion NO despliega — los workflows solo se disparan con cambios en main."));
+children.push(bullet("5. Abrir el Pull Request hacia main del repo principal con el enlace que imprime GitHub: https://github.com/JCortes87/proyecto-gemelos-digitales-JC/pull/new/<rama>."));
+children.push(bullet("6. FIN del trabajo del desarrollador. Prohibido: mergear el PR, push directo a main, y cualquier escritura sobre colaborador (repo de Juan)."));
+
+children.push(H3("Procedimiento paso a paso — Parte 2: el dueño (merge manual)"));
+children.push(bullet("1. Abrir el PR en GitHub → pestaña Files changed → revisar el diff."));
+children.push(bullet("2. Botón verde 'Merge pull request' → 'Confirm merge'. Este clic es el ÚNICO evento que despliega a producción."));
+children.push(bullet("3. Verificar en la pestaña Actions que los workflows queden en verde (frontend ~3 min; backend ~10 min; docs/** no dispara ninguno)."));
+children.push(bullet("4. Comprobar en https://gemelo.cesa.edu.co en ventana de incógnito (o Ctrl+Shift+R)."));
+children.push(bullet("5. Si un workflow falla, producción NO se ve afectada (siguen sirviendo el contenedor y archivos anteriores); ver sección de rollback."));
+
+children.push(H3("Redacción de commits y Pull Requests (convención fija)"));
+children.push(P("Los mensajes de commit y los textos de los PR siguen SIEMPRE el mismo formato. Aplica a cualquier persona o asistente que desarrolle:"));
+children.push(bullet("Idioma: español."));
+children.push(bullet("Modo imperativo: verbos que describen lo que hace el cambio al aplicarse — 'agrega', 'ajusta', 'corrige', 'mueve', 'elimina', 'renombra'. Nunca en pasado ('se agregó') ni en tono conversacional ('te dejé listo…')."));
+children.push(bullet("Prefijo tipo conventional commits con ámbito entre paréntesis: feat(dashboard):, fix(auth):, style(portal):, docs:, chore:, perf:, sec:."));
+children.push(bullet("Título del PR = título del commit principal: una sola línea, prefijo + resumen en imperativo. No inventar un título distinto."));
+children.push(bullet("Descripción del PR / cuerpo del commit: lista de viñetas, cada una en imperativo, diciendo qué cambia y — cuando no sea obvio — por qué. Sin narrativa personal ni saludos."));
+children.push(P("Ejemplos correctos:", { bold: true }));
+children.push(code("feat(dashboard): agrega tarjeta de accesos al curso con recencia por estudiante"));
+children.push(code("fix(ui): corrige la pestaña inicial del dashboard (abría en Estudiantes)"));
+children.push(code("docs: detalla el procedimiento de publicacion paso a paso"));
+children.push(P("Ejemplos incorrectos:", { bold: true }));
+children.push(code("Cambios varios                      <- no dice qué hace"));
+children.push(code("Se agregó la tarjeta de accesos     <- pasado, no imperativo"));
+children.push(code("Hola, aquí te dejo lo del dashboard <- conversacional"));
+
+children.push(H2("5.3 Repositorio del colaborador — NO SE TOCA EN ABSOLUTO"));
 
 // Warning visual
 children.push(new Paragraph({
@@ -498,7 +556,7 @@ children.push(new Paragraph({
             right: { color: "FF8C00", space: 1, style: BorderStyle.SINGLE, size: 12 } },
   spacing: { before: 200, after: 200 },
   children: [new TextRun({
-    text: "ATENCIÓN: NUNCA empujar código a este repo. Es propiedad de Juan David y solo se usa como referencia para ver su versión histórica.",
+    text: "REGLA FIJA E INNEGOCIABLE: el repositorio de Juan David NO SE TOCA EN ABSOLUTO — ni push, ni PRs, ni ninguna operación de escritura, bajo ninguna circunstancia. Esta regla aplica siempre y no hay que re-confirmarla en cada sesión. Único uso permitido: git fetch (solo lectura) para actualizarnos cuando sea necesario.",
     bold: true,
     size: 24,
     color: "8B0000",
@@ -508,7 +566,7 @@ children.push(new Paragraph({
 children.push(table2col([
   ["URL", "https://github.com/juandavid639/Proyecto-Gemelos-Digitales"],
   ["Dueño", "Juan David"],
-  ["Uso permitido", "SOLO LECTURA. Hacer git fetch para ver sus avances."],
+  ["Uso permitido", "SOLO LECTURA. Hacer git fetch para actualizarnos con sus avances cuando sea necesario."],
   ["Uso NO permitido", "git push (bloqueado). git push --force (bloqueado). Cualquier operación de escritura."],
   ["Cómo está bloqueado", "git remote set-url --push colaborador DISABLED-no-push-to-upstream"],
   ["Qué pasa si intentas pushear", "Git falla con error de URL antes de contactar a GitHub. NO llega al servidor."],
@@ -528,7 +586,7 @@ children.push(bullet("Quieres comparar su versión vs la tuya."));
 children.push(bullet("Quieres traer alguno de sus avances a tu repo (vía git merge colaborador/main)."));
 children.push(P("El fetch solo descarga datos a tu máquina, no modifica nada del lado de JD."));
 
-children.push(H2("5.3 Repositorio fork inicial (archivado, sin uso)"));
+children.push(H2("5.4 Repositorio fork inicial (archivado, sin uso)"));
 children.push(P("Repositorio antiguo que se usó como punto de partida. Está archivado y no debe usarse para nada activo. Se mantiene como referencia histórica únicamente."));
 children.push(table2col([
   ["URL", "https://github.com/JCortes87/gemelo-digital-backend-JC"],
@@ -537,10 +595,11 @@ children.push(table2col([
   ["Riesgo de usarlo", "Está desincronizado con el flujo actual. No vale la pena tocarlo."],
 ]));
 
-children.push(H2("5.4 Resumen visual: qué hacer y qué NO hacer con cada repo"));
+children.push(H2("5.5 Resumen visual: qué hacer y qué NO hacer con cada repo"));
 children.push(table3col([
-  ["JCortes87/proyecto-gemelos-digitales-JC", "SÍ", "Hacer push, merge, deploy, todo. Este es TU repo principal."],
-  ["juandavid639/Proyecto-Gemelos-Digitales", "NO", "NUNCA pushear. Solo git fetch para ver sus cambios."],
+  ["JCortes87/proyecto-gemelos-digitales-JC", "SÍ", "Repo principal (remote produccion). Push de ramas, PR y merge a main = deploy automático a producción."],
+  ["JCortes87/gemelo-digital-v2.0", "SÍ", "Solo respaldo (remote origin). Pushear copias de ramas y main. NO despliega nada."],
+  ["juandavid639/Proyecto-Gemelos-Digitales", "NO", "NUNCA pushear. Solo git fetch para actualizarnos cuando sea necesario."],
   ["JCortes87/gemelo-digital-backend-JC", "OBSOLETO", "Ignorar. No hacer nada con él."],
 ], ["Repositorio", "¿Tocarlo?", "Detalle"], [3500, 1200, 4660]));
 
@@ -721,13 +780,17 @@ children.push(H2("9.1 Visión general — el flujo completo en 10 pasos"));
 children.push(P("Cuando haces un cambio y lo quieres en producción, esto es lo que pasa:"));
 children.push(...codeBlock(`1.  Editas código en tu PC (ej. arreglas un bug en backend)
               ▼
-2.  git add + git commit + git push origin <tu-rama>
+2.  git add + git commit + git push produccion <tu-rama>
+    (y git push origin <tu-rama> como respaldo en gemelo-digital-v2.0)
               ▼
-3.  Abres Pull Request en GitHub: <tu-rama> → main
+3.  Quien desarrolló abre un Pull Request en el repo
+    principal: <tu-rama> → main. HASTA AQUÍ llega quien desarrolla.
               ▼
-4.  Revisas los cambios en la pestaña "Files changed" del PR
+4.  TÚ (JCortes87, dueño del repo) revisas los cambios en la
+    pestaña "Files changed" del PR
               ▼
-5.  Mergeas el PR con el botón verde "Merge pull request"
+5.  TÚ mergeas el PR con el botón verde "Merge pull request".
+    Nadie más hace este merge, y nunca hay push directo a main.
               ▼
 6.  GitHub detecta el merge a main y dispara los workflows
     en .github/workflows/deploy-backend.yml y deploy-frontend.yml
@@ -1026,12 +1089,13 @@ children.push(H1("11. Operaciones comunes — recetario"));
 children.push(P("Cómo hacer las cosas más frecuentes."));
 
 children.push(H2("11.1 Hacer un cambio de código y desplegarlo"));
-children.push(bullet("Hacer el cambio localmente en una rama (típicamente sync/upstream-abril-2026 o nueva).", 0));
+children.push(bullet("Hacer el cambio localmente en una rama nueva derivada de main.", 0));
 children.push(bullet("git add + git commit con mensaje descriptivo.", 0));
-children.push(bullet("Abrir un Pull Request a main en GitHub.", 0));
-children.push(bullet("Revisar el diff en \"Files changed\" del PR.", 0));
-children.push(bullet("Mergear el PR (botón verde).", 0));
-children.push(bullet("GitHub Actions deploya automáticamente. Ver progreso en pestaña Actions.", 0));
+children.push(bullet("git push produccion <rama> (y git push origin <rama> como respaldo en gemelo-digital-v2.0).", 0));
+children.push(bullet("Abrir un Pull Request a main en el repo principal (proyecto-gemelos-digitales-JC). Quien desarrolla llega SOLO hasta aquí.", 0));
+children.push(bullet("El dueño del repo (JCortes87) revisa el diff en \"Files changed\" del PR.", 0));
+children.push(bullet("El dueño del repo mergea el PR (botón verde) en GitHub. Nunca push directo a main.", 0));
+children.push(bullet("Ese merge dispara GitHub Actions y deploya automáticamente. Ver progreso en pestaña Actions.", 0));
 
 children.push(H2("11.2 Ver los logs del backend en producción"));
 children.push(P("Opción 1: AWS Console → CloudWatch → Log groups → /aws/ecs/default/gemelo-digital-api-cbc4."));
@@ -1086,14 +1150,14 @@ children.push(P("El container nuevo pulleará la imagen vieja por su tag latest.
 
 children.push(H3("Opción B: revertir vía git"));
 children.push(bullet("Localmente: git revert <hash-del-commit-malo>.", 0));
-children.push(bullet("git push origin main.", 0));
+children.push(bullet("git push produccion main (el repo principal es el que despliega).", 0));
 children.push(bullet("GitHub Actions deploya la versión revertida automáticamente.", 0));
 children.push(P("Más limpio que la opción A porque queda registro en la historia de git."));
 
 children.push(H3("Opción C (emergencia): backup branch"));
 children.push(bullet("Hay un branch backup/pre-merge-jd-junio-10 en GitHub con el estado pre-merge.", 0));
 children.push(bullet("git checkout main && git reset --hard backup/pre-merge-jd-junio-10.", 0));
-children.push(bullet("git push origin main --force (operación destructiva).", 0));
+children.push(bullet("git push produccion main --force (operación destructiva).", 0));
 children.push(P("Solo usar en emergencia extrema. Pierdes commits que no estén en el backup."));
 
 children.push(H2("12.2 Si un deploy de frontend rompe la web"));
@@ -1336,6 +1400,41 @@ children.push(table2col([
   ["d8a5db0", "Fase 3: integración de capa Postgres"],
 ]));
 
+children.push(H2("15.13 Rediseño de julio 2026 — dashboard, portal y nuevas métricas"));
+children.push(P("Sesión del 31 de julio de 2026. Los cambios se desarrollaron en la carpeta local clonada del repo de Juan David, se pushearon como ramas al repo principal (PR + merge a main con deploy automático) y se respaldaron en el repo nuevo JCortes87/gemelo-digital-v2.0 (sin CI/CD; solo respaldo/compartir)."));
+children.push(H3("Dashboard docente"));
+children.push(bullet("Fila de 4 KPIs estilo tarjeta centrada: nota promedio (donut 0-10), estudiantes inscritos, en riesgo (alto+medio) y contenidos publicados vs mínimo esperado."));
+children.push(bullet("Nuevo componente GaugeMeter (velocímetro semicircular con zonas verde/ámbar/rojo) para el riesgo académico."));
+children.push(bullet("Fila de 4 tarjetas de igual altura: riesgo académico, distribución de notas, contenidos y cobertura, estudiantes prioritarios."));
+children.push(bullet("Nuevo AssignmentsPanel: asignaciones creadas / con entregas (+% de entrega) / calificadas / vencidas, con listado detallado colapsable (usa /brightspace/.../dropbox/folders)."));
+children.push(bullet("Nueva tarjeta Accesos al curso: recencia del último acceso por estudiante (hoy / 7 días / +14 días / nunca) y top de desconectados, del LastAccessed del classlist."));
+children.push(bullet("Contenidos y cobertura: sección renombrada a 'Contenidos del profesor', y nueva métrica 'Contenidos consumidos por estudiantes' (promedio de temas abiertos) vía endpoint nuevo /brightspace/course/{ou}/content/consumption."));
+children.push(bullet("Pestañas nuevas en el sidebar: Estudiantes (tabla con columna 'Último acceso'), Calendario y Tendencias. Atajos 4/5/6 y paleta de comandos actualizados."));
+children.push(bullet("Tarjetas con banda de encabezado (fondo suave, título centrado) e iconos por sección en toda el área docente."));
+children.push(bullet("Fix: el dashboard abría en la pestaña Estudiantes al montar; la pestaña por defecto vuelve a ser Dashboard."));
+children.push(H3("Portal del estudiante"));
+children.push(bullet("KPIs rediseñados al mismo estilo: mi nota actual, asignaciones calificadas (nuevo, con pendientes y vencidas), cobertura y mi estado."));
+children.push(bullet("Los Resultados de Aprendizaje conservan la explicación de cada resultado."));
+children.push(H3("Superadmin"));
+children.push(bullet("El botón 'Vista estudiante' abre un selector emergente (buscar por nombre o ID) y muestra el portal del estudiante elegido; reemplaza al menú 'Ver como...' del topbar."));
+children.push(H3("Iteraciones posteriores (misma sesión)"));
+children.push(bullet("Tarjeta de cobertura recortada y renombrada a 'Cumplimiento evaluativo' (se eliminó la sección de ritmo de contenidos, duplicada con el KPI superior)."));
+children.push(bullet("Accesos al curso: labels aclarados ('Entraron hoy', 'Entraron en los últimos 7 días', 'Sin entrar hace +14 días', 'Nunca han entrado'); los 4 items son desplegables y muestran quiénes son (clic en el nombre abre el gemelo). Sección 'Accesos del profesor' con el último ingreso del docente (rol real vía endpoint nuevo /brightspace/course/{ou}/instructors sobre LP enrollments)."));
+children.push(bullet("Contenidos consumidos movido a la tarjeta de Accesos: dos barras (promedio de temas abiertos y % de estudiantes que abrieron) y botón 'Acceso a contenidos' que despliega quiénes y qué contenidos abrió cada estudiante, con icono por tipo. El endpoint /content/consumption devuelve también perUserTopics."));
+children.push(bullet("Asignaciones: el panel cuenta y lista solo las publicadas ('Activas') y agrega el contador 'No publicadas'. Las calificadas por asignación se muestran sobre el total de estudiantes (Brightspace cuenta feedback dado incluso a quienes no entregaron)."));
+children.push(bullet("KPI 'Contenidos publicados' con desglose por tipo desplegable (PDF, Word, Excel, PowerPoint, video, enlace, HTML, otro)."));
+children.push(bullet("Terminología: los archivos/páginas dentro de los módulos de contenido se llaman 'elementos' en la UI (KPI 'Elementos publicados', 'Elementos consumidos', 'Tipos de elemento'). La clasificación por tipo (PDF, Word, Excel...) usa la Url real del archivo vía el endpoint nuevo /brightspace/course/{ou}/content/topics."));
+children.push(bullet("Categorías de tipo de elemento: HTML (páginas de Brightspace), PDF, Excel, Word, Imágenes, Audios, Videos, Enlace y Otros. El total del KPI y el desglose salen de la misma fuente (/content/topics) para que siempre sumen igual."));
+children.push(bullet("'Accesos del profesor' oculta cuentas institucionales/de servicio (p. ej. 'CESA Laboratorio', 'Desarrollo profesoral') y muestra solo el nombre del profesor, sin el rol."));
+children.push(bullet("Fix superadmin: al refrescar en /dashboard sin curso seleccionado, el usuario superadmin ya no cae en el selector de cursos de profesor — se redirige siempre a su consola (RoleHome)."));
+children.push(bullet("Topbar reorganizado: buscador y toggle Vista profesor/estudiante se mantienen; Comandos, Inicio, Mis cursos, Panel de coordinación, idioma, tema e imprimir van en un menú desplegable (icono de 9 puntos) a la izquierda del usuario."));
+children.push(bullet("Asignaciones: la tarjeta muestra arriba el total de asignaciones (activas + no publicadas) y debajo el desglose."));
+children.push(bullet("Portal del estudiante rediseñado (2-3 ago): tarjeta 'Mi nota' con anillo circular (CircularRing, el mismo gráfico de los Resultados de Aprendizaje) y desglose por corte 1/2/3 + nota final calculada cuando los 3 cortes están calificados; tarjeta 'Mis asignaciones' con % entregadas y % calificadas (desplegables con la nota de cada una, cruzada con el gradebook vía gradeItemId); calendario de próximas entregas debajo de Resultados de Aprendizaje. Nuevo endpoint GET /brightspace/course/{ou}/dropbox/student/{userId}/status (entrega/calificación por asignación publicada, con soporte de entregas grupales)."));
+children.push(bullet("Limitación documentada: la duración de las sesiones (tiempo conectado) no está disponible vía API REST de Brightspace; solo existe en Data Hub. Se muestra recencia del último acceso, no duración. Para tener duración habría que habilitar Data Hub con el admin de Brightspace e ingerir los datasets vía el scheduler."));
+children.push(H3("Convenciones y notas"));
+children.push(bullet("Mensajes de commit y títulos de PR en imperativo ('ajusta...', 'agrega...'), con prefijo tipo conventional commits."));
+children.push(bullet("Dev local: venv + certificado autofirmado en gemelo-digital-backend/certs/ + .env local; el BRIGHTSPACE_SCOPE del .env viejo pedía grades:grades:read (ya no autorizado) y se comentó para usar el default del código."));
+
 children.push(new Paragraph({ children: [new PageBreak()] }));
 
 // ── 16. PENDIENTES Y SIGUIENTES PASOS ──
@@ -1343,6 +1442,8 @@ children.push(H1("16. Pendientes y siguientes pasos sugeridos"));
 children.push(P("Lo que queda por hacer cuando se retome el proyecto."));
 
 children.push(H2("16.1 Pendientes de corto plazo"));
+children.push(bullet("Verificar en producción que 'Contenidos consumidos por estudiantes' muestre datos; si aparece 'no disponible', ajustar la ruta del user progress en el endpoint /brightspace/course/{ou}/content/consumption."));
+children.push(bullet("Convertir el tip de 'nuevas funciones' del dashboard en un sistema de notificaciones (idea de la sesión de julio 2026)."));
 children.push(bullet("Reactivar la voz TTS ElevenLabs en el chat del asistente. La infraestructura backend está intacta (endpoints /speech/* funcionan). En el frontend nuevo de JD, los utils voice.js y speech.js están preservados; falta cablearlos en useStudentChat.js o el componente del chat."));
 children.push(bullet("Reintegrar el fix de no-superposición de audios (AbortController + token monotónico) cuando se reactive la voz."));
 
@@ -1367,26 +1468,26 @@ children.push(P("Esta sección consolida en un solo lugar todas las URLs, paths 
 
 children.push(H2("17.1 Ubicación del proyecto en tu PC"));
 children.push(P("Carpeta raíz del proyecto local:"));
-children.push(...codeBlock(`C:\\Users\\jose.cortesh\\OneDrive - Colegio de Estudios Superiores de Administracion\\Escritorio\\Gemelo digital\\GEMELO-DIGITAL-V2`));
+children.push(...codeBlock(`C:\\Users\\jcort\\Desktop\\GEMELO DIGITAL\\Proyecto-Gemelos-Digitales`));
 children.push(P("Subcarpetas importantes dentro del proyecto:"));
 children.push(table2col([
-  ["Backend (Python)", "GEMELO-DIGITAL-V2\\gemelo-digital-backend\\"],
-  ["Frontend (React)", "GEMELO-DIGITAL-V2\\gemelo-digital-frontend\\gemelo-frontend\\"],
-  ["Workflows GitHub Actions", "GEMELO-DIGITAL-V2\\.github\\workflows\\"],
-  ["Documentación", "GEMELO-DIGITAL-V2\\docs\\"],
-  ["Documento Word maestro", "GEMELO-DIGITAL-V2\\docs\\Gemelo-Digital-Documentacion-Completa.docx"],
-  ["Documento Markdown maestro", "GEMELO-DIGITAL-V2\\docs\\PROYECTO-GEMELO-DIGITAL-COMPLETO.md"],
-  ["Guía del scheduler", "GEMELO-DIGITAL-V2\\docs\\setup-scheduler.md"],
-  ["Migraciones Alembic", "GEMELO-DIGITAL-V2\\gemelo-digital-backend\\alembic\\versions\\"],
-  ["Modelos DB (SQLAlchemy)", "GEMELO-DIGITAL-V2\\gemelo-digital-backend\\app\\db\\models.py"],
-  ["Configuración Docker", "GEMELO-DIGITAL-V2\\gemelo-digital-backend\\Dockerfile"],
-  ["Script de arranque (migraciones)", "GEMELO-DIGITAL-V2\\gemelo-digital-backend\\start.sh"],
-  ["Backup local del .env", "GEMELO-DIGITAL-V2\\gemelo-digital-backend\\.env (NO commiteado, gitignoreado)"],
+  ["Backend (Python)", "Proyecto-Gemelos-Digitales\\gemelo-digital-backend\\"],
+  ["Frontend (React)", "Proyecto-Gemelos-Digitales\\gemelo-digital-frontend\\gemelo-frontend\\"],
+  ["Workflows GitHub Actions", "Proyecto-Gemelos-Digitales\\.github\\workflows\\"],
+  ["Documentación", "Proyecto-Gemelos-Digitales\\docs\\"],
+  ["Documento Word maestro", "Proyecto-Gemelos-Digitales\\docs\\Gemelo-Digital-Documentacion-Completa.docx"],
+  ["Documento Markdown maestro", "Proyecto-Gemelos-Digitales\\docs\\PROYECTO-GEMELO-DIGITAL-COMPLETO.md"],
+  ["Guía del scheduler", "Proyecto-Gemelos-Digitales\\docs\\setup-scheduler.md"],
+  ["Migraciones Alembic", "Proyecto-Gemelos-Digitales\\gemelo-digital-backend\\alembic\\versions\\"],
+  ["Modelos DB (SQLAlchemy)", "Proyecto-Gemelos-Digitales\\gemelo-digital-backend\\app\\db\\models.py"],
+  ["Configuración Docker", "Proyecto-Gemelos-Digitales\\gemelo-digital-backend\\Dockerfile"],
+  ["Script de arranque (migraciones)", "Proyecto-Gemelos-Digitales\\gemelo-digital-backend\\start.sh"],
+  ["Backup local del .env", "Proyecto-Gemelos-Digitales\\gemelo-digital-backend\\.env (NO commiteado, gitignoreado)"],
 ]));
 
 children.push(H2("17.2 GitHub — URLs completas"));
 
-children.push(H3("Tu repo (donde está el código de producción)"));
+children.push(H3("Tu repo principal (remote produccion — el código que se despliega)"));
 children.push(table2col([
   ["Página principal", "https://github.com/JCortes87/proyecto-gemelos-digitales-JC"],
   ["URL HTTPS para clonar", "https://github.com/JCortes87/proyecto-gemelos-digitales-JC.git"],
@@ -1411,7 +1512,14 @@ children.push(table2col([
   ["Workflow frontend YAML", "https://github.com/JCortes87/proyecto-gemelos-digitales-JC/blob/main/.github/workflows/deploy-frontend.yml"],
 ]));
 
-children.push(H3("Repo del colaborador (solo referencia, NO empujar)"));
+children.push(H3("Tu repo de respaldo (remote origin — NO despliega)"));
+children.push(table2col([
+  ["Página principal", "https://github.com/JCortes87/gemelo-digital-v2.0"],
+  ["URL HTTPS para clonar", "https://github.com/JCortes87/gemelo-digital-v2.0.git"],
+  ["Branch main (respaldo)", "https://github.com/JCortes87/gemelo-digital-v2.0/tree/main"],
+]));
+
+children.push(H3("Repo del colaborador (solo para actualizarnos, NO empujar)"));
 children.push(table2col([
   ["Página principal", "https://github.com/juandavid639/Proyecto-Gemelos-Digitales"],
   ["URL HTTPS para fetch", "https://github.com/juandavid639/Proyecto-Gemelos-Digitales.git"],
@@ -1487,15 +1595,15 @@ children.push(table2col([
 children.push(H2("17.7 Comandos git de uso frecuente"));
 children.push(P("Lista de comandos útiles para operar el proyecto:"));
 
-children.push(H3("Sincronizar con tu repo"));
-children.push(code("git pull origin main"));
-children.push(P("Trae los últimos cambios desde tu repo en GitHub."));
+children.push(H3("Sincronizar con el repo principal (producción)"));
+children.push(code("git pull produccion main"));
+children.push(P("Trae los últimos cambios desde el repo principal en GitHub."));
 
 children.push(H3("Ver el estado de los remotes"));
 children.push(code("git remote -v"));
-children.push(P("Confirma que origin apunta a tu repo y colaborador está bloqueado."));
+children.push(P("Confirma que origin apunta al respaldo (gemelo-digital-v2.0), produccion al principal (proyecto-gemelos-digitales-JC) y colaborador está bloqueado."));
 
-children.push(H3("Ver si JD pusheó algo nuevo"));
+children.push(H3("Ver si JD pusheó algo nuevo (para actualizarnos)"));
 children.push(code("git fetch colaborador && git log HEAD..colaborador/main --oneline"));
 children.push(P("Fetch trae los datos sin tocar tu trabajo. Después el log muestra commits que JD tiene y tú no."));
 
@@ -1506,10 +1614,11 @@ children.push(H3("Crear un branch nuevo para trabajar"));
 children.push(code("git checkout -b fix/algun-bug"));
 children.push(P("Crea y se mueve a un branch nuevo derivado del actual."));
 
-children.push(H3("Hacer un commit"));
+children.push(H3("Hacer un commit y subirlo a ambos repos"));
 children.push(code(`git add <archivos>
 git commit -m "descripcion del cambio"
-git push origin <nombre-del-branch>`));
+git push origin <nombre-del-branch>       (respaldo gemelo-digital-v2.0)
+git push produccion <nombre-del-branch>   (repo principal, para abrir el PR a main)`));
 
 children.push(new Paragraph({ children: [new PageBreak()] }));
 
@@ -1605,7 +1714,7 @@ children.push(new Paragraph({
 children.push(new Paragraph({
   alignment: AlignmentType.CENTER,
   spacing: { before: 200 },
-  children: [new TextRun({ text: "Última actualización: junio 2026", italics: true, size: 18 })],
+  children: [new TextRun({ text: "Última actualización: 2 de agosto de 2026 (aclaración del flujo de repositorios: produccion despliega, origin es respaldo)", italics: true, size: 18 })],
 }));
 
 // ─────────────────────────────────────────────────────────
