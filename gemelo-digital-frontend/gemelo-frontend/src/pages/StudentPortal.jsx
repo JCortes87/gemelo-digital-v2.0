@@ -28,7 +28,6 @@ import { isStudentRole } from "../utils/roles";
 import { injectStyles } from "../styles/global";
 import useMediaQuery from "../hooks/useMediaQuery";
 import DueDateCalendar from "../components/dashboard/DueDateCalendar";
-import { GaugeMeter } from "./teacher/primitives";
 
 /* ── Helpers ── */
 
@@ -824,16 +823,12 @@ export default function StudentPortal({ orgUnitIdOverride, userIdOverride, allow
           {/* Mi nota — actual o final calculada, con desglose por corte */}
           <Card title={isFinalGrade ? "🏁 Mi nota final" : "📊 Mi nota actual"} accent="brand" style={{ height: "100%" }}>
             <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 12 }}>
-              <GaugeMeter
+              <CircularRing
                 pct={summary?.currentPerformancePct ?? 0}
-                size={isMobile ? 160 : 190}
-                zones={[
-                  { to: thresholds.critical, color: "var(--critical)" },
-                  { to: thresholds.watch, color: "var(--watch)" },
-                  { to: 100, color: "var(--ok)" },
-                ]}
-                centerLabel={`${fmtGrade10FromPct(summary?.currentPerformancePct)}/10`}
-                centerColor={colorForPct(summary?.currentPerformancePct, thresholds)}
+                size={isMobile ? 96 : 112} stroke={11}
+                color={colorForPct(summary?.currentPerformancePct, thresholds)}
+                label={fmtGrade10FromPct(summary?.currentPerformancePct)}
+                sublabel="/10" fontSize={isMobile ? 19 : 22}
               />
               {isFinalGrade ? (
                 <div style={{ fontSize: 11, fontWeight: 800, color: "var(--ok)", background: "var(--ok-bg)", border: "1px solid var(--ok-border)", borderRadius: 99, padding: "4px 12px", textAlign: "center" }}>
