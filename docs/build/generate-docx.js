@@ -507,6 +507,28 @@ children.push(bullet("El MERGE del Pull Request lo hace únicamente el dueño de
 children.push(bullet("NUNCA se hace push directo a main, ni merge local a main, ni merge del PR por parte de quien desarrolló el cambio."));
 children.push(bullet("Solo el merge a main del repo principal dispara el deploy automático a producción. Nada de lo que pase en origin (respaldo) o en local despliega nada."));
 
+children.push(H3("Resumen de remotes en la carpeta local"));
+children.push(table2col([
+  ["produccion", "JCortes87/proyecto-gemelos-digitales-JC — push permitido SOLO de ramas (nunca main). Aquí se abren los PR; el merge a main despliega."],
+  ["origin", "JCortes87/gemelo-digital-v2.0 — solo respaldo, sin CI/CD. Pushear aquí no despliega nada."],
+  ["colaborador", "juandavid639/Proyecto-Gemelos-Digitales — push BLOQUEADO (DISABLED-no-push-to-upstream). Solo git fetch de referencia. NO SE TOCA."],
+], ["Remote", "Repositorio y regla"]));
+
+children.push(H3("Procedimiento paso a paso — Parte 1: quien desarrolla"));
+children.push(bullet("1. Crear rama nueva con prefijo conventional commits: git checkout -b feat/nombre-descriptivo (o fix/, style/, docs/)."));
+children.push(bullet("2. Hacer los cambios y VERIFICAR antes de commitear: npm test, npm run build y lint sin errores nuevos."));
+children.push(bullet("3. git commit con mensaje en imperativo y prefijo (ej. feat(dashboard): agrega tarjeta de accesos)."));
+children.push(bullet("4. Pushear la MISMA rama a los dos repos del dueño: git push produccion <rama> y git push origin <rama>. Pushear la rama a produccion NO despliega — los workflows solo se disparan con cambios en main."));
+children.push(bullet("5. Abrir el Pull Request hacia main del repo principal con el enlace que imprime GitHub: https://github.com/JCortes87/proyecto-gemelos-digitales-JC/pull/new/<rama>."));
+children.push(bullet("6. FIN del trabajo del desarrollador. Prohibido: mergear el PR, push directo a main, y cualquier escritura sobre colaborador (repo de Juan)."));
+
+children.push(H3("Procedimiento paso a paso — Parte 2: el dueño (merge manual)"));
+children.push(bullet("1. Abrir el PR en GitHub → pestaña Files changed → revisar el diff."));
+children.push(bullet("2. Botón verde 'Merge pull request' → 'Confirm merge'. Este clic es el ÚNICO evento que despliega a producción."));
+children.push(bullet("3. Verificar en la pestaña Actions que los workflows queden en verde (frontend ~3 min; backend ~10 min; docs/** no dispara ninguno)."));
+children.push(bullet("4. Comprobar en https://gemelo.cesa.edu.co en ventana de incógnito (o Ctrl+Shift+R)."));
+children.push(bullet("5. Si un workflow falla, producción NO se ve afectada (siguen sirviendo el contenedor y archivos anteriores); ver sección de rollback."));
+
 children.push(H2("5.3 Repositorio del colaborador — NO SE TOCA EN ABSOLUTO"));
 
 // Warning visual
