@@ -529,6 +529,22 @@ children.push(bullet("3. Verificar en la pestaña Actions que los workflows qued
 children.push(bullet("4. Comprobar en https://gemelo.cesa.edu.co en ventana de incógnito (o Ctrl+Shift+R)."));
 children.push(bullet("5. Si un workflow falla, producción NO se ve afectada (siguen sirviendo el contenedor y archivos anteriores); ver sección de rollback."));
 
+children.push(H3("Redacción de commits y Pull Requests (convención fija)"));
+children.push(P("Los mensajes de commit y los textos de los PR siguen SIEMPRE el mismo formato. Aplica a cualquier persona o asistente que desarrolle:"));
+children.push(bullet("Idioma: español."));
+children.push(bullet("Modo imperativo: verbos que describen lo que hace el cambio al aplicarse — 'agrega', 'ajusta', 'corrige', 'mueve', 'elimina', 'renombra'. Nunca en pasado ('se agregó') ni en tono conversacional ('te dejé listo…')."));
+children.push(bullet("Prefijo tipo conventional commits con ámbito entre paréntesis: feat(dashboard):, fix(auth):, style(portal):, docs:, chore:, perf:, sec:."));
+children.push(bullet("Título del PR = título del commit principal: una sola línea, prefijo + resumen en imperativo. No inventar un título distinto."));
+children.push(bullet("Descripción del PR / cuerpo del commit: lista de viñetas, cada una en imperativo, diciendo qué cambia y — cuando no sea obvio — por qué. Sin narrativa personal ni saludos."));
+children.push(P("Ejemplos correctos:", { bold: true }));
+children.push(code("feat(dashboard): agrega tarjeta de accesos al curso con recencia por estudiante"));
+children.push(code("fix(ui): corrige la pestaña inicial del dashboard (abría en Estudiantes)"));
+children.push(code("docs: detalla el procedimiento de publicacion paso a paso"));
+children.push(P("Ejemplos incorrectos:", { bold: true }));
+children.push(code("Cambios varios                      <- no dice qué hace"));
+children.push(code("Se agregó la tarjeta de accesos     <- pasado, no imperativo"));
+children.push(code("Hola, aquí te dejo lo del dashboard <- conversacional"));
+
 children.push(H2("5.3 Repositorio del colaborador — NO SE TOCA EN ABSOLUTO"));
 
 // Warning visual

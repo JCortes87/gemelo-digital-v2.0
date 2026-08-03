@@ -267,6 +267,41 @@ Aplica a cualquier persona (o asistente) que desarrolle en este proyecto.
 5. Si un workflow falla, producción no se ve afectada (el contenedor y
    los archivos anteriores siguen sirviendo); ver sección de rollback.
 
+#### Redacción de commits y Pull Requests (convención fija)
+
+Los mensajes de commit y los textos de los PR siguen **siempre** el
+mismo formato. Aplica a cualquier persona o asistente que desarrolle:
+
+- **Idioma**: español.
+- **Modo imperativo**: verbos que describen lo que hace el cambio al
+  aplicarse — "agrega", "ajusta", "corrige", "mueve", "elimina",
+  "renombra". Nunca en pasado ("se agregó") ni en tono conversacional
+  ("te dejé listo…", "aquí van los cambios…").
+- **Prefijo tipo conventional commits** con ámbito entre paréntesis:
+  `feat(dashboard):`, `fix(auth):`, `style(portal):`, `docs:`,
+  `chore:`, `perf:`, `sec:`.
+- **Título del PR = título del commit principal**: una sola línea,
+  prefijo + resumen en imperativo. No inventar un título distinto.
+- **Descripción del PR / cuerpo del commit**: lista de viñetas, cada
+  una en imperativo, diciendo qué cambia y — cuando no sea obvio — por
+  qué. Sin narrativa personal ni saludos.
+
+Ejemplos **correctos**:
+
+```
+feat(dashboard): agrega tarjeta de accesos al curso con recencia por estudiante
+fix(ui): corrige la pestaña inicial del dashboard (abría en Estudiantes)
+docs: detalla el procedimiento de publicacion paso a paso
+```
+
+Ejemplos **incorrectos**:
+
+```
+Cambios varios                          ← no dice qué hace
+Se agregó la tarjeta de accesos         ← pasado, no imperativo
+Hola, aquí te dejo lo del dashboard     ← conversacional
+```
+
 #### Reglas duras (no negociables)
 
 - `main` del repo principal **solo** cambia mediante merge de PR hecho
