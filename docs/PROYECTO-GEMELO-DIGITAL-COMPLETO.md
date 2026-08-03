@@ -24,10 +24,9 @@ agregada y predictiva sobre el desempeño de cada curso.
 #### Vista de docente (rediseñada en julio 2026, estilo dashboard analítico)
 - **Fila de KPIs** con tarjetas centradas: nota promedio (donut 0–10),
   estudiantes inscritos, en riesgo (alto+medio) y elementos publicados
-  vs mínimo esperado — esta última incluye el desglose por tipos y el
-  **consumo de contenidos**: barras de promedio de acceso y de
-  estudiantes que han abierto elementos, con desplegable "Acceso a
-  contenidos" (detalle por estudiante y qué elementos abrió).
+  vs mínimo esperado — esta última incluye el desglose por tipos y las
+  **barras de consumo**: "Promedio de acceso a elementos publicados" y
+  "X de Y estudiantes han abierto elementos".
 - **Riesgo académico** — medidor semicircular tipo velocímetro
   (`GaugeMeter`) con el % de estudiantes en riesgo y leyenda alto/medio/bajo.
 - **Distribución de notas** — histograma por rangos de 1 punto.
@@ -42,8 +41,10 @@ agregada y predictiva sobre el desempeño de cada curso.
   (+% de entrega), calificadas y vencidas; listado detallado colapsable.
 - **Accesos al curso** — recencia del último acceso por estudiante
   (hoy / 7 días / +14 días / nunca) y accesos del profesor, del
-  `LastAccessed` del classlist. El bloque de consumo de contenidos que
-  vivía aquí se movió a la tarjeta KPI "Elementos publicados".
+  `LastAccessed` del classlist; abajo, el desplegable **"Acceso a
+  contenidos"** con el detalle por estudiante y qué elementos abrió
+  cada uno (las barras de resumen del consumo están en la tarjeta KPI
+  "Elementos publicados").
 - **Pestañas dedicadas** (sidebar): Estudiantes (tabla completa con
   columna de último acceso), Calendario de entregas, Tendencias, Rutas de
   atención, Predicción de notas, Evidencias, RA y Asistente IA.
@@ -884,13 +885,14 @@ principal y respaldadas en `gemelo-digital-v2.0`; cada una se mergeó a
   `content/root` y daba 0. Ahora el total se toma de `/content/topics`
   (que recorre submódulos, filtrando ocultos) con fallback al conteo
   del root.
-- **Reubicación del consumo de contenidos (3 ago)**: el bloque completo
-  (barras "Promedio de acceso a contenidos" y "X de Y estudiantes han
-  abierto elementos" + desplegable "Acceso a contenidos" con el detalle
-  por estudiante) se movió de la tarjeta "Accesos al curso" a la
-  tarjeta KPI **"Elementos publicados"**, para que publicación y
-  consumo se lean juntos: total publicado, tipos de elemento y debajo
-  cuánto acceden los estudiantes.
+- **Reubicación del consumo de contenidos (3 ago)**: las **barras de
+  resumen** ("Promedio de acceso a elementos publicados" y "X de Y
+  estudiantes han abierto elementos") se movieron de la tarjeta
+  "Accesos al curso" a la tarjeta KPI **"Elementos publicados"**, para
+  que publicación y consumo se lean juntos (total publicado, tipos y
+  debajo cuánto acceden los estudiantes); el **desplegable "Acceso a
+  contenidos"** (detalle por estudiante y elementos abiertos) se quedó
+  en "Accesos al curso".
 - Limitación documentada: la **duración de las sesiones** (tiempo
   conectado, pedido para la tarjeta de accesos y la tabla de
   estudiantes) no está disponible vía API REST de Brightspace; solo
