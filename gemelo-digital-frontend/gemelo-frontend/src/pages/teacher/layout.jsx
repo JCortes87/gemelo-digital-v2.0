@@ -103,7 +103,7 @@ export function AppTopbar({
   return (
     <header className="app-topbar">
       {/* Left */}
-      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, flex: 1, minWidth: 0 }}>
         {isMobile && (
           <button
             type="button"
@@ -137,47 +137,49 @@ export function AppTopbar({
         </div>
       </div>
 
+      {/* Centro: solo superadmin — alternar vista profesor / estudiante */}
+      {onAdminViewChange && (
+        <div
+          role="tablist"
+          aria-label="Cambiar entre vista profesor y vista estudiante"
+          style={{
+            display: "inline-flex", gap: 2, padding: 3, borderRadius: 10,
+            background: "var(--bg)", border: "1px solid var(--border)",
+            flexShrink: 0,
+          }}
+        >
+          {[
+            { key: "teacher", icon: "👨‍🏫", label: t("topbar.teacherView", "Vista profesor") },
+            { key: "student", icon: "🎓", label: t("topbar.studentView", "Vista estudiante") },
+          ].map((v) => {
+            const active = (adminView || "teacher") === v.key;
+            return (
+              <button
+                key={v.key}
+                role="tab"
+                aria-selected={active}
+                onClick={() => onAdminViewChange(v.key)}
+                title={v.label}
+                style={{
+                  border: "none", cursor: "pointer",
+                  fontSize: 11, fontWeight: 700, fontFamily: "var(--font)",
+                  padding: "5px 10px", borderRadius: 8,
+                  display: "inline-flex", alignItems: "center", gap: 5,
+                  background: active ? "var(--brand)" : "transparent",
+                  color: active ? "#fff" : "var(--muted-strong)",
+                  transition: "background 0.15s",
+                }}
+              >
+                <span aria-hidden="true">{v.icon}</span>
+                {!isMobile && <span>{v.label}</span>}
+              </button>
+            );
+          })}
+        </div>
+      )}
+
       {/* Right */}
-      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-        {/* Solo superadmin: alternar vista profesor / estudiante */}
-        {onAdminViewChange && (
-          <div
-            role="tablist"
-            aria-label="Cambiar entre vista profesor y vista estudiante"
-            style={{
-              display: "inline-flex", gap: 2, padding: 3, borderRadius: 10,
-              background: "var(--bg)", border: "1px solid var(--border)",
-            }}
-          >
-            {[
-              { key: "teacher", icon: "👨‍🏫", label: t("topbar.teacherView", "Vista profesor") },
-              { key: "student", icon: "🎓", label: t("topbar.studentView", "Vista estudiante") },
-            ].map((v) => {
-              const active = (adminView || "teacher") === v.key;
-              return (
-                <button
-                  key={v.key}
-                  role="tab"
-                  aria-selected={active}
-                  onClick={() => onAdminViewChange(v.key)}
-                  title={v.label}
-                  style={{
-                    border: "none", cursor: "pointer",
-                    fontSize: 11, fontWeight: 700, fontFamily: "var(--font)",
-                    padding: "5px 10px", borderRadius: 8,
-                    display: "inline-flex", alignItems: "center", gap: 5,
-                    background: active ? "var(--brand)" : "transparent",
-                    color: active ? "#fff" : "var(--muted-strong)",
-                    transition: "background 0.15s",
-                  }}
-                >
-                  <span aria-hidden="true">{v.icon}</span>
-                  {!isMobile && <span>{v.label}</span>}
-                </button>
-              );
-            })}
-          </div>
-        )}
+      <div style={{ display: "flex", alignItems: "center", gap: 8, flex: 1, minWidth: 0, justifyContent: "flex-end" }}>
         {/* Menú agrupado (comandos, inicio, cursos, coordinación, idioma, tema, imprimir) */}
         <div style={{ position: "relative" }}>
           <button
@@ -186,14 +188,19 @@ export function AppTopbar({
             title="Más opciones"
             aria-label="Abrir menú de opciones"
             aria-expanded={showMainMenu ? "true" : "false"}
+            style={{ width: "auto", padding: "0 8px", gap: 3 }}
           >
-            <svg width="15" height="15" viewBox="0 0 16 16" aria-hidden="true">
-              {[2, 8, 14].map((y) =>
-                [2, 8, 14].map((x) => (
-                  <circle key={`${x}-${y}`} cx={x} cy={y} r="1.7" fill="currentColor" />
-                ))
-              )}
-            </svg>
+            <span aria-hidden="true" style={{ fontSize: 15 }}>⚙️</span>
+            <span
+              aria-hidden="true"
+              style={{
+                fontSize: 8, lineHeight: 1,
+                transform: showMainMenu ? "rotate(180deg)" : "none",
+                transition: "transform 0.15s",
+              }}
+            >
+              ▼
+            </span>
           </button>
           {showMainMenu && (
             <>
