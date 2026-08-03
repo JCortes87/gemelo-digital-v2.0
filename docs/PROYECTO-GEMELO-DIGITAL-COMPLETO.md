@@ -145,8 +145,14 @@ agregada y predictiva sobre el desempeño de cada curso.
 - **Driver PostgreSQL**: psycopg 3.2 (psycopg3)
 - **HTTP client (Brightspace API)**: httpx 0.27
 - **Autenticación**: python-jose (JWT), cryptography (LTI keys)
-- **TTS opcional**: ElevenLabs API (configurable, actualmente desactivada
-  en frontend pero infraestructura intacta)
+- **TTS opcional**: ElevenLabs API (configurable). **Desactivada
+  temporalmente en el frontend** con el interruptor `ELEVENLABS_ENABLED
+  = false` en `src/utils/speech.js` (ago 2026, para no consumir tokens
+  durante la etapa de ajustes con recargas frecuentes): toda la voz usa
+  el `speechSynthesis` gratuito del navegador y no se llama
+  `/speech/tts`. El saludo automático "Bienvenido de nuevo" del
+  dashboard se quitó por completo (comentario en TeacherDashboard.jsx).
+  Para reactivar: poner el flag en `true` y restaurar el saludo.
 - **Containerizado**: Docker (Python 3.11-slim base)
 
 ### Frontend
@@ -897,6 +903,12 @@ principal y respaldadas en `gemelo-digital-v2.0`; cada una se mergeó a
   debajo cuánto acceden los estudiantes); el **desplegable "Acceso a
   contenidos"** (detalle por estudiante y elementos abiertos) se quedó
   en "Accesos al curso".
+- **Voz ElevenLabs desactivada temporalmente (3 ago)**: el saludo
+  "Bienvenido de nuevo" sonaba en **cada recarga** del dashboard y cada
+  reproducción consumía tokens de ElevenLabs. Se quitó el saludo y se
+  agregó el interruptor `ELEVENLABS_ENABLED = false` en
+  `src/utils/speech.js`: ninguna función de voz llama a `/speech/tts`;
+  el tutorial y los botones de voz usan la voz gratuita del navegador.
 - Limitación documentada: la **duración de las sesiones** (tiempo
   conectado, pedido para la tarjeta de accesos y la tabla de
   estudiantes) no está disponible vía API REST de Brightspace; solo

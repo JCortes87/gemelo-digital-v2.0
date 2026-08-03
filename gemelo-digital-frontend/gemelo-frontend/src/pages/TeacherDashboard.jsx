@@ -33,7 +33,6 @@ import useCourseSnapshots from "../hooks/useCourseSnapshots";
 import useStudentChat from "../hooks/useStudentChat";
 import { exportStudentsCsv, exportCourseReport, STUDENT_CSV_COLUMNS } from "../utils/export";
 import { apiUrl, apiGet, apiGetCached, apiPost, invalidateApiCache, API_BASE_URL } from "../utils/api";
-import { elSpeak } from "../utils/speech";
 import { COLORS, STATUS_CONFIG, colorForRisk, colorForPct } from "../utils/colors";
 import {
   toDate, weeksBetween, clamp, normStatus,
@@ -220,13 +219,11 @@ export default function TeacherDashboard() {
           if (isFirstLogin || !alreadyOnboarded) {
             sessionStorage.removeItem("gemelo_first_login");
             setShowTutorial(true);
-          } else {
-            // Saludo de voz si ya onboarded (solo dice bienvenido brevemente)
-            const name = (data.user_name || "").split(" ")[0];
-            if (name) {
-              setTimeout(() => elSpeak(`Bienvenido de nuevo, ${name}`), 800);
-            }
           }
+          // Saludo de voz "Bienvenido de nuevo" DESACTIVADO temporalmente:
+          // se reproducía en cada recarga y cada reproducción consumía tokens
+          // de ElevenLabs. Reactivar restaurando el elSpeak aquí cuando se
+          // termine la etapa de ajustes frecuentes.
         } else if (data.lti_detected) {
           // LTI detectado sin token OAuth → guardar orgUnitId y redirigir a OAuth
           const ou = data.org_unit_id || "";
