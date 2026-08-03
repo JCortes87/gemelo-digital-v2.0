@@ -22,7 +22,6 @@ import {
   normStatus,
   computeRiskFromPct,
   suggestRouteForStudent,
-  buildCorteGroups,
 } from "../utils/helpers";
 import { isStudentRole } from "../utils/roles";
 import { injectStyles } from "../styles/global";
@@ -470,24 +469,6 @@ export default function StudentPortal({ orgUnitIdOverride, userIdOverride, allow
     () => nonCorteItems.filter((e) => e?.scorePct != null),
     [nonCorteItems]
   );
-  // Nota por corte: usa las mismas agrupaciones del gradebook que el resumen por cortes
-  const corteGroups = useMemo(
-    () => buildCorteGroups(evidences, studentData?.gradebook?.gradeCategories || []),
-    [evidences, studentData]
-  );
-  const corteNotes = useMemo(
-    () =>
-      corteGroups
-        .filter((g) => g.period != null)
-        .map((g) => {
-          const main = g.aggregates.find((a) => a.scorePct != null) || g.aggregates[0];
-          return { period: g.period, name: g.name, scorePct: main?.scorePct ?? null };
-        }),
-    [corteGroups]
-  );
-  // Con los 3 cortes calificados, la nota que muestra el donut es la final calculada
-  const isFinalGrade = corteNotes.length >= 3 && corteNotes.every((c) => c.scorePct != null);
-
   // Asignaciones (dropbox) cruzadas con la nota del gradebook vía gradeItemId
   const gradeByObjectId = useMemo(() => {
     const m = new Map();
@@ -834,9 +815,11 @@ export default function StudentPortal({ orgUnitIdOverride, userIdOverride, allow
             marginBottom: 20,
           }}
         >
-          {/* Mi nota — actual o final calculada, con desglose por corte */}
-          <Card title={isFinalGrade ? "🏁 Mi nota final" : "📊 Mi nota actual"} accent="brand" style={{ height: "100%" }}>
-            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 12 }}>
+          {/* Mi nota — solo la nota general del curso (el desglose por corte se
+              quitó: la estructura de cortes del gradebook varía entre cursos y
+              en muchos saldría "sin calificar") */}
+          <Card title="📊 Mi nota actual" accent="brand" style={{ height: "100%" }}>
+            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 12, height: "100%" }}>
               <CircularRing
                 pct={summary?.currentPerformancePct ?? 0}
                 size={isMobile ? 96 : 112} stroke={11}
@@ -844,35 +827,9 @@ export default function StudentPortal({ orgUnitIdOverride, userIdOverride, allow
                 label={fmtGrade10FromPct(summary?.currentPerformancePct)}
                 sublabel="/10" fontSize={isMobile ? 19 : 22}
               />
-              {isFinalGrade ? (
-                <div style={{ fontSize: 11, fontWeight: 800, color: "var(--ok)", background: "var(--ok-bg)", border: "1px solid var(--ok-border)", borderRadius: 99, padding: "4px 12px", textAlign: "center" }}>
-                  ✓ Nota final calculada — los {corteNotes.length} cortes ya tienen calificación
-                </div>
-              ) : (
-                <div style={{ fontSize: 10, color: "var(--muted)", textAlign: "center" }}>
-                  Escala 0–10 · se actualiza a medida que tus docentes califican
-                </div>
-              )}
-              {corteNotes.length > 0 && (
-                <div style={{ display: "grid", gridTemplateColumns: `repeat(${Math.min(corteNotes.length, 3)}, 1fr)`, gap: 8, width: "100%" }}>
-                  {corteNotes.map((c) => {
-                    const col = c.scorePct != null ? colorForPct(c.scorePct, thresholds) : "var(--muted)";
-                    return (
-                      <div key={c.period} style={{ border: "1px solid var(--border)", borderRadius: 10, padding: "10px 8px", background: "var(--bg)", textAlign: "center" }}>
-                        <div style={{ fontSize: 10, fontWeight: 800, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.05em" }}>
-                          Corte {c.period}
-                        </div>
-                        <div style={{ fontSize: 20, fontWeight: 900, fontFamily: "var(--font-mono)", color: col, lineHeight: 1.2, marginTop: 2 }}>
-                          {c.scorePct != null ? (c.scorePct / 10).toFixed(1) : "—"}
-                        </div>
-                        <div style={{ fontSize: 9, color: "var(--muted)" }}>
-                          {c.scorePct != null ? "/10" : "sin calificar"}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
+              <div style={{ fontSize: 10, color: "var(--muted)", textAlign: "center" }}>
+                Escala 0–10 · se actualiza a medida que tus docentes califican
+              </div>
             </div>
           </Card>
 
@@ -907,7 +864,7 @@ export default function StudentPortal({ orgUnitIdOverride, userIdOverride, allow
                   },
                   {
                     key: "graded", icon: "✅", label: "Asignaciones calificadas",
-                    rows: gradedRows, total: submittedRows.length, countSuffix: " entregadas",
+                    rows: gradedRows, total: submittedRows.length, countSuffix: " calificadas",
                     open: showGradedList, setOpen: setShowGradedList,
                     empty: "Aún no te han calificado las asignaciones que entregaste.",
                     renderRight: (r) => (

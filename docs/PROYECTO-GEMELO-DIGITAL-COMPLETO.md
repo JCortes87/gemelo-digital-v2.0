@@ -855,11 +855,13 @@ principal y respaldadas en `gemelo-digital-v2.0`; cada una se mergeó a
   asignaciones** (activas + no publicadas) y debajo el desglose.
 - **Portal del estudiante rediseñado (2-3 ago)**: tarjeta "Mi nota" con
   **anillo circular** (`CircularRing`, el mismo tipo de gráfico de los
-  Resultados de Aprendizaje, coloreado según umbrales), desglose por
-  **corte 1/2/3** y nota final calculada cuando los 3 cortes están
-  calificados; tarjeta "Mis asignaciones" con % entregadas (sobre el
-  total) y % calificadas **sobre las entregadas** (para que las dos
-  barras se lean coherentes: "entregué 15, de esas me calificaron 14");
+  Resultados de Aprendizaje, coloreado según umbrales) mostrando **solo
+  la nota general** — el desglose por corte 1/2/3 se retiró porque la
+  estructura de cortes del gradebook varía entre cursos y a muchos
+  estudiantes les saldría "sin calificar"; tarjeta "Mis asignaciones"
+  con % entregadas (sobre el total) y % calificadas **sobre las
+  entregadas** (para que las dos barras se lean coherentes: "entregué
+  15, de esas me calificaron 14"; el contador dice "X/Y calificadas");
   el desplegable de entregadas lista también las **pendientes por
   entregar** en gris — y en **rojo con su fecha** si ya vencieron o
   vencen en menos de 7 días; el detalle muestra la nota de cada una,
