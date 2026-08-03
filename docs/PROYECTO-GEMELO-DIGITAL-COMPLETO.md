@@ -172,29 +172,45 @@ agregada y predictiva sobre el desempeño de cada curso.
 ### Repositorio principal (production)
 - **URL**: https://github.com/JCortes87/proyecto-gemelos-digitales-JC
 - **Dueño actual**: JCortes87
-- **Branch productiva**: `main` (cada merge a esta rama dispara deploy automático)
+- **Branch productiva**: `main` — **cada merge a esta rama dispara el
+  deploy automático a producción** (GitHub Actions OIDC). Este es el
+  único repo cuyo push tiene efecto en producción.
+- **Remote local**: `produccion` en la carpeta de trabajo actual.
 - **Branch de trabajo histórica**: `sync/upstream-abril-2026` (puede usarse para PRs)
 
-### Repositorio del colaborador (referencia, solo lectura)
-- **URL**: https://github.com/juandavid639/Proyecto-Gemelos-Digitales
-- **Dueño**: Juan David
-- **Uso**: referencia para mirar su versión histórica. **NUNCA se debe
-  empujar a este repo** desde nuestro setup. Está configurado como remote
-  `colaborador` con push deshabilitado.
-
-### Repositorio de trabajo v2.0 (respaldo de cambios nuevos)
+### Repositorio de respaldo v2.0
 - **URL**: https://github.com/JCortes87/gemelo-digital-v2.0
-- **Creado**: julio 2026. Recibe copia de `main` y de todas las ramas de
-  cambios nuevos (es el remote `origin` en la carpeta de trabajo local,
-  que está clonada del repo de Juan David).
+- **Rol**: **SOLO respaldo**. Recibe copia de `main` y de las ramas de
+  cambios nuevos. Es el remote `origin` en la carpeta de trabajo local
+  (que está clonada del repo de Juan David).
 - **NO tiene CI/CD**: pushear aquí no despliega nada. El deploy a
-  producción sigue siendo exclusivo del repo principal
+  producción es exclusivo del repo principal
   (`proyecto-gemelos-digitales-JC`), cuyo rol IAM OIDC solo confía en ese
   repo.
-- **Flujo de trabajo actual**: los cambios se desarrollan localmente, se
-  pushean como rama a ambos repos, y se abren PR a `main` del repo
-  principal para desplegar. Juan David puede tomar los cambios desde
-  cualquiera de los dos.
+- **Flujo de trabajo actual (EXPLÍCITO — así se despliega SIEMPRE)**:
+  1. Los cambios se desarrollan localmente en una rama nueva.
+  2. La rama se pushea a `produccion` (repo principal) y a `origin`
+     (respaldo v2.0).
+  3. Se abre un **Pull Request** de esa rama hacia `main` del repo
+     principal (`proyecto-gemelos-digitales-JC`).
+  4. **El merge del PR lo hace únicamente el dueño del repo (JCortes87)
+     desde GitHub**, después de revisar los cambios. Nadie más mergea, y
+     NUNCA se hace push directo a `main`.
+  5. Ese merge a `main` es lo único que dispara el deploy automático a
+     producción (GitHub Actions).
+
+### Repositorio del colaborador — REGLA FIJA: NO SE TOCA EN ABSOLUTO
+- **URL**: https://github.com/juandavid639/Proyecto-Gemelos-Digitales
+- **Dueño**: Juan David
+- **REGLA FIJA E INNEGOCIABLE**: este repositorio **no se toca en
+  absoluto**: ni push, ni PRs, ni issues, ni ninguna operación de
+  escritura, bajo ninguna circunstancia. Esta regla no requiere
+  confirmación en cada sesión de trabajo — aplica siempre.
+- **Único uso permitido**: `git fetch colaborador` (solo lectura) para
+  actualizarnos con sus avances cuando sea necesario.
+- **Protección técnica**: está configurado como remote `colaborador` con
+  push deshabilitado (`DISABLED-no-push-to-upstream`), así que cualquier
+  push falla antes de llegar a GitHub.
 
 ### Repositorio fork inicial (archivo, no usar)
 - **URL**: https://github.com/JCortes87/gemelo-digital-backend-JC
