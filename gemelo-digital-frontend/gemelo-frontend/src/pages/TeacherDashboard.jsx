@@ -2576,7 +2576,7 @@ const contentKpis = useMemo(() => {
                       <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 6, display: "flex", justifyContent: "space-between", gap: 6 }}>
                         <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
                           Promedio de acceso a elementos publicados
-                          <InfoTooltip text="Elementos de contenido (PDF, Word, páginas, enlaces, etc.) que los estudiantes han abierto en Brightspace, según su progreso de contenido del curso." />
+                          <InfoTooltip text="De todos los elementos publicados (PDF, Word, páginas, enlaces…), porcentaje que ha abierto en promedio cada estudiante. Cada elemento cuenta una sola vez por estudiante — no mide cuántas veces lo abrió. Ej: 75% = un estudiante típico ha abierto 3 de cada 4 elementos." />
                         </span>
                         <span style={{ fontFamily: "var(--font-mono)", fontWeight: 800 }}>{fmtPct(consumptionStats.avgPct)}</span>
                       </div>
@@ -2590,8 +2590,11 @@ const contentKpis = useMemo(() => {
                         animate={false}
                         showLabel={false}
                       />
-                      <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 6, display: "flex", justifyContent: "space-between" }}>
-                        <span>{consumptionStats.opened} de {consumptionStats.total} estudiantes han abierto elementos</span>
+                      <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 6, display: "flex", justifyContent: "space-between", gap: 6 }}>
+                        <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+                          {consumptionStats.opened} de {consumptionStats.total} estudiantes han abierto elementos
+                          <InfoTooltip text="Estudiantes que han abierto al menos uno de los elementos publicados del curso (PDF, Word, páginas, enlaces…)." />
+                        </span>
                         <span style={{ fontFamily: "var(--font-mono)", fontWeight: 800 }}>{fmtPct(consumptionStats.openedPct)}</span>
                       </div>
                     </div>
@@ -3171,7 +3174,7 @@ const contentKpis = useMemo(() => {
                             <div key={s.userId}>
                               <button
                                 onClick={() => setConsumptionStudentOpen((v) => (v === s.userId ? null : s.userId))}
-                                title={hasTopics ? "Ver qué contenidos abrió" : "Sin detalle de temas"}
+                                title={hasTopics ? "Ver qué contenidos abrió" : "Sin detalle de contenidos"}
                                 style={{
                                   display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8,
                                   border: "none", background: isOpen ? "var(--brand-light)" : "transparent",
@@ -3182,7 +3185,7 @@ const contentKpis = useMemo(() => {
                                 <span style={{ fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.name}</span>
                                 <span style={{ display: "inline-flex", alignItems: "center", gap: 4, flexShrink: 0 }}>
                                   <span style={{ fontWeight: 800, fontFamily: "var(--font-mono)", color: s.count > 0 ? "var(--brand)" : "var(--muted)" }}>
-                                    {s.count} {s.count === 1 ? "elemento" : "elementos"}
+                                    {s.count} {s.count === 1 ? "contenido" : "contenidos"}
                                   </span>
                                   {hasTopics && <span style={{ fontSize: 9, color: "var(--muted)" }}>{isOpen ? "▴" : "▾"}</span>}
                                 </span>
@@ -3191,7 +3194,7 @@ const contentKpis = useMemo(() => {
                                 <div style={{ padding: "2px 8px 6px 16px", display: "flex", flexDirection: "column", gap: 3 }}>
                                   {[...new Set(s.topicIds)].map((tid) => {
                                     const meta = contentTopicMeta.get(String(tid));
-                                    const title = meta?.title || `Elemento ${tid}`;
+                                    const title = meta?.title || `Contenido ${tid}`;
                                     const typeLabel = contentTypeLabel(title, meta?.url, meta?.topicType);
                                     return (
                                       <div key={tid} style={{ fontSize: 10, color: "var(--muted-strong)", display: "flex", gap: 5, alignItems: "flex-start" }}>
@@ -3204,7 +3207,7 @@ const contentKpis = useMemo(() => {
                               )}
                               {isOpen && !hasTopics && (
                                 <div style={{ padding: "2px 8px 6px 16px", fontSize: 10, color: "var(--muted)" }}>
-                                  Sin detalle de elementos disponible para este estudiante.
+                                  Sin detalle de contenidos disponible para este estudiante.
                                 </div>
                               )}
                             </div>
