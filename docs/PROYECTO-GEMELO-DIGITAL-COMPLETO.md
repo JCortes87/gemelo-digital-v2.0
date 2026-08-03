@@ -25,8 +25,11 @@ agregada y predictiva sobre el desempeño de cada curso.
 - **Fila de KPIs** con tarjetas centradas: nota promedio (donut 0–10),
   estudiantes inscritos, en riesgo (alto+medio) y elementos publicados
   vs mínimo esperado — esta última incluye el desglose por tipos y las
-  **barras de consumo**: "Promedio de acceso a elementos publicados" y
-  "X de Y estudiantes han abierto elementos".
+  **barras de consumo**, ambas con tooltip aclaratorio: "Promedio de
+  acceso a elementos publicados" (% de los elementos publicados que ha
+  abierto en promedio cada estudiante; cada elemento cuenta una vez por
+  estudiante, no mide veces de apertura) y "X de Y estudiantes han
+  abierto elementos" (estudiantes con al menos un elemento abierto).
 - **Riesgo académico** — medidor semicircular tipo velocímetro
   (`GaugeMeter`) con el % de estudiantes en riesgo y leyenda alto/medio/bajo.
 - **Distribución de notas** — histograma por rangos de 1 punto.
@@ -42,9 +45,10 @@ agregada y predictiva sobre el desempeño de cada curso.
 - **Accesos al curso** — recencia del último acceso por estudiante
   (hoy / 7 días / +14 días / nunca) y accesos del profesor, del
   `LastAccessed` del classlist; abajo, el desplegable **"Acceso a
-  contenidos"** con el detalle por estudiante y qué elementos abrió
-  cada uno (las barras de resumen del consumo están en la tarjeta KPI
-  "Elementos publicados").
+  contenidos"** con el detalle por estudiante y qué contenidos abrió
+  cada uno — en esta tarjeta se les llama **"contenidos"** (no
+  "elementos", término reservado a la tarjeta KPI "Elementos
+  publicados", donde están las barras de resumen del consumo).
 - **Pestañas dedicadas** (sidebar): Estudiantes (tabla completa con
   columna de último acceso), Calendario de entregas, Tendencias, Rutas de
   atención, Predicción de notas, Evidencias, RA y Asistente IA.
