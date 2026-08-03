@@ -854,7 +854,8 @@ principal y respaldadas en `gemelo-digital-v2.0`; cada una se mergeó a
 - **Asignaciones**: la tarjeta muestra arriba el **total de
   asignaciones** (activas + no publicadas) y debajo el desglose.
 - **Portal del estudiante rediseñado (2-3 ago)**: tarjeta "Mi nota" con
-  **velocímetro** (`GaugeMeter`, zonas rojo/ámbar/verde), desglose por
+  **anillo circular** (`CircularRing`, el mismo tipo de gráfico de los
+  Resultados de Aprendizaje, coloreado según umbrales), desglose por
   **corte 1/2/3** y nota final calculada cuando los 3 cortes están
   calificados; tarjeta "Mis asignaciones" con % entregadas y %
   calificadas (desplegables con el detalle y la nota de cada una, cruzada
