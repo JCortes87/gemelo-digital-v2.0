@@ -517,7 +517,7 @@ export function CoverageBars({ donePct, pendingPct, overduePct, openPct }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
       <div style={{ fontSize: 11, color: "var(--muted)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em" }}>
-        Índice de cumplimiento evaluativo
+        Índice de actividades evaluadas y retroalimentadas
       </div>
       <BarRow label="Calificado" value={d} color={COLORS.ok}
         tooltip="Ítems con nota numérica publicada en el gradebook." />

@@ -10,7 +10,7 @@ export function AppSidebar({ activeTab, setActiveTab, currentCourseName, mobileO
     { id: "calendar",   icon: "📅", label: t("nav.calendar", "Calendario") },
     { id: "trends",     icon: "📈", label: t("nav.trends", "Tendencias") },
     { id: "routes",     icon: "🛤️", label: t("nav.routes", "Rutas de atención") },
-    { id: "predictions", icon: "🔮", label: t("nav.predictions", "Predicción de notas") },
+    { id: "predictions", icon: "🔮", label: t("nav.predictions", "Predicción de calificaciones") },
     { id: "evidences",  icon: "📑", label: t("nav.evidences", "Evidencias") },
     { id: "learning-outcomes", icon: "🎯", label: t("nav.learningOutcomes", "Resultados de aprendizaje") },
     { id: "assistant",  icon: "🤖", label: t("nav.assistant", "Asistente IA") },

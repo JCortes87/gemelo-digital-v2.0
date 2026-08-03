@@ -119,7 +119,7 @@ export function BugReportModal({ onClose }) {
               <input
                 type="text" value={title} maxLength={100}
                 onChange={(e) => setTitle(e.target.value)}
-                placeholder="Ej: No cargan las notas del curso"
+                placeholder="Ej: No cargan las calificaciones del curso"
                 style={inputStyle}
               />
             </div>

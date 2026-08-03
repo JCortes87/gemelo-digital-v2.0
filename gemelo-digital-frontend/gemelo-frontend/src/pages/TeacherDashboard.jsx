@@ -2352,14 +2352,14 @@ const contentKpis = useMemo(() => {
                 G.D · Predicciones
               </div>
               <h1 style={{ fontSize: isMobile ? 20 : 26, fontWeight: 900, color: "var(--text)", letterSpacing: "-0.02em", lineHeight: 1.1, marginBottom: 4 }}>
-                Predicción de notas finales
+                Predicción de calificaciones finales
               </h1>
               <div style={{ fontSize: 13, color: "var(--muted)", fontWeight: 500 }}>
                 {courseInfo?.Name || `Curso ${orgUnitId}`}
               </div>
             </div>
             <Card>
-              <ErrorBoundary sectionName="Predicción de notas">
+              <ErrorBoundary sectionName="Predicción de calificaciones">
                 <GradePredictions
                   studentRows={studentRows}
                   onStudentClick={selectStudentById}
@@ -2465,20 +2465,22 @@ const contentKpis = useMemo(() => {
             alignItems: "stretch",
           }}
         >
-          {/* Nota promedio — donut */}
-          <div className="kpi-card" style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 8, padding: isMobile ? 12 : 14, textAlign: "center" }}>
-            <div style={{ fontSize: 12, fontWeight: 800, color: "var(--text)", letterSpacing: "0.01em" }}>
-              Nota promedio
+          {/* Calificación promedio — donut centrado verticalmente: la tarjeta
+              vecina (recursos educativos) creció con las barras de consumo y
+              con alignItems:stretch esta quedaba arrinconada arriba */}
+          <div className="kpi-card" style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 10, padding: isMobile ? 12 : 14, textAlign: "center" }}>
+            <div style={{ fontSize: isMobile ? 13 : 14, fontWeight: 800, color: "var(--text)", letterSpacing: "0.01em" }}>
+              Calificación promedio
             </div>
             <CircularRing
               pct={avgPerfPct != null && Number(avgPerfPct) > 0 ? avgPerfPct : 0}
-              size={isMobile ? 84 : 96}
-              stroke={10}
+              size={isMobile ? 96 : 128}
+              stroke={12}
               color={avgPerfPct != null && Number(avgPerfPct) > 0 ? colorForPct(avgPerfPct, thresholds) : "var(--border)"}
               label={avgPerfPct == null || Number(avgPerfPct) === 0 ? "—" : fmtGrade10FromPct(avgPerfPct)}
-              fontSize={isMobile ? 15 : 18}
+              fontSize={isMobile ? 18 : 24}
             />
-            <div style={{ fontSize: 10, color: "var(--muted)" }}>Escala 0–10 · gradebook</div>
+            <div style={{ fontSize: isMobile ? 10 : 11, color: "var(--muted)" }}>Escala 0–10 · gradebook</div>
           </div>
 
           {/* Estudiantes — número grande */}
@@ -2511,7 +2513,7 @@ const contentKpis = useMemo(() => {
           {/* Contenidos creados — número grande + ritmo */}
           <div className="kpi-card" style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 6, padding: isMobile ? 12 : 14, textAlign: "center" }}>
             <div style={{ fontSize: 12, fontWeight: 800, color: "var(--text)", letterSpacing: "0.01em", display: "inline-flex", alignItems: "center", gap: 4 }}>
-              Elementos publicados <InfoTooltip text="Elementos dentro de los módulos de contenido del curso (PDF, Word, Excel, páginas, enlaces…) creados o actualizados desde el inicio del curso. No incluye asignaciones (dropbox) — esas se cuentan aparte en la tarjeta de Asignaciones." />
+              Recursos educativos publicados <InfoTooltip text="Recursos educativos dentro de los módulos de contenido del curso (PDF, Word, Excel, páginas, enlaces…) creados o actualizados desde el inicio del curso. No incluye asignaciones (dropbox) — esas se cuentan aparte en la tarjeta de Asignaciones." />
             </div>
             <div style={{ fontSize: isMobile ? 30 : 38, fontWeight: 900, color: elementsStats.total != null ? elementsStats.rhythm.color : "var(--muted)", fontFamily: "var(--font-mono)", lineHeight: 1 }}>
               {elementsStats.total ?? "—"}
@@ -2535,7 +2537,7 @@ const contentKpis = useMemo(() => {
                     fontFamily: "var(--font)", padding: "2px 6px",
                   }}
                 >
-                  Tipos de elemento {contentTypesOpen ? "▴" : "▾"}
+                  Tipos de recurso educativo {contentTypesOpen ? "▴" : "▾"}
                 </button>
                 {contentTypesOpen && (
                   <div style={{ display: "flex", flexDirection: "column", gap: 3, width: "100%", maxHeight: 110, overflowY: "auto" }}>
@@ -2572,8 +2574,8 @@ const contentKpis = useMemo(() => {
                       />
                       <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 6, display: "flex", justifyContent: "space-between", gap: 6 }}>
                         <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
-                          Promedio de acceso a elementos publicados
-                          <InfoTooltip text="De todos los elementos publicados (PDF, Word, páginas, enlaces…), porcentaje que ha abierto en promedio cada estudiante. Cada elemento cuenta una sola vez por estudiante — no mide cuántas veces lo abrió. Ej: 75% = un estudiante típico ha abierto 3 de cada 4 elementos." />
+                          Promedio de acceso a recursos educativos
+                          <InfoTooltip text="De todos los recursos educativos publicados (PDF, Word, páginas, enlaces…), porcentaje que ha abierto en promedio cada estudiante. Cada recurso cuenta una sola vez por estudiante — no mide cuántas veces lo abrió. Ej: 75% = un estudiante típico ha abierto 3 de cada 4 recursos." />
                         </span>
                         <span style={{ fontFamily: "var(--font-mono)", fontWeight: 800 }}>{fmtPct(consumptionStats.avgPct)}</span>
                       </div>
@@ -2589,8 +2591,8 @@ const contentKpis = useMemo(() => {
                       />
                       <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 6, display: "flex", justifyContent: "space-between", gap: 6 }}>
                         <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
-                          {consumptionStats.opened} de {consumptionStats.total} estudiantes han abierto elementos
-                          <InfoTooltip text="Estudiantes que han abierto al menos uno de los elementos publicados del curso (PDF, Word, páginas, enlaces…)." />
+                          {consumptionStats.opened} de {consumptionStats.total} estudiantes han abierto recursos educativos
+                          <InfoTooltip text="Estudiantes que han abierto al menos uno de los recursos educativos publicados del curso (PDF, Word, páginas, enlaces…)." />
                         </span>
                         <span style={{ fontFamily: "var(--font-mono)", fontWeight: 800 }}>{fmtPct(consumptionStats.openedPct)}</span>
                       </div>
@@ -2613,7 +2615,7 @@ const contentKpis = useMemo(() => {
           }}
         >
           <div ref={overviewRef} style={{ order: 3, display: "flex" }}>
-          <Card style={{ flex: 1 }} title={<span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>📋 Cumplimiento evaluativo <InfoTooltip text="Índice de cumplimiento evaluativo del curso: % del peso calificado, pendiente de calificación y vencido sin registro." /></span>} right={<StatusBadge status={courseStatus} />} accent="brand">
+          <Card style={{ flex: 1 }} title={<span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>📋 Evaluación y Feedback <InfoTooltip text="Índice de actividades evaluadas y retroalimentadas del curso: % del peso calificado, pendiente de calificación y vencido sin registro." /></span>} right={<StatusBadge status={courseStatus} />} accent="brand">
             <div style={{ marginTop: 4 }}>
               {avgCov == null || Number(avgCov) === 0 ? (
                 <div style={{ fontSize: 12, color: "var(--muted)" }}>
@@ -2633,7 +2635,7 @@ const contentKpis = useMemo(() => {
 
           {/* ── Riesgo académico ── */}
           <div style={{ order: 1, display: "flex" }}>
-            <Card style={{ flex: 1 }} title={<span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>⚠️ Riesgo académico <InfoTooltip text="Distribución de los estudiantes según su nota actual: Alto (<5.0), Medio (5.0–7.0), Bajo (≥7.0). Calculado solo con notas reales del gradebook, excluye columnas 'Corte'." /></span>} accent="pending">
+            <Card style={{ flex: 1 }} title={<span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>⚠️ Riesgo académico <InfoTooltip text="Distribución de los estudiantes según su calificación actual: Alto (<5.0), Medio (5.0–7.0), Bajo (≥7.0). Calculado solo con calificaciones reales del gradebook, excluye columnas 'Corte'." /></span>} accent="pending">
               <div style={{ display: "flex", justifyContent: "center", padding: "4px 0 6px" }}>
                 <GaugeMeter
                   pct={atRiskPct ?? 0}
@@ -3027,8 +3029,8 @@ const contentKpis = useMemo(() => {
             ) : (
               <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
                 {[
-                  { key: "today", label: "Entraron hoy", value: accessStats.today, color: COLORS.ok },
-                  { key: "week", label: "Entraron en los últimos 7 días", value: accessStats.week, color: COLORS.brand },
+                  { key: "today", label: "Ingresaron hoy", value: accessStats.today, color: COLORS.ok },
+                  { key: "week", label: "Ingresaron en los últimos 7 días", value: accessStats.week, color: COLORS.brand },
                   { key: "stale", label: "Sin entrar hace +14 días", value: accessStats.stale, color: accessStats.stale > 0 ? COLORS.watch : "var(--muted)" },
                   { key: "never", label: "Nunca han entrado", value: accessStats.never, color: accessStats.never > 0 ? COLORS.critical : "var(--muted)" },
                 ].map((row) => {
@@ -3241,7 +3243,7 @@ const contentKpis = useMemo(() => {
           <ContextualTip
             id="batch4_intro_v3"
             title="✨ Nuevas funciones disponibles"
-            description="Tu dashboard ahora tiene resumen narrativo con IA, predicción de notas finales (menú lateral), alertas inteligentes, tendencias históricas y más. Haz Ctrl+K para la paleta de comandos, o presiona ? para ver todos los atajos."
+            description="Tu dashboard ahora tiene resumen narrativo con IA, predicción de calificaciones finales (menú lateral), alertas inteligentes, tendencias históricas y más. Haz Ctrl+K para la paleta de comandos, o presiona ? para ver todos los atajos."
           />
           <Card title={<span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>🤖 Resumen semanal <InfoTooltip text="Resumen narrativo en lenguaje natural del estado del curso. Se genera automáticamente a partir de los datos actuales. Puedes escucharlo con TTS." /></span>} accent="brand">
             <ErrorBoundary sectionName="Resumen semanal">

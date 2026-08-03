@@ -910,7 +910,7 @@ export function GradeDistributionCard({ studentRows, thresholds, style }) {
   const zeros  = rows.filter(s => s.currentPerformancePct == null);
 
   return (
-    <Card style={style} title={<span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>📊 Distribución de notas <InfoTooltip text="Histograma de notas de los estudiantes en rangos de 1 punto. Los colores reflejan el estado: rojo=crítico (<5), amarillo=seguimiento (5-7), verde=óptimo (≥7). Excluye columnas 'Corte' para evitar doble conteo." /></span>} accent="brand">
+    <Card style={style} title={<span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>📊 Distribución de calificaciones <InfoTooltip text="Histograma de calificaciones de los estudiantes en rangos de 1 punto. Los colores reflejan el estado: rojo=crítico (<5), amarillo=seguimiento (5-7), verde=óptimo (≥7). Excluye columnas 'Corte' para evitar doble conteo." /></span>} accent="brand">
       <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
         {bands.map(b => (
           <div key={b.label} style={{ display: "flex", alignItems: "center", gap: 8 }}>

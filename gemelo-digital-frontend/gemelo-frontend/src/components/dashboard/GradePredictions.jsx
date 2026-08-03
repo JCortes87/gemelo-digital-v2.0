@@ -84,7 +84,7 @@ function GradePredictions({
     return (
       <div style={{ padding: "20px", textAlign: "center", color: "var(--muted)" }}>
         <div style={{ fontSize: 28, opacity: 0.4, marginBottom: 6 }}>🔮</div>
-        <div style={{ fontSize: 12 }}>Sin datos suficientes para predecir notas finales.</div>
+        <div style={{ fontSize: 12 }}>Sin datos suficientes para predecir calificaciones finales.</div>
         <div style={{ fontSize: 10, color: "var(--muted)", marginTop: 4 }}>
           Se necesitan estudiantes con al menos algo de cobertura calificada.
         </div>

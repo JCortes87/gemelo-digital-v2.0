@@ -22,36 +22,40 @@ agregada y predictiva sobre el desempeño de cada curso.
 ### Funcionalidades principales
 
 #### Vista de docente (rediseñada en julio 2026, estilo dashboard analítico)
-- **Fila de KPIs** con tarjetas centradas: nota promedio (donut 0–10),
-  estudiantes inscritos, en riesgo (alto+medio) y elementos publicados
-  vs mínimo esperado — esta última incluye el desglose por tipos y las
-  **barras de consumo**, ambas con tooltip aclaratorio: "Promedio de
-  acceso a elementos publicados" (% de los elementos publicados que ha
-  abierto en promedio cada estudiante; cada elemento cuenta una vez por
-  estudiante, no mide veces de apertura) y "X de Y estudiantes han
-  abierto elementos" (estudiantes con al menos un elemento abierto).
+- **Fila de KPIs** con tarjetas centradas: **calificación promedio**
+  (donut 0–10, centrado verticalmente), estudiantes inscritos, en
+  riesgo (alto+medio) y **"Recursos educativos publicados"** vs mínimo
+  esperado — esta última incluye el desglose "Tipos de recurso
+  educativo" y las **barras de consumo**, ambas con tooltip
+  aclaratorio: "Promedio de acceso a recursos educativos" (% de los
+  recursos publicados que ha abierto en promedio cada estudiante; cada
+  recurso cuenta una vez por estudiante, no mide veces de apertura) y
+  "X de Y estudiantes han abierto recursos educativos" (estudiantes con
+  al menos un recurso abierto).
 - **Riesgo académico** — medidor semicircular tipo velocímetro
   (`GaugeMeter`) con el % de estudiantes en riesgo y leyenda alto/medio/bajo.
-- **Distribución de notas** — histograma por rangos de 1 punto.
+- **Distribución de calificaciones** — histograma por rangos de 1 punto.
 - **Contenidos y cobertura** — ritmo de publicación del profesor
-  (cumplimiento vs mínimo), índice de cumplimiento evaluativo y
-  **contenidos consumidos por estudiantes** (promedio de temas abiertos,
-  vía user progress de Brightspace).
+  (cumplimiento vs mínimo), tarjeta **"Evaluación y Feedback"** (antes
+  "Cumplimiento evaluativo") con el "Índice de actividades evaluadas y
+  retroalimentadas", y **contenidos consumidos por estudiantes**
+  (promedio de temas abiertos, vía user progress de Brightspace).
 - **Estudiantes prioritarios** — quiénes necesitan intervención y por qué.
 - **Resultados de aprendizaje** — RA del curso en 2 columnas, ordenados
   de menor a mayor desempeño, con botón Vincular.
 - **Asignaciones del curso** (`AssignmentsPanel`) — creadas, con entregas
   (+% de entrega), calificadas y vencidas; listado detallado colapsable.
 - **Accesos al curso** — recencia del último acceso por estudiante
-  (hoy / 7 días / +14 días / nunca) y accesos del profesor, del
-  `LastAccessed` del classlist; abajo, el desplegable **"Acceso a
-  contenidos"** con el detalle por estudiante y qué contenidos abrió
-  cada uno — en esta tarjeta se les llama **"contenidos"** (no
-  "elementos", término reservado a la tarjeta KPI "Elementos
-  publicados", donde están las barras de resumen del consumo).
+  ("Ingresaron hoy" / "Ingresaron en los últimos 7 días" / +14 días /
+  nunca) y accesos del profesor, del `LastAccessed` del classlist;
+  abajo, el desplegable **"Acceso a contenidos"** con el detalle por
+  estudiante y qué contenidos abrió cada uno — en esta tarjeta se les
+  llama **"contenidos"** (término distinto de los "recursos educativos"
+  de la tarjeta KPI "Recursos educativos publicados", donde están las
+  barras de resumen del consumo).
 - **Pestañas dedicadas** (sidebar): Estudiantes (tabla completa con
   columna de último acceso), Calendario de entregas, Tendencias, Rutas de
-  atención, Predicción de notas, Evidencias, RA y Asistente IA.
+  atención, Predicción de calificaciones, Evidencias, RA y Asistente IA.
 - **SmartAlerts** y **AINarrativeSummary** (resumen narrativo IA) al final
   del dashboard.
 - **Descarga de evidencias**, export CSV y feedback del docente.
@@ -842,9 +846,10 @@ principal y respaldadas en `gemelo-digital-v2.0`; cada una se mergeó a
   (PDF, Word, Excel, PowerPoint, video, enlace, HTML, otro — tipo
   inferido del título del tema).
 - Terminología: los archivos/páginas dentro de los módulos de contenido
-  se llaman **"elementos"** en la UI (KPI "Elementos publicados",
-  "Elementos consumidos", "Tipos de elemento") para no confundirlos con
-  los módulos de contenido de Brightspace. La clasificación por tipo usa
+  se llaman **"recursos educativos"** en la UI (KPI "Recursos educativos
+  publicados", "Tipos de recurso educativo"; antes "elementos", renombrado
+  el 3 ago) para no confundirlos con los módulos de contenido de
+  Brightspace. La clasificación por tipo usa
   la **Url real del archivo** vía el endpoint nuevo
   `/brightspace/course/{ou}/content/topics` (el content/root no trae Url
   y por título casi todo caía en "Otro").
@@ -903,6 +908,20 @@ principal y respaldadas en `gemelo-digital-v2.0`; cada una se mergeó a
   debajo cuánto acceden los estudiantes); el **desplegable "Acceso a
   contenidos"** (detalle por estudiante y elementos abiertos) se quedó
   en "Accesos al curso".
+- **Renombres de forma en la vista docente (3 ago)**: KPI "Nota
+  promedio" → **"Calificación promedio"** (donut más grande y centrado
+  verticalmente — quedaba arrinconado arriba al crecer la tarjeta
+  vecina); "Elementos publicados" → **"Recursos educativos
+  publicados"** ("Tipos de recurso educativo", "Promedio de acceso a
+  recursos educativos", "X de Y estudiantes han abierto recursos
+  educativos"); "Distribución de notas" → **"Distribución de
+  calificaciones"** y en general **"notas" → "calificaciones"** en
+  toda la vista docente (pestaña "Predicción de calificaciones",
+  tooltips, mensajes vacíos; "Mis notas privadas" del drawer se
+  mantiene porque son anotaciones, no calificaciones); "Cumplimiento
+  evaluativo" → **"Evaluación y Feedback"** con el título interno
+  "Índice de actividades evaluadas y retroalimentadas"; en "Accesos al
+  curso", "Entraron…" → **"Ingresaron…"**.
 - **Voz ElevenLabs desactivada temporalmente (3 ago)**: el saludo
   "Bienvenido de nuevo" sonaba en **cada recarga** del dashboard y cada
   reproducción consumía tokens de ElevenLabs. Se quitó el saludo y se
