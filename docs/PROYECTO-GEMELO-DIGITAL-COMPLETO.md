@@ -857,9 +857,13 @@ principal y respaldadas en `gemelo-digital-v2.0`; cada una se mergeó a
   **anillo circular** (`CircularRing`, el mismo tipo de gráfico de los
   Resultados de Aprendizaje, coloreado según umbrales), desglose por
   **corte 1/2/3** y nota final calculada cuando los 3 cortes están
-  calificados; tarjeta "Mis asignaciones" con % entregadas y %
-  calificadas (desplegables con el detalle y la nota de cada una, cruzada
-  con el gradebook vía `gradeItemId`); "Notas de mis asignaciones" con
+  calificados; tarjeta "Mis asignaciones" con % entregadas (sobre el
+  total) y % calificadas **sobre las entregadas** (para que las dos
+  barras se lean coherentes: "entregué 15, de esas me calificaron 14");
+  el desplegable de entregadas lista también las **pendientes por
+  entregar** en gris — y en **rojo con su fecha** si ya vencieron o
+  vencen en menos de 7 días; el detalle muestra la nota de cada una,
+  cruzada con el gradebook vía `gradeItemId`; "Notas de mis asignaciones" con
   gráfica y tabla; **calendario de próximas entregas debajo de
   Resultados de Aprendizaje**. Nuevo endpoint
   `GET /brightspace/course/{ou}/dropbox/student/{userId}/status`
