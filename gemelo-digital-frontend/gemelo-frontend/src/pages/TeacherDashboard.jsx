@@ -1664,8 +1664,14 @@ const contentKpis = useMemo(() => {
     return contentRhythmStatus(contentKpis?.progressRatio);
   }, [contentKpis]);
 
-  // Total de temas de contenido visibles del curso (para % de consumo)
+  // Total de temas de contenido visibles del curso (para % de consumo).
+  // Preferimos /content/topics porque recorre módulos anidados; el root solo
+  // trae el primer nivel y en cursos con submódulos contaba 0, dejando la
+  // barra de promedio de acceso a contenidos sin mostrar (avgPct null).
   const totalContentTopics = useMemo(() => {
+    if (Array.isArray(contentTopics) && contentTopics.length) {
+      return contentTopics.filter((t) => t?.IsHidden !== true).length;
+    }
     let n = 0;
     for (const mod of (Array.isArray(contentRoot) ? contentRoot : [])) {
       if (mod?.IsHidden === true) continue;
@@ -1674,7 +1680,7 @@ const contentKpis = useMemo(() => {
       }
     }
     return n;
-  }, [contentRoot]);
+  }, [contentTopics, contentRoot]);
 
   // Consumo de contenidos por estudiantes (temas visitados / total temas)
   const consumptionStats = useMemo(() => {
@@ -3115,7 +3121,7 @@ const contentKpis = useMemo(() => {
                           showLabel={false}
                         />
                         <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 6, display: "flex", justifyContent: "space-between" }}>
-                          <span>Promedio de elementos abiertos</span>
+                          <span>Promedio de acceso a contenidos</span>
                           <span style={{ fontFamily: "var(--font-mono)", fontWeight: 800 }}>{fmtPct(consumptionStats.avgPct)}</span>
                         </div>
                       </div>
