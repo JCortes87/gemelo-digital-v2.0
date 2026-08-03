@@ -2555,6 +2555,115 @@ const contentKpis = useMemo(() => {
                 )}
               </>
             )}
+
+            {/* Consumo de contenidos por estudiantes (antes en "Accesos al curso"):
+                barras de promedio y cobertura + desplegable con el detalle */}
+            <div style={{ width: "100%", textAlign: "left", marginTop: 6, borderTop: "1px solid var(--border)", paddingTop: 8 }}>
+              {consumptionStats == null ? (
+                <div style={{ fontSize: 11, color: "var(--muted)", textAlign: "center" }}>Cargando consumo…</div>
+              ) : !consumptionStats.available ? (
+                <div style={{ fontSize: 11, color: "var(--muted)", textAlign: "center" }}>Consumo no disponible para este curso.</div>
+              ) : (
+                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                  {consumptionStats.avgPct != null && (
+                    <div>
+                      <ProgressBar
+                        value={Math.min(100, consumptionStats.avgPct)}
+                        color={colorForPct(consumptionStats.avgPct, thresholds)}
+                        animate={false}
+                        showLabel={false}
+                      />
+                      <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 6, display: "flex", justifyContent: "space-between", gap: 6 }}>
+                        <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+                          Promedio de acceso a contenidos
+                          <InfoTooltip text="Elementos de contenido (PDF, Word, páginas, enlaces, etc.) que los estudiantes han abierto en Brightspace, según su progreso de contenido del curso." />
+                        </span>
+                        <span style={{ fontFamily: "var(--font-mono)", fontWeight: 800 }}>{fmtPct(consumptionStats.avgPct)}</span>
+                      </div>
+                    </div>
+                  )}
+                  {consumptionStats.openedPct != null && (
+                    <div>
+                      <ProgressBar
+                        value={Math.min(100, consumptionStats.openedPct)}
+                        color={colorForPct(consumptionStats.openedPct, thresholds)}
+                        animate={false}
+                        showLabel={false}
+                      />
+                      <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 6, display: "flex", justifyContent: "space-between" }}>
+                        <span>{consumptionStats.opened} de {consumptionStats.total} estudiantes han abierto elementos</span>
+                        <span style={{ fontFamily: "var(--font-mono)", fontWeight: 800 }}>{fmtPct(consumptionStats.openedPct)}</span>
+                      </div>
+                    </div>
+                  )}
+
+                  <button
+                    className="btn"
+                    onClick={() => { setConsumptionDetailOpen((v) => !v); setConsumptionStudentOpen(null); }}
+                    aria-expanded={consumptionDetailOpen}
+                    style={{ alignSelf: "center", fontSize: 11, padding: "5px 12px", borderRadius: 8 }}
+                  >
+                    👥 {consumptionDetailOpen ? "Ocultar detalle" : "Acceso a contenidos"} {consumptionDetailOpen ? "▴" : "▾"}
+                  </button>
+
+                  {consumptionDetailOpen && (
+                    <div style={{
+                      maxHeight: 220, overflowY: "auto",
+                      border: "1px solid var(--border)", borderRadius: 10,
+                      background: "var(--bg)", padding: "4px 2px",
+                      display: "flex", flexDirection: "column", gap: 2,
+                    }}>
+                      {(consumptionStats.detail || []).map((s) => {
+                        const isOpen = consumptionStudentOpen === s.userId;
+                        const hasTopics = s.topicIds.length > 0;
+                        return (
+                          <div key={s.userId}>
+                            <button
+                              onClick={() => setConsumptionStudentOpen((v) => (v === s.userId ? null : s.userId))}
+                              title={hasTopics ? "Ver qué contenidos abrió" : "Sin detalle de temas"}
+                              style={{
+                                display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8,
+                                border: "none", background: isOpen ? "var(--brand-light)" : "transparent",
+                                cursor: "pointer", padding: "4px 8px", borderRadius: 6, fontSize: 11,
+                                fontFamily: "var(--font)", color: "var(--text)", textAlign: "left", width: "100%",
+                              }}
+                            >
+                              <span style={{ fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.name}</span>
+                              <span style={{ display: "inline-flex", alignItems: "center", gap: 4, flexShrink: 0 }}>
+                                <span style={{ fontWeight: 800, fontFamily: "var(--font-mono)", color: s.count > 0 ? "var(--brand)" : "var(--muted)" }}>
+                                  {s.count} {s.count === 1 ? "elemento" : "elementos"}
+                                </span>
+                                {hasTopics && <span style={{ fontSize: 9, color: "var(--muted)" }}>{isOpen ? "▴" : "▾"}</span>}
+                              </span>
+                            </button>
+                            {isOpen && hasTopics && (
+                              <div style={{ padding: "2px 8px 6px 16px", display: "flex", flexDirection: "column", gap: 3 }}>
+                                {[...new Set(s.topicIds)].map((tid) => {
+                                  const meta = contentTopicMeta.get(String(tid));
+                                  const title = meta?.title || `Elemento ${tid}`;
+                                  const typeLabel = contentTypeLabel(title, meta?.url, meta?.topicType);
+                                  return (
+                                    <div key={tid} style={{ fontSize: 10, color: "var(--muted-strong)", display: "flex", gap: 5, alignItems: "flex-start" }}>
+                                      <span aria-hidden="true" style={{ flexShrink: 0 }} title={typeLabel}>{CONTENT_TYPE_ICONS[typeLabel] || "📄"}</span>
+                                      <span style={{ lineHeight: 1.35 }}>{title}</span>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            )}
+                            {isOpen && !hasTopics && (
+                              <div style={{ padding: "2px 8px 6px 16px", fontSize: 10, color: "var(--muted)" }}>
+                                Sin detalle de elementos disponible para este estudiante.
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
           </div>
         </div>
 
@@ -3098,115 +3207,6 @@ const contentKpis = useMemo(() => {
                   ))
                 )}
 
-                <Divider />
-
-                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                  <div style={{ fontSize: 10, color: "var(--muted)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em" }}>
-                    Elementos consumidos
-                  </div>
-                  <InfoTooltip text="Elementos de contenido (PDF, Word, páginas, enlaces, etc.) que los estudiantes han abierto en Brightspace, según su progreso de contenido del curso." />
-                </div>
-                {consumptionStats == null ? (
-                  <div style={{ fontSize: 11, color: "var(--muted)" }}>Cargando…</div>
-                ) : !consumptionStats.available ? (
-                  <div style={{ fontSize: 11, color: "var(--muted)" }}>Dato no disponible para este curso.</div>
-                ) : (
-                  <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                    {consumptionStats.avgPct != null && (
-                      <div>
-                        <ProgressBar
-                          value={Math.min(100, consumptionStats.avgPct)}
-                          color={colorForPct(consumptionStats.avgPct, thresholds)}
-                          animate={false}
-                          showLabel={false}
-                        />
-                        <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 6, display: "flex", justifyContent: "space-between" }}>
-                          <span>Promedio de acceso a contenidos</span>
-                          <span style={{ fontFamily: "var(--font-mono)", fontWeight: 800 }}>{fmtPct(consumptionStats.avgPct)}</span>
-                        </div>
-                      </div>
-                    )}
-                    {consumptionStats.openedPct != null && (
-                      <div>
-                        <ProgressBar
-                          value={Math.min(100, consumptionStats.openedPct)}
-                          color={colorForPct(consumptionStats.openedPct, thresholds)}
-                          animate={false}
-                          showLabel={false}
-                        />
-                        <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 6, display: "flex", justifyContent: "space-between" }}>
-                          <span>{consumptionStats.opened} de {consumptionStats.total} estudiantes han abierto elementos</span>
-                          <span style={{ fontFamily: "var(--font-mono)", fontWeight: 800 }}>{fmtPct(consumptionStats.openedPct)}</span>
-                        </div>
-                      </div>
-                    )}
-
-                    <button
-                      className="btn"
-                      onClick={() => { setConsumptionDetailOpen((v) => !v); setConsumptionStudentOpen(null); }}
-                      aria-expanded={consumptionDetailOpen}
-                      style={{ alignSelf: "center", fontSize: 11, padding: "5px 12px", borderRadius: 8 }}
-                    >
-                      👥 {consumptionDetailOpen ? "Ocultar detalle" : "Acceso a contenidos"} {consumptionDetailOpen ? "▴" : "▾"}
-                    </button>
-
-                    {consumptionDetailOpen && (
-                      <div style={{
-                        maxHeight: 220, overflowY: "auto",
-                        border: "1px solid var(--border)", borderRadius: 10,
-                        background: "var(--bg)", padding: "4px 2px",
-                        display: "flex", flexDirection: "column", gap: 2,
-                      }}>
-                        {(consumptionStats.detail || []).map((s) => {
-                          const isOpen = consumptionStudentOpen === s.userId;
-                          const hasTopics = s.topicIds.length > 0;
-                          return (
-                            <div key={s.userId}>
-                              <button
-                                onClick={() => setConsumptionStudentOpen((v) => (v === s.userId ? null : s.userId))}
-                                title={hasTopics ? "Ver qué contenidos abrió" : "Sin detalle de temas"}
-                                style={{
-                                  display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8,
-                                  border: "none", background: isOpen ? "var(--brand-light)" : "transparent",
-                                  cursor: "pointer", padding: "4px 8px", borderRadius: 6, fontSize: 11,
-                                  fontFamily: "var(--font)", color: "var(--text)", textAlign: "left", width: "100%",
-                                }}
-                              >
-                                <span style={{ fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.name}</span>
-                                <span style={{ display: "inline-flex", alignItems: "center", gap: 4, flexShrink: 0 }}>
-                                  <span style={{ fontWeight: 800, fontFamily: "var(--font-mono)", color: s.count > 0 ? "var(--brand)" : "var(--muted)" }}>
-                                    {s.count} {s.count === 1 ? "elemento" : "elementos"}
-                                  </span>
-                                  {hasTopics && <span style={{ fontSize: 9, color: "var(--muted)" }}>{isOpen ? "▴" : "▾"}</span>}
-                                </span>
-                              </button>
-                              {isOpen && hasTopics && (
-                                <div style={{ padding: "2px 8px 6px 16px", display: "flex", flexDirection: "column", gap: 3 }}>
-                                  {[...new Set(s.topicIds)].map((tid) => {
-                                    const meta = contentTopicMeta.get(String(tid));
-                                    const title = meta?.title || `Elemento ${tid}`;
-                                    const typeLabel = contentTypeLabel(title, meta?.url, meta?.topicType);
-                                    return (
-                                      <div key={tid} style={{ fontSize: 10, color: "var(--muted-strong)", display: "flex", gap: 5, alignItems: "flex-start" }}>
-                                        <span aria-hidden="true" style={{ flexShrink: 0 }} title={typeLabel}>{CONTENT_TYPE_ICONS[typeLabel] || "📄"}</span>
-                                        <span style={{ lineHeight: 1.35 }}>{title}</span>
-                                      </div>
-                                    );
-                                  })}
-                                </div>
-                              )}
-                              {isOpen && !hasTopics && (
-                                <div style={{ padding: "2px 8px 6px 16px", fontSize: 10, color: "var(--muted)" }}>
-                                  Sin detalle de elementos disponible para este estudiante.
-                                </div>
-                              )}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </div>
-                )}
               </div>
             )}
           </Card>

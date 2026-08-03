@@ -23,8 +23,11 @@ agregada y predictiva sobre el desempeño de cada curso.
 
 #### Vista de docente (rediseñada en julio 2026, estilo dashboard analítico)
 - **Fila de KPIs** con tarjetas centradas: nota promedio (donut 0–10),
-  estudiantes inscritos, en riesgo (alto+medio) y contenidos publicados
-  vs mínimo esperado.
+  estudiantes inscritos, en riesgo (alto+medio) y elementos publicados
+  vs mínimo esperado — esta última incluye el desglose por tipos y el
+  **consumo de contenidos**: barras de promedio de acceso y de
+  estudiantes que han abierto elementos, con desplegable "Acceso a
+  contenidos" (detalle por estudiante y qué elementos abrió).
 - **Riesgo académico** — medidor semicircular tipo velocímetro
   (`GaugeMeter`) con el % de estudiantes en riesgo y leyenda alto/medio/bajo.
 - **Distribución de notas** — histograma por rangos de 1 punto.
@@ -38,8 +41,9 @@ agregada y predictiva sobre el desempeño de cada curso.
 - **Asignaciones del curso** (`AssignmentsPanel`) — creadas, con entregas
   (+% de entrega), calificadas y vencidas; listado detallado colapsable.
 - **Accesos al curso** — recencia del último acceso por estudiante
-  (hoy / 7 días / +14 días / nunca) y top de desconectados, del
-  `LastAccessed` del classlist.
+  (hoy / 7 días / +14 días / nunca) y accesos del profesor, del
+  `LastAccessed` del classlist. El bloque de consumo de contenidos que
+  vivía aquí se movió a la tarjeta KPI "Elementos publicados".
 - **Pestañas dedicadas** (sidebar): Estudiantes (tabla completa con
   columna de último acceso), Calendario de entregas, Tendencias, Rutas de
   atención, Predicción de notas, Evidencias, RA y Asistente IA.
@@ -874,12 +878,19 @@ principal y respaldadas en `gemelo-digital-v2.0`; cada una se mergeó a
   `GET /brightspace/course/{ou}/dropbox/student/{userId}/status`
   (entrega/calificación por asignación publicada, con soporte de
   entregas grupales).
-- **Fix en "Accesos al curso" (3 ago)**: la barra "Promedio de acceso a
-  contenidos" (encima del desplegable "Acceso a contenidos") no se
-  mostraba en cursos con **módulos anidados**: el total de temas se
-  contaba solo con el primer nivel de `content/root` y daba 0. Ahora el
-  total se toma de `/content/topics` (que recorre submódulos, filtrando
-  ocultos) con fallback al conteo del root.
+- **Fix en el consumo de contenidos (3 ago)**: la barra "Promedio de
+  acceso a contenidos" no se mostraba en cursos con **módulos
+  anidados**: el total de temas se contaba solo con el primer nivel de
+  `content/root` y daba 0. Ahora el total se toma de `/content/topics`
+  (que recorre submódulos, filtrando ocultos) con fallback al conteo
+  del root.
+- **Reubicación del consumo de contenidos (3 ago)**: el bloque completo
+  (barras "Promedio de acceso a contenidos" y "X de Y estudiantes han
+  abierto elementos" + desplegable "Acceso a contenidos" con el detalle
+  por estudiante) se movió de la tarjeta "Accesos al curso" a la
+  tarjeta KPI **"Elementos publicados"**, para que publicación y
+  consumo se lean juntos: total publicado, tipos de elemento y debajo
+  cuánto acceden los estudiantes.
 - Limitación documentada: la **duración de las sesiones** (tiempo
   conectado, pedido para la tarjeta de accesos y la tabla de
   estudiantes) no está disponible vía API REST de Brightspace; solo
