@@ -853,6 +853,17 @@ principal y respaldadas en `gemelo-digital-v2.0`; cada una se mergeó a
   eliminó el menú muerto "Ver como…" del topbar.
 - **Asignaciones**: la tarjeta muestra arriba el **total de
   asignaciones** (activas + no publicadas) y debajo el desglose.
+- **Portal del estudiante rediseñado (2-3 ago)**: tarjeta "Mi nota" con
+  **velocímetro** (`GaugeMeter`, zonas rojo/ámbar/verde), desglose por
+  **corte 1/2/3** y nota final calculada cuando los 3 cortes están
+  calificados; tarjeta "Mis asignaciones" con % entregadas y %
+  calificadas (desplegables con el detalle y la nota de cada una, cruzada
+  con el gradebook vía `gradeItemId`); "Notas de mis asignaciones" con
+  gráfica y tabla; **calendario de próximas entregas debajo de
+  Resultados de Aprendizaje**. Nuevo endpoint
+  `GET /brightspace/course/{ou}/dropbox/student/{userId}/status`
+  (entrega/calificación por asignación publicada, con soporte de
+  entregas grupales).
 - Limitación documentada: la **duración de las sesiones** (tiempo
   conectado, pedido para la tarjeta de accesos y la tabla de
   estudiantes) no está disponible vía API REST de Brightspace; solo
