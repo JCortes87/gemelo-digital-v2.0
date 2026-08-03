@@ -3031,8 +3031,8 @@ const contentKpis = useMemo(() => {
                 {[
                   { key: "today", label: "Ingresaron hoy", value: accessStats.today, color: COLORS.ok },
                   { key: "week", label: "Ingresaron en los últimos 7 días", value: accessStats.week, color: COLORS.brand },
-                  { key: "stale", label: "Sin entrar hace +14 días", value: accessStats.stale, color: accessStats.stale > 0 ? COLORS.watch : "var(--muted)" },
-                  { key: "never", label: "Nunca han entrado", value: accessStats.never, color: accessStats.never > 0 ? COLORS.critical : "var(--muted)" },
+                  { key: "stale", label: "Sin ingresar hace +14 días", value: accessStats.stale, color: accessStats.stale > 0 ? COLORS.watch : "var(--muted)" },
+                  { key: "never", label: "Nunca han ingresado", value: accessStats.never, color: accessStats.never > 0 ? COLORS.critical : "var(--muted)" },
                 ].map((row) => {
                   const canExpand = row.value > 0;
                   const isOpen = accessListOpen === row.key;

@@ -46,8 +46,9 @@ agregada y predictiva sobre el desempeño de cada curso.
 - **Asignaciones del curso** (`AssignmentsPanel`) — creadas, con entregas
   (+% de entrega), calificadas y vencidas; listado detallado colapsable.
 - **Accesos al curso** — recencia del último acceso por estudiante
-  ("Ingresaron hoy" / "Ingresaron en los últimos 7 días" / +14 días /
-  nunca) y accesos del profesor, del `LastAccessed` del classlist;
+  ("Ingresaron hoy" / "Ingresaron en los últimos 7 días" / "Sin ingresar
+  hace +14 días" / "Nunca han ingresado") y accesos del profesor, del
+  `LastAccessed` del classlist;
   abajo, el desplegable **"Acceso a contenidos"** con el detalle por
   estudiante y qué contenidos abrió cada uno — en esta tarjeta se les
   llama **"contenidos"** (término distinto de los "recursos educativos"
@@ -207,11 +208,16 @@ agregada y predictiva sobre el desempeño de cada curso.
   (`proyecto-gemelos-digitales-JC`), cuyo rol IAM OIDC solo confía en ese
   repo.
 - **Flujo de trabajo actual (EXPLÍCITO — así se despliega SIEMPRE)**:
-  1. Los cambios se desarrollan localmente en una rama nueva.
+  1. Los cambios se desarrollan localmente en la **rama única de trabajo
+     `desarrollo`** (convención desde el 3 ago 2026; antes se creaba una
+     rama por cambio, pero el repo se llenó de ramas).
   2. La rama se pushea a `produccion` (repo principal) y a `origin`
      (respaldo v2.0).
-  3. Se abre un **Pull Request** de esa rama hacia `main` del repo
-     principal (`proyecto-gemelos-digitales-JC`).
+  3. Se abre un **Pull Request** de `desarrollo` hacia `main` del repo
+     principal (`proyecto-gemelos-digitales-JC`). Tras el merge, la
+     MISMA rama se reutiliza para el siguiente cambio: los commits
+     nuevos generan un PR nuevo con solo el delta. **No borrar
+     `desarrollo` al mergear.**
   4. **El merge del PR lo hace únicamente el dueño del repo (JCortes87)
      desde GitHub**, después de revisar los cambios. Nadie más mergea, y
      NUNCA se hace push directo a `main`.
@@ -251,18 +257,22 @@ Aplica a cualquier persona (o asistente) que desarrolle en este proyecto.
 
 #### Parte 1 — Lo que hace quien desarrolla (hasta aquí llega, sin excepción)
 
-1. Crear una rama nueva con prefijo tipo conventional commits:
+1. Trabajar sobre la **rama única `desarrollo`** (si el PR anterior ya
+   fue mergeado, actualizarla primero con `git pull produccion main`):
    ```bash
-   git checkout -b feat/nombre-descriptivo   # o fix/, style/, docs/
+   git checkout desarrollo
    ```
+   (Convención desde el 3 ago 2026: una sola rama de trabajo reutilizable
+   en lugar de una rama por cambio, para no llenar el repo de ramas. Las
+   ramas por cambio anteriores se eliminaron tras estar mergeadas.)
 2. Hacer los cambios y **verificar antes de commitear**: `npm test`,
    `npm run build` y lint sin errores nuevos.
 3. Commit con mensaje **en imperativo** y prefijo
    (`feat(dashboard): agrega …`, `fix(auth): corrige …`).
 4. Pushear la **misma rama a los dos repos del dueño**:
    ```bash
-   git push produccion nombre-de-la-rama   # sube la rama al repo principal (NO despliega)
-   git push origin nombre-de-la-rama       # copia de respaldo en v2.0
+   git push produccion desarrollo   # sube la rama al repo principal (NO despliega)
+   git push origin desarrollo       # copia de respaldo en v2.0
    ```
    Pushear una rama a `produccion` **no despliega nada** — los workflows
    solo se disparan con cambios en `main`.
@@ -593,11 +603,13 @@ Definidas en el `taskdef` de ECS (sección `environment`):
 
 Seguir el **flujo detallado de publicación** de la sección 4. En corto:
 
-1. `git checkout -b feat/nombre-descriptivo` (o `fix/`, `style/`, `docs/`).
+1. `git checkout desarrollo` (rama única de trabajo; si el PR anterior
+   ya se mergeó, `git pull produccion main` primero).
 2. Cambios + verificación (`npm test`, `npm run build`, lint) +
    `git commit` con mensaje en imperativo.
-3. `git push produccion <rama>` y `git push origin <rama>` (respaldo).
-4. Abrir PR hacia `main` de `proyecto-gemelos-digitales-JC`.
+3. `git push produccion desarrollo` y `git push origin desarrollo` (respaldo).
+4. Abrir PR hacia `main` de `proyecto-gemelos-digitales-JC` (si ya hay
+   un PR abierto de `desarrollo`, los commits nuevos se agregan solos).
 5. **El dueño (JCortes87) revisa y mergea manualmente el PR** — ese
    merge dispara el deploy automático. Nunca push directo a `main` y
    nunca tocar el repo de Juan (`colaborador`).
@@ -921,7 +933,14 @@ principal y respaldadas en `gemelo-digital-v2.0`; cada una se mergeó a
   mantiene porque son anotaciones, no calificaciones); "Cumplimiento
   evaluativo" → **"Evaluación y Feedback"** con el título interno
   "Índice de actividades evaluadas y retroalimentadas"; en "Accesos al
-  curso", "Entraron…" → **"Ingresaron…"**.
+  curso", "Entraron…" → **"Ingresaron…"**, "Sin entrar hace +14 días" →
+  **"Sin ingresar hace +14 días"** y "Nunca han entrado" → **"Nunca han
+  ingresado"**.
+- **Rama única de trabajo `desarrollo` (3 ago)**: se eliminaron las ~33
+  ramas por-cambio ya mergeadas (en `produccion` y `origin`) y desde
+  ahora todo cambio se commitea en la rama reutilizable `desarrollo`,
+  que se pushea a ambos remotes y desde la cual se abre el PR a `main`;
+  tras cada merge NO se borra — se reutiliza para el siguiente cambio.
 - **Voz ElevenLabs desactivada temporalmente (3 ago)**: el saludo
   "Bienvenido de nuevo" sonaba en **cada recarga** del dashboard y cada
   reproducción consumía tokens de ElevenLabs. Se quitó el saludo y se
