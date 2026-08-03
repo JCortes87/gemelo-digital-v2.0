@@ -1,5 +1,11 @@
 import { apiUrl } from "./api";
 
+// INTERRUPTOR TEMPORAL: en false, elSpeak NUNCA llama a /speech/tts
+// (ElevenLabs) y usa solo la voz gratuita del navegador (speechSynthesis).
+// Evita consumir tokens de ElevenLabs durante la etapa de ajustes con
+// recargas frecuentes. Volver a true para reactivar la voz de ElevenLabs.
+const ELEVENLABS_ENABLED = false;
+
 let _elCurrentAudio = null;
 let _elToken = 0;            // token monotonico: identifica la reproduccion vigente
 let _elController = null;    // AbortController del fetch /speech/tts en curso
@@ -28,6 +34,18 @@ if (typeof window !== "undefined" && !window.__elNavHooked) {
   history.replaceState = function (...args) { elStop(); return _origReplace.apply(this, args); };
 }
 
+function _browserSpeak(clean, myToken, onStart, onEnd) {
+  if ("speechSynthesis" in window) {
+    const utt = new SpeechSynthesisUtterance(clean);
+    utt.lang = "es-CO"; utt.rate = 0.92;
+    const esV = window.speechSynthesis.getVoices().find(v => v.lang.startsWith("es"));
+    if (esV) utt.voice = esV;
+    utt.onend = utt.onerror = () => { if (myToken === _elToken) onEnd && onEnd(); };
+    onStart && onStart();
+    window.speechSynthesis.speak(utt);
+  } else { onEnd && onEnd(); }
+}
+
 export async function elSpeak(rawText, onStart, onEnd) {
   if (!rawText || !rawText.trim()) return;
   elStop();
@@ -40,6 +58,14 @@ export async function elSpeak(rawText, onStart, onEnd) {
     .replace(/&lt;/g, "menor que").replace(/&gt;/g, "mayor que").replace(/&amp;/g, "y")
     .replace(/[^\u0000-\u007F\u00C0-\u024F\u0400-\u04FF\s]/g, "")
     .replace(/\[.*?\]/g, "").replace(/\s+/g, " ").trim().slice(0, 2000);
+
+  // Con ElevenLabs desactivado no se toca /speech/tts: voz del navegador
+  // directamente (gratis, sin tokens).
+  if (!ELEVENLABS_ENABLED) {
+    _elController = null;
+    _browserSpeak(clean, myToken, onStart, onEnd);
+    return;
+  }
 
   try {
     const sid = localStorage.getItem("gemelo_sid");
@@ -70,15 +96,7 @@ export async function elSpeak(rawText, onStart, onEnd) {
     if (e.name === "AbortError" || myToken !== _elToken) return;
 
     console.warn("ElevenLabs TTS fallback:", e.message);
-    if ("speechSynthesis" in window) {
-      const utt = new SpeechSynthesisUtterance(clean);
-      utt.lang = "es-CO"; utt.rate = 0.92;
-      const esV = window.speechSynthesis.getVoices().find(v => v.lang.startsWith("es"));
-      if (esV) utt.voice = esV;
-      utt.onend = utt.onerror = () => { if (myToken === _elToken) onEnd && onEnd(); };
-      onStart && onStart();
-      window.speechSynthesis.speak(utt);
-    } else { onEnd && onEnd(); }
+    _browserSpeak(clean, myToken, onStart, onEnd);
   }
 }
 
