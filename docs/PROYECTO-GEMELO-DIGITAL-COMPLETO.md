@@ -874,6 +874,12 @@ principal y respaldadas en `gemelo-digital-v2.0`; cada una se mergeó a
   `GET /brightspace/course/{ou}/dropbox/student/{userId}/status`
   (entrega/calificación por asignación publicada, con soporte de
   entregas grupales).
+- **Fix en "Accesos al curso" (3 ago)**: la barra "Promedio de acceso a
+  contenidos" (encima del desplegable "Acceso a contenidos") no se
+  mostraba en cursos con **módulos anidados**: el total de temas se
+  contaba solo con el primer nivel de `content/root` y daba 0. Ahora el
+  total se toma de `/content/topics` (que recorre submódulos, filtrando
+  ocultos) con fallback al conteo del root.
 - Limitación documentada: la **duración de las sesiones** (tiempo
   conectado, pedido para la tarjeta de accesos y la tabla de
   estudiantes) no está disponible vía API REST de Brightspace; solo
