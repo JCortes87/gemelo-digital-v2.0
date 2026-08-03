@@ -403,7 +403,7 @@ export default function VoiceAssistant({ studentRows, overview, raDashboard, cou
         {[
           { icon: "🎙️", color: "var(--brand)", title: "Entrada de Voz", desc: "Presiona el micrófono y habla en español. La transcripción se procesa automáticamente." },
           { icon: "🔊", color: "var(--ok)", title: "Salida de Voz", desc: "Activa la voz y el asistente leerá cada respuesta. Usa '🔊 Escuchar' en mensajes anteriores." },
-          { icon: "⚡", color: "var(--watch)", title: "Datos Reales", desc: "Todas las respuestas usan los datos del curso en tiempo real — notas, cobertura, riesgo y RAs." },
+          { icon: "⚡", color: "var(--watch)", title: "Datos Reales", desc: "Todas las respuestas usan los datos del curso en tiempo real — calificaciones, cobertura, riesgo y RAs." },
         ].map((g) => (
           <div key={g.title} style={{ background: "var(--bg)", border: "1px solid var(--border)", borderRadius: 10, padding: 14 }}>
             <div style={{ fontSize: 20, marginBottom: 8 }}>{g.icon}</div>

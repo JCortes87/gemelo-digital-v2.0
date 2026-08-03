@@ -114,7 +114,7 @@ export default function EvidenceReports({
       <div style={{ padding: "40px 20px", textAlign: "center", color: "var(--muted)" }}>
         <div style={{ fontSize: 32, opacity: 0.4, marginBottom: 8 }}>📑</div>
         <div style={{ fontSize: 13, fontWeight: 700 }}>No hay datos suficientes para generar informes</div>
-        <div style={{ fontSize: 11, marginTop: 4 }}>Se necesitan estudiantes con notas calificadas.</div>
+        <div style={{ fontSize: 11, marginTop: 4 }}>Se necesitan estudiantes con calificaciones registradas.</div>
       </div>
     );
   }
