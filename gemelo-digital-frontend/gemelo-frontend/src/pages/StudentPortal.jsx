@@ -853,8 +853,9 @@ export default function StudentPortal({ orgUnitIdOverride, userIdOverride, allow
                     rows: submittedRows, total: assignRows.length,
                     open: showSubmittedList, setOpen: setShowSubmittedList,
                     empty: "Aún no has entregado asignaciones.",
-                    // Al desplegar también se listan las pendientes: en gris, y en
-                    // rojo con su fecha si ya vencieron o vencen en menos de 7 días.
+                    // Al desplegar también se listan las pendientes: en gris las
+                    // vencidas o lejanas, y con texto rojo (discreto, sin fondo)
+                    // las que vencen en menos de 7 días.
                     pending: pendingRows,
                     renderRight: (r) => (
                       <span style={{ fontSize: 10, color: "var(--muted)", flexShrink: 0 }}>
@@ -911,22 +912,18 @@ export default function StudentPortal({ orgUnitIdOverride, userIdOverride, allow
                                 </div>
                               ))}
                               {(sec.pending || []).map((r) => {
-                                const urgent = r.isOverdue || r.isDueSoon;
+                                const textColor = r.isDueSoon ? "var(--critical)" : "var(--muted)";
                                 return (
                                   <div
                                     key={`${sec.key}-pending-${r.id}`}
-                                    style={{
-                                      display: "flex", alignItems: "center", gap: 8, padding: "6px 10px", borderRadius: 8,
-                                      background: urgent ? "var(--critical-bg)" : "var(--bg)",
-                                      border: `1px solid ${urgent ? "var(--critical-border)" : "var(--border)"}`,
-                                    }}
+                                    style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 10px", borderRadius: 8, background: "var(--bg)", border: "1px solid var(--border)" }}
                                   >
-                                    <span style={{ flex: 1, fontSize: 12, fontWeight: 600, color: urgent ? "var(--critical)" : "var(--muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={r.name}>
+                                    <span style={{ flex: 1, fontSize: 12, fontWeight: 600, color: textColor, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={r.name}>
                                       {r.name}
                                     </span>
-                                    <span style={{ fontSize: 10, fontWeight: urgent ? 800 : 400, color: urgent ? "var(--critical)" : "var(--muted)", flexShrink: 0 }}>
+                                    <span style={{ fontSize: 10, fontWeight: r.isDueSoon ? 800 : 400, color: textColor, flexShrink: 0 }}>
                                       {r.isOverdue
-                                        ? `⏰ Venció: ${formatDueDate(r.dueDate)}`
+                                        ? `Venció: ${formatDueDate(r.dueDate)}`
                                         : r.isDueSoon
                                           ? `⏰ Vence: ${formatDueDate(r.dueDate)}`
                                           : r.dueDate

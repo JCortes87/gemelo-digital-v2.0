@@ -863,11 +863,14 @@ principal y respaldadas en `gemelo-digital-v2.0`; cada una se mergeó a
   entregadas** (para que las dos barras se lean coherentes: "entregué
   15, de esas me calificaron 14"; el contador dice "X/Y calificadas");
   el desplegable de entregadas lista también las **pendientes por
-  entregar** en gris — y en **rojo con su fecha** si ya vencieron o
-  vencen en menos de 7 días; el detalle muestra la nota de cada una,
-  cruzada con el gradebook vía `gradeItemId`; "Notas de mis asignaciones" con
-  gráfica y tabla; **calendario de próximas entregas debajo de
-  Resultados de Aprendizaje**. Nuevo endpoint
+  entregar**: en gris las ya vencidas o lejanas (con su fecha) y con
+  **texto rojo discreto** las que vencen en menos de 7 días; el detalle
+  muestra la nota de cada una, cruzada con el gradebook vía
+  `gradeItemId`; "Notas de mis asignaciones" con gráfica y tabla;
+  **calendario de próximas entregas debajo de Resultados de
+  Aprendizaje** — en la lista del calendario, las entregas que vencen en
+  **7 días o menos llevan borde rojo** (además del distintivo "!"
+  pulsante que ya existía para las de menos de 2 días). Nuevo endpoint
   `GET /brightspace/course/{ou}/dropbox/student/{userId}/status`
   (entrega/calificación por asignación publicada, con soporte de
   entregas grupales).

@@ -121,6 +121,7 @@ function DueDateCalendar({ orgUnitId, studentRows, studentEvidences }) {
         hoursUntil,
         isPast: msDiff < 0,
         isUrgent: msDiff >= 0 && daysUntil <= 2,
+        isDueSoon: msDiff >= 0 && daysUntil <= 7,
         source: it.source,
         gradedCount: stats?.graded ?? null,
         totalStudents: stats?.total ?? null,
@@ -213,6 +214,8 @@ function DueDateCalendar({ orgUnitId, studentRows, studentEvidences }) {
 
     const tooltip = `${formatRemaining(a)} · ${formatExactDate(a)}`;
     const isHovered = hoverId === a.id;
+    // Las que vencen en ≤7 días llevan borde rojo sólido para alertar
+    const dueSoon = !past && a.isDueSoon;
 
     return (
       <div
@@ -224,7 +227,9 @@ function DueDateCalendar({ orgUnitId, studentRows, studentEvidences }) {
           display: "flex", alignItems: "center", gap: 10,
           padding: "10px 12px",
           borderRadius: 10,
-          border: `1px solid ${isHovered ? chipColor : chipBorder}`,
+          border: dueSoon
+            ? "1.5px solid #dc2626"
+            : `1px solid ${isHovered ? chipColor : chipBorder}`,
           background: isHovered ? `${chipColor}18` : chipBg,
           cursor: "pointer",
           transition: "transform 0.15s, box-shadow 0.15s, background 0.15s, border-color 0.15s",
@@ -266,7 +271,7 @@ function DueDateCalendar({ orgUnitId, studentRows, studentEvidences }) {
               overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
             }}>{a.name}</span>
           </div>
-          <div style={{ fontSize: 10, color: past ? "var(--muted)" : chipColor, marginTop: 2, fontWeight: 600 }}>
+          <div style={{ fontSize: 10, color: past ? "var(--muted)" : (dueSoon ? "#dc2626" : chipColor), marginTop: 2, fontWeight: dueSoon ? 800 : 600 }}>
             {formatRemaining(a)}
           </div>
         </div>
@@ -460,14 +465,6 @@ function MonthGrid({ assignments, hoverId, onHoverChange }) {
            t <= new Date(end.toDateString()).getTime();
   };
 
-  const isHoverStart = (day) =>
-    hoverAssignment?.start &&
-    day.toDateString() === hoverAssignment.start.toDateString();
-
-  const isHoverEnd = (day) =>
-    hoverAssignment &&
-    day.toDateString() === hoverAssignment.due.toDateString();
-
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
@@ -567,8 +564,6 @@ function MonthGrid({ assignments, hoverId, onHoverChange }) {
           const dayAssignments = byDate.get(key) || [];
           const isToday = day.getTime() === today.getTime();
           const inRange = isInHoverRange(day);
-          const isRangeStart = isHoverStart(day);
-          const isRangeEnd = isHoverEnd(day);
 
           // Pick a "primary color" for this cell based on the most urgent
           // assignment due that day (red > blue > grey-past)
