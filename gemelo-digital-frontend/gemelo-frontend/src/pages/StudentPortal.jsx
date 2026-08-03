@@ -505,15 +505,29 @@ export default function StudentPortal({ orgUnitIdOverride, userIdOverride, allow
     });
   }, [assignStatus, gradeByObjectId]);
   const submittedRows = useMemo(() => assignRows.filter((r) => r.hasSubmission === true), [assignRows]);
-  const gradedRows = useMemo(() => assignRows.filter((r) => r.isGraded), [assignRows]);
-  const overdueNotSubmitted = useMemo(() => {
+  // Calificadas SOLO entre las entregadas: así la lectura de las dos barras es
+  // coherente ("entregué 15, de esas me han calificado 14") y no puede quedar
+  // "calificadas" por encima de "entregadas" (nota en gradebook sin entrega).
+  const gradedRows = useMemo(() => submittedRows.filter((r) => r.isGraded), [submittedRows]);
+  // Pendientes por entregar, con urgencia según la fecha de entrega:
+  // vencida u ¡a menos de 7 días! → se resaltan en rojo en el desplegable.
+  const pendingRows = useMemo(() => {
     const now = new Date();
-    return assignRows.filter((r) => {
-      if (r.hasSubmission !== false) return false;
-      const d = r.dueDate ? new Date(r.dueDate) : null;
-      return d && !Number.isNaN(d.getTime()) && d < now;
-    });
+    const weekAhead = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+    return assignRows
+      .filter((r) => r.hasSubmission === false)
+      .map((r) => {
+        const d = r.dueDate ? new Date(r.dueDate) : null;
+        const validDue = d && !Number.isNaN(d.getTime()) ? d : null;
+        const isOverdue = validDue ? validDue < now : false;
+        const isDueSoon = validDue ? !isOverdue && validDue <= weekAhead : false;
+        return { ...r, isOverdue, isDueSoon };
+      });
   }, [assignRows]);
+  const overdueNotSubmitted = useMemo(
+    () => pendingRows.filter((r) => r.isOverdue),
+    [pendingRows]
+  );
 
   const prescription = Array.isArray(studentData?.prescription)
     ? studentData.prescription
@@ -879,8 +893,12 @@ export default function StudentPortal({ orgUnitIdOverride, userIdOverride, allow
                 {[
                   {
                     key: "submitted", icon: "📤", label: "Asignaciones entregadas",
-                    rows: submittedRows, open: showSubmittedList, setOpen: setShowSubmittedList,
+                    rows: submittedRows, total: assignRows.length,
+                    open: showSubmittedList, setOpen: setShowSubmittedList,
                     empty: "Aún no has entregado asignaciones.",
+                    // Al desplegar también se listan las pendientes: en gris, y en
+                    // rojo con su fecha si ya vencieron o vencen en menos de 7 días.
+                    pending: pendingRows,
                     renderRight: (r) => (
                       <span style={{ fontSize: 10, color: "var(--muted)", flexShrink: 0 }}>
                         {r.submittedAt ? `Entregada: ${formatDueDate(r.submittedAt)}` : "Entregada"}
@@ -889,8 +907,9 @@ export default function StudentPortal({ orgUnitIdOverride, userIdOverride, allow
                   },
                   {
                     key: "graded", icon: "✅", label: "Asignaciones calificadas",
-                    rows: gradedRows, open: showGradedList, setOpen: setShowGradedList,
-                    empty: "Aún no tienes asignaciones calificadas.",
+                    rows: gradedRows, total: submittedRows.length, countSuffix: " entregadas",
+                    open: showGradedList, setOpen: setShowGradedList,
+                    empty: "Aún no te han calificado las asignaciones que entregaste.",
                     renderRight: (r) => (
                       <span style={{ fontSize: 13, fontWeight: 900, fontFamily: "var(--font-mono)", color: r.scorePct != null ? colorForPct(r.scorePct, thresholds) : "var(--ok)", flexShrink: 0 }}>
                         {r.scorePct != null ? `${(r.scorePct / 10).toFixed(1)}/10` : "✓"}
@@ -898,7 +917,7 @@ export default function StudentPortal({ orgUnitIdOverride, userIdOverride, allow
                     ),
                   },
                 ].map((sec) => {
-                  const pct = assignRows.length > 0 ? (sec.rows.length / assignRows.length) * 100 : 0;
+                  const pct = sec.total > 0 ? (sec.rows.length / sec.total) * 100 : 0;
                   return (
                     <div key={sec.key}>
                       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
@@ -908,7 +927,7 @@ export default function StudentPortal({ orgUnitIdOverride, userIdOverride, allow
                         <span style={{ fontSize: 13, fontWeight: 900, fontFamily: "var(--font-mono)", color: colorForPct(pct, thresholds) }}>
                           {fmtPct(pct)}{" "}
                           <span style={{ fontSize: 10, color: "var(--muted)", fontWeight: 700 }}>
-                            ({sec.rows.length}/{assignRows.length})
+                            ({sec.rows.length}/{sec.total}{sec.countSuffix || ""})
                           </span>
                         </span>
                       </div>
@@ -922,17 +941,45 @@ export default function StudentPortal({ orgUnitIdOverride, userIdOverride, allow
                       </button>
                       {sec.open && (
                         <div style={{ display: "flex", flexDirection: "column", gap: 4, marginTop: 6, maxHeight: 180, overflowY: "auto" }}>
-                          {sec.rows.length === 0 ? (
+                          {sec.rows.length === 0 && (sec.pending || []).length === 0 ? (
                             <div style={{ fontSize: 11, color: "var(--muted)", fontStyle: "italic" }}>{sec.empty}</div>
                           ) : (
-                            sec.rows.map((r) => (
-                              <div key={`${sec.key}-${r.id}`} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 10px", borderRadius: 8, background: "var(--bg)", border: "1px solid var(--border)" }}>
-                                <span style={{ flex: 1, fontSize: 12, fontWeight: 600, color: "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={r.name}>
-                                  {r.name}
-                                </span>
-                                {sec.renderRight(r)}
-                              </div>
-                            ))
+                            <>
+                              {sec.rows.map((r) => (
+                                <div key={`${sec.key}-${r.id}`} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 10px", borderRadius: 8, background: "var(--bg)", border: "1px solid var(--border)" }}>
+                                  <span style={{ flex: 1, fontSize: 12, fontWeight: 600, color: "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={r.name}>
+                                    {r.name}
+                                  </span>
+                                  {sec.renderRight(r)}
+                                </div>
+                              ))}
+                              {(sec.pending || []).map((r) => {
+                                const urgent = r.isOverdue || r.isDueSoon;
+                                return (
+                                  <div
+                                    key={`${sec.key}-pending-${r.id}`}
+                                    style={{
+                                      display: "flex", alignItems: "center", gap: 8, padding: "6px 10px", borderRadius: 8,
+                                      background: urgent ? "var(--critical-bg)" : "var(--bg)",
+                                      border: `1px solid ${urgent ? "var(--critical-border)" : "var(--border)"}`,
+                                    }}
+                                  >
+                                    <span style={{ flex: 1, fontSize: 12, fontWeight: 600, color: urgent ? "var(--critical)" : "var(--muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={r.name}>
+                                      {r.name}
+                                    </span>
+                                    <span style={{ fontSize: 10, fontWeight: urgent ? 800 : 400, color: urgent ? "var(--critical)" : "var(--muted)", flexShrink: 0 }}>
+                                      {r.isOverdue
+                                        ? `⏰ Venció: ${formatDueDate(r.dueDate)}`
+                                        : r.isDueSoon
+                                          ? `⏰ Vence: ${formatDueDate(r.dueDate)}`
+                                          : r.dueDate
+                                            ? `Sin entregar · vence: ${formatDueDate(r.dueDate)}`
+                                            : "Sin entregar"}
+                                    </span>
+                                  </div>
+                                );
+                              })}
+                            </>
                           )}
                         </div>
                       )}
