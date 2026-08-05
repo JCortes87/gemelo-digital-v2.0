@@ -2,6 +2,12 @@
 import React from "react";
 import { apiGet } from "../../utils/api";
 import { elSpeak } from "../../utils/speech";
+
+// INTERRUPTOR TEMPORAL: en false el tutorial no narra los pasos por voz
+// (etapa de pruebas con recargas frecuentes). Nota: aunque estuviera en
+// true, con ELEVENLABS_ENABLED=false en utils/speech.js la voz seria la
+// gratuita del navegador — no consume tokens de ElevenLabs.
+const TUTORIAL_VOICE_ENABLED = false;
 const ONBOARDING_STEPS = [
   {
     id: "welcome",
@@ -194,6 +200,7 @@ export function OnboardingTutorial({ userName, onFinish }) {
   const isLast = step === ONBOARDING_STEPS.length - 1;
 
   const speak = React.useCallback((text) => {
+    if (!TUTORIAL_VOICE_ENABLED) return;
     elSpeak(
       text,
       () => setSpeaking(true),
@@ -201,8 +208,9 @@ export function OnboardingTutorial({ userName, onFinish }) {
     );
   }, []);
 
-  // Auto-speak on step change
+  // Auto-speak on step change (desactivado con TUTORIAL_VOICE_ENABLED=false)
   React.useEffect(() => {
+    if (!TUTORIAL_VOICE_ENABLED) return;
     const text = current.voice(userName);
     // Small delay for better UX
     const t = setTimeout(() => speak(text), 300);

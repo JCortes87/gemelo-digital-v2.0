@@ -217,12 +217,12 @@ export default function TeacherDashboard() {
             setOrgUnitId(Number(savedOu));
             setOrgUnitInput(savedOu);
           }
-          // Detectar primera vez: viene del callback OAuth (first_login=1 en sessionStorage)
-          // O si nunca ha visto el tutorial (localStorage "gemelo_onboarded" no existe)
-          const isFirstLogin = sessionStorage.getItem("gemelo_first_login") === "1";
+          // Tutorial SOLO si nunca lo ha visto (gemelo_onboarded). No usar la
+          // bandera first_login del hash: el backend la manda en "1" en cada
+          // login y el tutorial se relanzaba en cada entrada.
+          sessionStorage.removeItem("gemelo_first_login");
           const alreadyOnboarded = localStorage.getItem("gemelo_onboarded") === "1";
-          if (isFirstLogin || !alreadyOnboarded) {
-            sessionStorage.removeItem("gemelo_first_login");
+          if (!alreadyOnboarded) {
             setShowTutorial(true);
           }
           // Saludo de voz "Bienvenido de nuevo" DESACTIVADO temporalmente:
