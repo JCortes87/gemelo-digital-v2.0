@@ -75,6 +75,12 @@ export function AuthProvider({ children }) {
 
         if (_hashOu) {
           setInitialOrgUnitId(_hashOu);
+          // Entrada embebida (LTI dentro de un curso): el callback OAuth trae
+          // el orgUnitId en el hash. Se persiste para que RoleHome salte
+          // directo al dashboard de ese curso (gemelo_lti_org se consume una
+          // sola vez) y para que el dashboard lo lea aun tras un F5.
+          sessionStorage.setItem("gemelo_lti_org", String(_hashOu));
+          sessionStorage.setItem("gemelo_pending_org", String(_hashOu));
         }
 
         // Call /auth/me (el sid va solo en el header Bearer, nunca en la URL)
@@ -153,10 +159,13 @@ export function AuthProvider({ children }) {
             setInitialOrgUnitId(Number(savedOu));
           }
 
-          const isFirstLogin = sessionStorage.getItem("gemelo_first_login") === "1";
+          // Tutorial SOLO si nunca lo ha visto (gemelo_onboarded). La bandera
+          // first_login del hash NO se usa como disparador: el backend la
+          // manda en "1" en cada login, y con ella el tutorial (con su voz)
+          // se relanzaba en cada entrada LTI.
+          sessionStorage.removeItem("gemelo_first_login");
           const alreadyOnboarded = localStorage.getItem("gemelo_onboarded") === "1";
-          if (isFirstLogin || !alreadyOnboarded) {
-            sessionStorage.removeItem("gemelo_first_login");
+          if (!alreadyOnboarded) {
             setShowTutorial(true);
           }
         } else if (data.lti_detected) {

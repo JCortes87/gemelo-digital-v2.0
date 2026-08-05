@@ -936,6 +936,22 @@ principal y respaldadas en `gemelo-digital-v2.0`; cada una se mergeó a
   curso", "Entraron…" → **"Ingresaron…"**, "Sin entrar hace +14 días" →
   **"Sin ingresar hace +14 días"** y "Nunca han entrado" → **"Nunca han
   ingresado"**.
+- **Entrada LTI directa al curso (3 ago)**: al entrar embebido desde un
+  curso de Brightspace, el Gemelo ya no muestra el selector/consola —
+  salta directo al **dashboard de ese curso** (o al portal si el
+  usuario es solo estudiante). El callback OAuth siempre redirige a `/`
+  con el orgUnitId en el hash; ahora AuthContext lo persiste
+  (`gemelo_lti_org`, se consume una sola vez) y RoleHome redirige. El
+  botón "Inicio" sigue llevando al selector normalmente.
+- **Tutorial solo la primera vez (3 ago)**: el backend envía
+  `first_login=1` en cada login (hardcodeado en el hash del callback),
+  lo que relanzaba el tutorial de bienvenida (con voz) en **cada
+  entrada**. Ahora el tutorial solo aparece si el usuario nunca lo ha
+  visto (`gemelo_onboarded` en localStorage). Además la narración por
+  voz del tutorial quedó desactivada temporalmente
+  (`TUTORIAL_VOICE_ENABLED = false` en `teacher/onboarding.jsx`);
+  recordar que ElevenLabs ya está apagado globalmente, así que en
+  ningún caso se consumen tokens.
 - **Responsive del tablero docente (3 ago)**: en pantallas compactas
   (≤1366 px) la fila "Resultados de aprendizaje + Asignaciones +
   Accesos" se reorganiza — RA pasa a ocupar una **fila completa** y

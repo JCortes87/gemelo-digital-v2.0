@@ -104,6 +104,21 @@ export default function RoleHome() {
   const navigate = useNavigate();
   const firstName = (authUser?.user_name || "").split(" ")[0] || "Usuario";
 
+  // Entrada embebida (LTI dentro de un curso en Brightspace): en vez de
+  // mostrar el selector/consola, saltar directo a la vista de ese curso.
+  // La bandera la escribe AuthContext al leer el hash del callback OAuth y
+  // se consume UNA sola vez, para que "Inicio" siga llevando al selector.
+  useEffect(() => {
+    const ltiOu = sessionStorage.getItem("gemelo_lti_org");
+    if (ltiOu && Number(ltiOu) > 0) {
+      sessionStorage.removeItem("gemelo_lti_org");
+      sessionStorage.setItem("gemelo_pending_org", String(ltiOu));
+      const studentOnly = isStudent && !isInstructor && !isSuperAdmin;
+      navigate(studentOnly ? "/portal" : "/dashboard", { replace: true });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const [courses, setCourses] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
