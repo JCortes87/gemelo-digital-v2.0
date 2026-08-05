@@ -139,6 +139,11 @@ export default function TeacherDashboard() {
 
   const isNarrow = useMediaQuery("(max-width: 900px)");
   const isMobile = useMediaQuery("(max-width: 640px)");
+  // Pantallas compactas (laptops pequeños): la fila RA+Asignaciones+Accesos
+  // se reorganiza y el sidebar puede contraerse para ganar espacio.
+  const isCompact = useMediaQuery("(max-width: 1366px)");
+  // ≤1024 el CSS ya oculta el sidebar y se abre como overlay (mobileOpen)
+  const isOverlaySidebar = useMediaQuery("(max-width: 1024px)");
 
   // ── Section refs for voice scroll navigation ────────────
   const overviewRef        = React.useRef(null);
@@ -455,7 +460,11 @@ export default function TeacherDashboard() {
       return p;
     }, { replace: false });
   }, [setSearchParams]);
-  const [sidebarOpen, setSidebarOpen] = useState(false); // mobile sidebar
+  const [sidebarOpen, setSidebarOpen] = useState(false); // mobile sidebar (overlay ≤1024)
+  // Sidebar contraible en pantallas compactas (1025–1366 px): oculta el menú
+  // lateral para dar espacio al tablero; el botón ☰ del topbar lo restaura.
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const sidebarIsCollapsed = sidebarCollapsed && isCompact && !isOverlaySidebar;
 
   // ── Course panel ───────────────────────────────────────
   const [showCoursePanel, setShowCoursePanel] = useState(false);
@@ -2297,14 +2306,19 @@ const contentKpis = useMemo(() => {
         setActiveTab={setActiveTab}
         currentCourseName={courseInfo?.Name || (orgUnitId ? `Curso ${orgUnitId}` : null)}
         mobileOpen={sidebarOpen}
+        collapsed={sidebarIsCollapsed}
         onClose={() => setSidebarOpen(false)}
       />
 
       {/* ── Topbar ── */}
       <AppTopbar
         isMobile={isMobile}
-        sidebarOpen={sidebarOpen}
-        onOpenSidebar={() => setSidebarOpen((v) => !v)}
+        showSidebarToggle={isCompact}
+        sidebarCollapsed={sidebarIsCollapsed}
+        sidebarVisible={isOverlaySidebar ? sidebarOpen : !sidebarIsCollapsed}
+        onOpenSidebar={() =>
+          isOverlaySidebar ? setSidebarOpen((v) => !v) : setSidebarCollapsed((v) => !v)
+        }
         darkMode={darkMode}
         setDarkMode={setDarkMode}
         orgUnitInput={orgUnitInput}
@@ -2327,7 +2341,7 @@ const contentKpis = useMemo(() => {
       />
 
       {/* ── Main content ── */}
-      <main id="main-content" tabIndex={-1} className="app-main">
+      <main id="main-content" tabIndex={-1} className={`app-main${sidebarIsCollapsed ? " sidebar-collapsed" : ""}`}>
         <div className="app-content">
 
         {/* ── Routes tab ── */}
@@ -2826,18 +2840,21 @@ const contentKpis = useMemo(() => {
 
         </div>
 
-        {/* ── Fila: Resultados de aprendizaje + Asignaciones + Accesos ── */}
+        {/* ── Fila: Resultados de aprendizaje + Asignaciones + Accesos ──
+            En pantallas compactas (≤1366) RA pasa a ocupar una fila completa
+            y Asignaciones + Accesos comparten la de abajo, para que estas dos
+            no se aplasten; en móvil todo va en una columna. */}
         <div
           className="fade-up fade-up-2"
           style={{
             display: "grid",
-            gridTemplateColumns: isMobile ? "1fr" : isNarrow ? "1fr 1fr" : "1.15fr 1.15fr 0.75fr",
+            gridTemplateColumns: isMobile ? "1fr" : isCompact ? "1fr 1fr" : "1.15fr 1.15fr 0.75fr",
             gap: 12,
             marginBottom: 12,
             alignItems: "stretch",
           }}
         >
-        <div ref={learningOutcomesRef} style={{ display: "flex" }}>
+        <div ref={learningOutcomesRef} style={{ display: "flex", gridColumn: !isMobile && isCompact ? "1 / -1" : "auto" }}>
           <Card
             style={{ flex: 1 }}
             title={<span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>🎯 Resultados de aprendizaje <InfoTooltip text="Resultados de Aprendizaje (RA) del curso ordenados de menor a mayor desempeño. El RA en primera posición es donde tus estudiantes están más débiles — prioriza refuerzo ahí." /></span>}

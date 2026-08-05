@@ -121,6 +121,7 @@ const GLOBAL_STYLES = `
     transition: transform 0.28s cubic-bezier(.4,0,.2,1);
   }
   .app-sidebar.collapsed { transform: translateX(calc(-1 * var(--sidebar-w))); }
+  .app-topbar.sidebar-collapsed { left: 0; }
   .sidebar-logo { padding: 22px 20px 18px; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 10px; }
   .sidebar-logo-icon { width: 36px; height: 36px; background: var(--brand); border-radius: 10px; display: flex; align-items: center; justify-content: center; color: #fff; font-size: 16px; font-weight: 900; letter-spacing: -0.05em; flex-shrink: 0; }
   .sidebar-logo-text { line-height: 1.2; }

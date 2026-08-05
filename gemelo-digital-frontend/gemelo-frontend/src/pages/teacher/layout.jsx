@@ -2,7 +2,7 @@
 import { useState } from "react";
 import { useI18n } from "../../context/I18nContext";
 import { apiUrl } from "../../utils/api";
-export function AppSidebar({ activeTab, setActiveTab, currentCourseName, mobileOpen, onClose }) {
+export function AppSidebar({ activeTab, setActiveTab, currentCourseName, mobileOpen, collapsed, onClose }) {
   const { t } = useI18n();
   const NAV = [
     { id: "dashboard",  icon: "📊", label: t("nav.dashboard", "Dashboard") },
@@ -27,7 +27,7 @@ export function AppSidebar({ activeTab, setActiveTab, currentCourseName, mobileO
       <aside
         id="app-sidebar"
         aria-label="Navegación principal"
-        className={`app-sidebar${mobileOpen ? " mobile-open" : ""}`}
+        className={`app-sidebar${mobileOpen ? " mobile-open" : ""}${collapsed ? " collapsed" : ""}`}
       >
         {/* Logo */}
         <div className="sidebar-logo">
@@ -89,7 +89,8 @@ export function AppSidebar({ activeTab, setActiveTab, currentCourseName, mobileO
 // AppTopbar — Fixed top bar
 // ──────────────────────────────────────────────
 export function AppTopbar({
-  isMobile, sidebarOpen, onOpenSidebar, darkMode, setDarkMode,
+  isMobile, showSidebarToggle, sidebarCollapsed, sidebarVisible,
+  onOpenSidebar, darkMode, setDarkMode,
   locale, toggleLocale,
   orgUnitInput, setOrgUnitInput, setOrgUnitId,
   handleOpenCoursePanel,
@@ -101,17 +102,17 @@ export function AppTopbar({
   const [showMainMenu, setShowMainMenu] = useState(false);
   const { t } = useI18n();
   return (
-    <header className="app-topbar">
+    <header className={`app-topbar${sidebarCollapsed ? " sidebar-collapsed" : ""}`}>
       {/* Left */}
       <div style={{ display: "flex", alignItems: "center", gap: 10, flex: 1, minWidth: 0 }}>
-        {isMobile && (
+        {(showSidebarToggle || isMobile) && (
           <button
             type="button"
             className="topbar-icon-btn"
             onClick={onOpenSidebar}
-            title={sidebarOpen ? "Cerrar menú" : "Abrir menú"}
-            aria-label={sidebarOpen ? "Cerrar menú de navegación" : "Abrir menú de navegación"}
-            aria-expanded={sidebarOpen ? "true" : "false"}
+            title={sidebarVisible ? "Ocultar menú" : "Mostrar menú"}
+            aria-label={sidebarVisible ? "Ocultar menú de navegación" : "Mostrar menú de navegación"}
+            aria-expanded={sidebarVisible ? "true" : "false"}
             aria-controls="app-sidebar"
             style={{ fontSize: 18 }}
           >
