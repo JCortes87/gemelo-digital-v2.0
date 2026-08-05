@@ -936,6 +936,15 @@ principal y respaldadas en `gemelo-digital-v2.0`; cada una se mergeó a
   curso", "Entraron…" → **"Ingresaron…"**, "Sin entrar hace +14 días" →
   **"Sin ingresar hace +14 días"** y "Nunca han entrado" → **"Nunca han
   ingresado"**.
+- **Responsive del tablero docente (3 ago)**: en pantallas compactas
+  (≤1366 px) la fila "Resultados de aprendizaje + Asignaciones +
+  Accesos" se reorganiza — RA pasa a ocupar una **fila completa** y
+  Asignaciones + Accesos comparten la de abajo, para que no se
+  aplasten (en móvil ≤640 todo va a una columna). Además el **sidebar
+  se puede contraer** en pantallas compactas con el botón ☰ del topbar
+  (y volver a mostrar con el mismo botón); en ≤1024 se mantiene el
+  overlay que ya existía, y de paso se corrigió que entre 641–1024 px
+  el botón ☰ no aparecía y el menú quedaba inaccesible.
 - **Rama única de trabajo `desarrollo` (3 ago)**: se eliminaron las ~33
   ramas por-cambio ya mergeadas (en `produccion` y `origin`) y desde
   ahora todo cambio se commitea en la rama reutilizable `desarrollo`,
