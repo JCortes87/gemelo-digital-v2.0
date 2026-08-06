@@ -50,7 +50,7 @@ import { injectStyles } from "./teacher/dashboardStyles";
 import useMediaQuery from "../hooks/useMediaQuery";
 import {
   StatusBadge, CircularRing, ThresholdsModal, Card, Stat, Divider,
-  ProgressBar, InfoTooltip, SortTh, CoverageBars, GaugeMeter,
+  ProgressBar, InfoTooltip, SortTh, CoverageBars,
 } from "./teacher/primitives";
 
 // Tipo de un elemento de contenido. Prioriza la URL del archivo (lo más
@@ -2334,10 +2334,12 @@ const contentKpis = useMemo(() => {
         toggleLocale={toggleLocale}
         isSuperAdmin={isSuperAdmin}
         adminView={impersonateStudent ? "student" : "teacher"}
-        onAdminViewChange={isSuperAdmin ? (v) => {
+        onAdminViewChange={(v) => {
+          // Disponible para profesores y superadmin: "Vista estudiante" abre
+          // el selector de estudiantes del curso y muestra su portal.
           if (v === "student") setStudentPickerOpen(true);
           else { setImpersonateStudent(null); setStudentPickerOpen(false); }
-        } : undefined}
+        }}
       />
 
       {/* ── Main content ── */}
@@ -2650,14 +2652,19 @@ const contentKpis = useMemo(() => {
           {/* ── Riesgo académico ── */}
           <div style={{ order: 1, display: "flex" }}>
             <Card style={{ flex: 1 }} title={<span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>⚠️ Riesgo académico <InfoTooltip text="Distribución de los estudiantes según su calificación actual: Alto (<5.0), Medio (5.0–7.0), Bajo (≥7.0). Calculado solo con calificaciones reales del gradebook, excluye columnas 'Corte'." /></span>} accent="pending">
-              <div style={{ display: "flex", justifyContent: "center", padding: "4px 0 6px" }}>
-                <GaugeMeter
+              {/* Dona (CircularRing), mismo tipo de gráfico que "Calificación promedio" */}
+              <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 8, padding: "4px 0 6px" }}>
+                <CircularRing
                   pct={atRiskPct ?? 0}
-                  size={150}
-                  centerLabel={atRiskPct == null ? "—" : fmtPct(atRiskPct)}
-                  centerColor={atRiskPct == null ? "var(--muted)" : atRiskPct > 40 ? COLORS.critical : atRiskPct > 20 ? COLORS.watch : COLORS.ok}
-                  sublabel={totalStudents ? `${atRiskCount} de ${totalStudents} estudiantes en riesgo` : "Sin datos aún"}
+                  size={120}
+                  stroke={12}
+                  color={atRiskPct == null ? "var(--border)" : atRiskPct > 40 ? COLORS.critical : atRiskPct > 20 ? COLORS.watch : COLORS.ok}
+                  label={atRiskPct == null ? "—" : fmtPct(atRiskPct)}
+                  fontSize={20}
                 />
+                <div style={{ fontSize: 10, color: "var(--muted)", textAlign: "center" }}>
+                  {totalStudents ? `${atRiskCount} de ${totalStudents} estudiantes en riesgo` : "Sin datos aún"}
+                </div>
               </div>
 
               <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
@@ -4748,8 +4755,8 @@ const contentKpis = useMemo(() => {
         )}
       </Drawer>
 
-      {/* SuperAdmin — selector de estudiante para "Vista estudiante" */}
-      {isSuperAdmin && studentPickerOpen && (
+      {/* Selector de estudiante para "Vista estudiante" (profesores y superadmin) */}
+      {studentPickerOpen && (
         <div
           onClick={() => { setStudentPickerOpen(false); setPickerSearch(""); }}
           style={{
