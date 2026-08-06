@@ -32,8 +32,13 @@ agregada y predictiva sobre el desempeño de cada curso.
   recurso cuenta una vez por estudiante, no mide veces de apertura) y
   "X de Y estudiantes han abierto recursos educativos" (estudiantes con
   al menos un recurso abierto).
-- **Riesgo académico** — medidor semicircular tipo velocímetro
-  (`GaugeMeter`) con el % de estudiantes en riesgo y leyenda alto/medio/bajo.
+- **Riesgo académico** — dona (`CircularRing`, mismo gráfico que
+  "Calificación promedio") con el % de estudiantes en riesgo al centro,
+  "X de Y estudiantes en riesgo" debajo y leyenda alto/medio/bajo.
+- **Toggle "Vista profesor / Vista estudiante"** en el topbar,
+  disponible para profesores y superadmin: "Vista estudiante" abre el
+  selector de estudiantes del curso y muestra el portal tal como lo ve
+  ese estudiante.
 - **Distribución de calificaciones** — histograma por rangos de 1 punto.
 - **Contenidos y cobertura** — ritmo de publicación del profesor
   (cumplimiento vs mínimo), tarjeta **"Evaluación y Feedback"** (antes
@@ -79,7 +84,9 @@ agregada y predictiva sobre el desempeño de cada curso.
 - **Búsqueda por ID** de cualquier curso o usuario (RoleHome).
 - **Toggle Vista profesor / Vista estudiante** en el topbar: "Vista
   estudiante" abre un selector emergente (buscar por nombre o ID) y
-  muestra el portal del estudiante elegido tal como él lo ve.
+  muestra el portal del estudiante elegido tal como él lo ve. Desde el
+  3 ago el toggle también está disponible para profesores (antes era
+  exclusivo de superadmin).
 - **Modo impersonar** — también accesible desde el drawer de un
   estudiante ("Ver portal de este estudiante").
 
@@ -936,6 +943,13 @@ principal y respaldadas en `gemelo-digital-v2.0`; cada una se mergeó a
   curso", "Entraron…" → **"Ingresaron…"**, "Sin entrar hace +14 días" →
   **"Sin ingresar hace +14 días"** y "Nunca han entrado" → **"Nunca han
   ingresado"**.
+- **Toggle de vistas para profesores y dona de riesgo (3 ago)**: el
+  toggle "Vista profesor / Vista estudiante" del topbar (con su
+  selector de estudiantes del curso) dejó de ser exclusivo de
+  superadmin — ahora también lo ven los profesores; y la tarjeta
+  "Riesgo académico" cambió el velocímetro (`GaugeMeter`) por una
+  **dona** (`CircularRing`), el mismo tipo de gráfico de "Calificación
+  promedio", con el "X de Y estudiantes en riesgo" debajo del anillo.
 - **Entrada LTI directa al curso (3 ago)**: al entrar embebido desde un
   curso de Brightspace, el Gemelo ya no muestra el selector/consola —
   salta directo al **dashboard de ese curso** (o al portal si el
