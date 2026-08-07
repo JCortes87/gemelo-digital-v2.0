@@ -554,11 +554,27 @@ y CloudFront → Run workflow**.
 3. `npm ci` en `gemelo-digital-frontend/gemelo-frontend/`.
 4. `npm run build`.
 5. Configura credenciales AWS vía OIDC.
-6. `aws s3 sync ./dist/ s3://gemelo-frontend-prod --delete`.
+6. Sube a S3 en dos pasos (desde el 7 ago 2026): `dist/assets/` **sin
+   `--delete`** y con `Cache-Control: public,max-age=31536000,immutable`
+   (los chunks con hash de deploys anteriores se conservan para no romper
+   navegadores que aún tienen el index.html viejo — típico en el iframe
+   LTI de Brightspace), y el resto (`index.html`, favicon…) con
+   `Cache-Control: no-cache` para que el navegador siempre revalide.
 7. `aws cloudfront create-invalidation --distribution-id E32WDBCT7SFCRD --paths "/*"`.
 8. Tiempo total: ~2-3 minutos.
 
 ### Qué hacer si el workflow falla o no arranca
+
+- **Usuarios ven "error loading dynamically imported module: …assets/….js"
+  justo después de un deploy** (caso real: 7 ago 2026, dashboard docente
+  embebido en Brightspace): el navegador tenía cacheado el `index.html`
+  anterior, que pide chunks JS con el hash viejo; el deploy los renombró
+  y (antes del fix) el `--delete` los borraba de S3. Desde el 7 ago hay
+  triple protección: los assets viejos **ya no se borran** en el deploy,
+  `index.html` se sirve con `no-cache`, y el frontend **se recarga solo**
+  una vez al detectar el fallo (`vite:preloadError` en `main.jsx` +
+  botón Reintentar del ErrorBoundary hace recarga completa). Si aun así
+  aparece, un Ctrl+Shift+R lo resuelve.
 
 - **Termina en rojo (X)**: leer el log del paso que falló. Un deploy
   fallido NO afecta producción — el contenedor y los archivos anteriores
