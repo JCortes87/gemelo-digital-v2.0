@@ -40,7 +40,7 @@ export function LoginScreen({ orgUnitId }) {
               G.D
             </div>
             <div style={{ fontSize: 11, fontWeight: 600, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.08em" }}>
-              Vista Docente · 2026.7.10
+              Vista Docente · 2026.8.7
             </div>
           </div>
         </div>

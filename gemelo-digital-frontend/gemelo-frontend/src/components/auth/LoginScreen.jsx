@@ -202,7 +202,7 @@ export default function LoginScreen({ orgUnitId }) {
           <div style={{ textAlign: "left" }}>
             <div style={{ fontSize: 16, fontWeight: 900, color: "var(--text)", letterSpacing: "-0.02em" }}>G.D</div>
             <div style={{ fontSize: 11, fontWeight: 600, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.08em" }}>
-              2026.7.10
+              2026.8.7
             </div>
           </div>
         </div>

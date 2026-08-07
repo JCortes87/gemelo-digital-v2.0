@@ -266,7 +266,7 @@ export default function VoiceAssistant({ studentRows, overview, raDashboard, cou
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <div style={{ width: 10, height: 10, borderRadius: "50%", background: "var(--brand)", boxShadow: "0 0 8px var(--brand)", animation: aiStatus !== "idle" ? "pulse 1.4s ease infinite" : "none" }} />
           <div style={{ fontSize: 14, fontWeight: 800, color: "var(--text)" }}>Asistente IA Académica</div>
-          <span className="tag" style={{ background: "var(--brand-light)", color: "var(--brand)", fontSize: 10 }}>2026.7.10 · 10/07/2026</span>
+          <span className="tag" style={{ background: "var(--brand-light)", color: "var(--brand)", fontSize: 10 }}>2026.8.7 · 07/08/2026</span>
         </div>
         <div style={{ fontSize: 12, color: "var(--muted)" }}>
           {studentRows.length} estudiantes · {courseInfo?.Name || "Curso activo"}

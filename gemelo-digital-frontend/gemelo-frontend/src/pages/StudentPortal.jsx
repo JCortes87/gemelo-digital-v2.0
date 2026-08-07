@@ -1193,7 +1193,7 @@ export default function StudentPortal({ orgUnitIdOverride, userIdOverride, allow
 
         {/* Footer */}
         <div style={{ textAlign: "center", padding: "20px 0 40px", fontSize: 11, color: "var(--muted)" }}>
-          CESA · G.D 2026.7.10 · Portal Estudiante
+          CESA · G.D 2026.8.7 · Portal Estudiante
         </div>
       </main>
 
