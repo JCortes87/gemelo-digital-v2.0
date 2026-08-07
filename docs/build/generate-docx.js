@@ -856,7 +856,7 @@ children.push(table2col([
   ["3. Instalar dependencias", "npm ci instala exactamente lo del package-lock.json (reproducible)"],
   ["4. Construir la SPA", "npm run build ejecuta Vite y genera la carpeta dist/ con HTML/CSS/JS minificados"],
   ["5. Configurar credenciales AWS vía OIDC", "Igual que backend"],
-  ["6. Sincronizar dist a S3", "aws s3 sync con --delete sube los archivos nuevos y borra los que ya no existen"],
+  ["6. Sincronizar dist a S3", "Dos pasos (desde el 7 ago 2026): dist/assets/ SIN --delete y con cache inmutable (los chunks de deploys anteriores se conservan para no romper navegadores con el index.html viejo), y el resto (index.html...) con no-cache para que siempre se revalide"],
   ["7. Invalidar cache de CloudFront", "create-invalidation con paths /* fuerza a CloudFront a re-pedir los archivos a S3 en el próximo request"],
 ]));
 children.push(P("Tiempo total: ~2-3 minutos."));
@@ -896,6 +896,7 @@ children.push(bullet("Si falla en \"docker build\": probablemente hay un error e
 children.push(bullet("Si falla en \"npm run build\": error de sintaxis o dependencia rota. Corre npm run build localmente para reproducir."));
 children.push(bullet("Si falla en \"aws ecs wait\": el container nuevo no arrancó bien. Mirá CloudWatch Logs del servicio para ver qué error tuvo."));
 children.push(bullet("Si el run se queda en \"Queued\" y nunca arranca (caso real: run #37 del frontend, 6 ago 2026): GitHub nunca le asignó el job (al abrirlo no aparece ningún paso). Causa típica: incidente de GitHub Actions en ese momento — verificar en https://www.githubstatus.com. GitHub NO re-agenda solo esos runs y un job en cola sin runner se descarta a las 24 h. Solución: abrir el run → \"Cancel workflow\", y relanzar con \"Re-run all jobs\" o con Actions → el workflow → \"Run workflow\" (rama main)."));
+children.push(bullet("Si tras un deploy los usuarios ven \"error loading dynamically imported module: .../assets/....js\" (caso real: 7 ago 2026 en el iframe LTI de Brightspace): el navegador tenía cacheado el index.html anterior, que pide chunks JS con hash viejo. Desde el 7 ago hay triple protección: los assets de deploys anteriores ya no se borran, index.html va con no-cache, y el frontend se recarga solo una vez al detectar el fallo (vite:preloadError). Si aun así aparece: Ctrl+Shift+R."));
 children.push(P("En todos los casos: el deploy fallido NO afecta producción. Los containers viejos siguen corriendo. Tomate tu tiempo para diagnosticar."));
 
 children.push(new Paragraph({ children: [new PageBreak()] }));
@@ -1008,8 +1009,9 @@ children.push(P("Vite construye los archivos optimizados en la carpeta dist/. Ta
 children.push(P("Esperado: \"✓ built in X.XXs\" al final, sin errores rojos."));
 
 children.push(H4("Paso 4: Subir los archivos a S3"));
-children.push(P("Sincroniza la carpeta dist/ con el bucket S3. La opción --delete borra del bucket archivos que ya no existen en dist/:"));
-children.push(code("aws s3 sync ./dist/ s3://gemelo-frontend-prod --delete --region us-east-1"));
+children.push(P("Sincroniza la carpeta dist/ con el bucket S3 en dos pasos, igual que el workflow (NO usar --delete: borraría los chunks de deploys anteriores y rompería a los navegadores que aún tienen el index.html viejo):"));
+children.push(code("aws s3 sync ./dist/assets/ s3://gemelo-frontend-prod/assets/ --cache-control \"public,max-age=31536000,immutable\" --region us-east-1"));
+children.push(code("aws s3 sync ./dist/ s3://gemelo-frontend-prod --exclude \"assets/*\" --cache-control \"no-cache\" --region us-east-1"));
 children.push(P("Verás líneas como \"upload: dist/index.html to s3://...\". Tarda 30-60 segundos."));
 
 children.push(H4("Paso 5: Invalidar el caché de CloudFront"));

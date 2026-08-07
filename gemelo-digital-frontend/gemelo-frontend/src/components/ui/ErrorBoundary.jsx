@@ -50,6 +50,13 @@ export default class ErrorBoundary extends React.Component {
   }
 
   handleRetry = () => {
+    // Un chunk con hash viejo no vuelve a existir por reintentar el render:
+    // hay que recargar la página completa para traer el index.html nuevo.
+    const msg = String(this.state.error?.message || "");
+    if (/dynamically imported module|Importing a module script failed|ChunkLoadError/i.test(msg)) {
+      window.location.reload();
+      return;
+    }
     this.setState({ hasError: false, error: null, copied: false });
   };
 

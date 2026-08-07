@@ -11,8 +11,9 @@
 #   2. Instala Node.js y las dependencias de npm.
 #   3. Corre `npm run build` (que usa .env.production con la URL del backend).
 #   4. Asume el rol IAM en AWS via OIDC.
-#   5. Sincroniza la carpeta dist/ al bucket S3 (con --delete para limpiar
-#      archivos viejos que ya no existen en el build).
+#   5. Sincroniza la carpeta dist/ al bucket S3: los assets con hash se
+#      conservan entre deploys (sin --delete) para no romper navegadores que
+#      aun tienen el index.html anterior; index.html va con no-cache.
 #   6. Invalida toda la cache de CloudFront para que los usuarios vean el
 #      cambio de inmediato.
 # ----------------------------------------------------------------------------
@@ -78,8 +79,19 @@ jobs:
       - name: Sincronizar dist a S3
         working-directory: gemelo-digital-frontend/gemelo-frontend
         run: |
+          # 1) Assets con hash: inmutables y con cache larga. SIN --delete, para
+          #    que un navegador que aun tenga el index.html anterior (tipico en
+          #    el iframe LTI de Brightspace) siga encontrando sus chunks despues
+          #    del deploy en vez de romperse con "error loading dynamically
+          #    imported module".
+          aws s3 sync ./dist/assets/ s3://${{ env.S3_BUCKET }}/assets/ \
+            --cache-control "public,max-age=31536000,immutable" \
+            --region ${{ env.AWS_REGION }}
+          # 2) Resto (index.html, favicon...): no-cache para que el navegador
+          #    revalide siempre y tome los nombres de chunk nuevos de inmediato.
           aws s3 sync ./dist/ s3://${{ env.S3_BUCKET }} \
-            --delete \
+            --exclude "assets/*" \
+            --cache-control "no-cache" \
             --region ${{ env.AWS_REGION }}
 
       - name: Invalidar cache de CloudFront
