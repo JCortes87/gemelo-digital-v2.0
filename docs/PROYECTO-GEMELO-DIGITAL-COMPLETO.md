@@ -66,13 +66,23 @@ agregada y predictiva sobre el desempeño de cada curso.
   del dashboard.
 - **Descarga de evidencias**, export CSV y feedback del docente.
 
-#### Vista de estudiante (rediseñada en julio 2026, mismo estilo)
-- **Fila de KPIs**: mi nota actual (donut /10), asignaciones calificadas
-  (% + pendientes y vencidas), cobertura y mi estado.
+#### Vista de estudiante (rediseñada en agosto 2026, mismo estilo)
+- **Tarjeta "Mi nota actual"** — anillo circular con la nota general del
+  curso en escala 0–10, coloreado según umbrales (el desglose por corte
+  se retiró: la estructura de cortes varía entre cursos).
+- **Tarjeta "Mis asignaciones"** — % de asignaciones **entregadas**
+  (sobre el total) y % **calificadas** (sobre las entregadas), cada una
+  con barra de progreso y desplegable "Ver cuáles": entregadas con su
+  fecha, calificadas con su nota (cruzada con el gradebook vía
+  `gradeItemId`), y pendientes por entregar (texto rojo si vencen en
+  menos de 7 días). Fuente: endpoint
+  `GET /brightspace/course/{ou}/dropbox/student/{userId}/status`.
 - **Mis Resultados de Aprendizaje** — anillo por RA con estado y la
   **explicación de cada resultado** (descripción del outcome).
-- **Cortes** y evidencias vencidas/pendientes/calificadas.
-- **Calendario personal** con fechas de entrega.
+- **Calendario "Mis próximas entregas"** debajo de RA — borde rojo para
+  entregas que vencen en 7 días o menos, "!" pulsante en menos de 2.
+- **"Notas de mis asignaciones"** — gráfica de evolución + tabla de
+  evidencias calificadas.
 - **Proyección explicada** — predicción de nota final con explicación.
 - **Prescripción del docente** y ruta de mejora.
 
@@ -199,6 +209,10 @@ agregada y predictiva sobre el desempeño de cada curso.
 ### Repositorio principal (production)
 - **URL**: https://github.com/JCortes87/proyecto-gemelos-digitales-JC
 - **Dueño actual**: JCortes87
+- **Visibilidad**: **PÚBLICO** (verificado el 7 ago 2026 vía la API de
+  GitHub; versiones anteriores de este documento decían "privado" —
+  confirmar con el dueño si debe volver a privado, ya que el código y el
+  historial son visibles para cualquiera).
 - **Branch productiva**: `main` — **cada merge a esta rama dispara el
   deploy automático a producción** (GitHub Actions OIDC). Este es el
   único repo cuyo push tiene efecto en producción.
@@ -543,6 +557,23 @@ y CloudFront → Run workflow**.
 6. `aws s3 sync ./dist/ s3://gemelo-frontend-prod --delete`.
 7. `aws cloudfront create-invalidation --distribution-id E32WDBCT7SFCRD --paths "/*"`.
 8. Tiempo total: ~2-3 minutos.
+
+### Qué hacer si el workflow falla o no arranca
+
+- **Termina en rojo (X)**: leer el log del paso que falló. Un deploy
+  fallido NO afecta producción — el contenedor y los archivos anteriores
+  siguen sirviendo.
+- **Se queda en "Queued" y nunca arranca** (caso real: run #37 del
+  frontend, 6 ago 2026): el run se crea pero GitHub nunca le asigna el
+  job — al abrirlo no aparece ningún paso, y por la API el run tiene 0
+  jobs. Causa típica: **incidente de GitHub Actions** en ese momento
+  (ese día hubo uno crítico desde las 15:22 UTC; verificar siempre en
+  https://www.githubstatus.com). GitHub NO re-agenda solo los runs que
+  quedaron atascados, y un job en cola que no consigue runner en 24 h se
+  descarta. **Solución**: cancelar el run atascado (abrir el run → botón
+  "Cancel workflow") y relanzar el deploy con "Re-run all jobs" sobre
+  ese run, o con Actions → el workflow → "Run workflow" (rama `main`),
+  que despliega el estado actual de `main`.
 
 ### Seguridad de CI/CD
 

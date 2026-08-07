@@ -9,7 +9,7 @@ export default function ProtectedRoute({ children, allowedRoles }) {
     return (
       <div style={{ minHeight: "100vh", background: "var(--bg)", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "'Manrope', system-ui, sans-serif" }}>
         <div style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 24, padding: "40px 48px", textAlign: "center", boxShadow: "0 8px 32px rgba(15,24,39,0.12)", minWidth: 320, maxWidth: 480 }}>
-          <div style={{ fontSize: 20, fontWeight: 800, color: "var(--text)" }}>CESA · G.D 2026.7.10</div>
+          <div style={{ fontSize: 20, fontWeight: 800, color: "var(--text)" }}>CESA · G.D 2026.8.7</div>
           <div style={{ fontSize: 13, color: "var(--muted)", marginTop: 4 }}>Verificando sesión...</div>
         </div>
       </div>
