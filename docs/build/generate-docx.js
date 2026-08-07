@@ -318,12 +318,13 @@ children.push(bullet("CoursesComparison — comparación entre cursos del mismo 
 children.push(bullet("CourseTrends — tendencias del curso a lo largo del semestre (persistidas en DB, históricas)."));
 children.push(bullet("Descarga de evidencias y feedback del docente."));
 
-children.push(H3("Vista de estudiante"));
-children.push(bullet("Portal personal con todos sus cursos."));
-children.push(bullet("Mis cursos y su rendimiento individual."));
-children.push(bullet("Cortes y evidencias vencidas."));
-children.push(bullet("Calendario personal con fechas de entrega."));
-children.push(bullet("Proyección explicada — predicción de nota final con explicación."));
+children.push(H3("Vista de estudiante (rediseñada en agosto 2026)"));
+children.push(bullet("Tarjeta 'Mi nota actual' — anillo circular con la nota general del curso en escala 0-10, coloreado según umbrales."));
+children.push(bullet("Tarjeta 'Mis asignaciones' — % de asignaciones entregadas (sobre el total) y % calificadas (sobre las entregadas), cada una con barra y desplegable 'Ver cuáles': entregadas con fecha, calificadas con nota, y pendientes por entregar (rojo si vencen en menos de 7 días)."));
+children.push(bullet("Mis Resultados de Aprendizaje — anillo por RA con estado y la explicación de cada resultado."));
+children.push(bullet("Calendario 'Mis próximas entregas' debajo de RA — borde rojo si vence en 7 días o menos."));
+children.push(bullet("'Notas de mis asignaciones' — gráfica de evolución + tabla de evidencias calificadas."));
+children.push(bullet("Proyección explicada — predicción de nota final con explicación; prescripción del docente y ruta de mejora."));
 
 children.push(H3("Vista de coordinador"));
 children.push(bullet("Vista superior de todos los cursos bajo su responsabilidad."));
@@ -458,7 +459,7 @@ children.push(table2col([
   ["URL completa", "https://github.com/JCortes87/proyecto-gemelos-digitales-JC"],
   ["URL corta para clonar", "git@github.com:JCortes87/proyecto-gemelos-digitales-JC.git"],
   ["Dueño actual", "JCortes87 (cuenta personal de GitHub)"],
-  ["Visibilidad", "Privado (solo invitados ven el código)"],
+  ["Visibilidad", "PÚBLICO (verificado 7 ago 2026 vía API de GitHub; antes se documentó como privado — confirmar con el dueño si debe volver a privado)"],
   ["Remote local", "produccion"],
   ["Branch productiva", "main — cualquier merge a esta branch DISPARA DEPLOY"],
   ["Branch de trabajo histórica", "sync/upstream-abril-2026 — usada históricamente para integrar cambios"],
@@ -894,6 +895,7 @@ children.push(bullet("Si dice \"Could not assume role\": el OIDC trust policy po
 children.push(bullet("Si falla en \"docker build\": probablemente hay un error en el Dockerfile o falta una dependencia. Reproduce localmente."));
 children.push(bullet("Si falla en \"npm run build\": error de sintaxis o dependencia rota. Corre npm run build localmente para reproducir."));
 children.push(bullet("Si falla en \"aws ecs wait\": el container nuevo no arrancó bien. Mirá CloudWatch Logs del servicio para ver qué error tuvo."));
+children.push(bullet("Si el run se queda en \"Queued\" y nunca arranca (caso real: run #37 del frontend, 6 ago 2026): GitHub nunca le asignó el job (al abrirlo no aparece ningún paso). Causa típica: incidente de GitHub Actions en ese momento — verificar en https://www.githubstatus.com. GitHub NO re-agenda solo esos runs y un job en cola sin runner se descarta a las 24 h. Solución: abrir el run → \"Cancel workflow\", y relanzar con \"Re-run all jobs\" o con Actions → el workflow → \"Run workflow\" (rama main)."));
 children.push(P("En todos los casos: el deploy fallido NO afecta producción. Los containers viejos siguen corriendo. Tomate tu tiempo para diagnosticar."));
 
 children.push(new Paragraph({ children: [new PageBreak()] }));
