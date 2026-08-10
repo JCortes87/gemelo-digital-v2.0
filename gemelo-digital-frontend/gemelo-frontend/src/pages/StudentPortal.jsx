@@ -492,19 +492,24 @@ export default function StudentPortal({ orgUnitIdOverride, userIdOverride, allow
   const gradedRows = useMemo(() => submittedRows.filter((r) => r.isGraded), [submittedRows]);
   // Pendientes por entregar, con urgencia según la fecha de entrega:
   // vencida u ¡a menos de 7 días! → se resaltan en rojo en el desplegable.
+  // Una fecha de cierre ANTERIOR al inicio del curso es heredada de una
+  // importación de un curso anterior — no cuenta como vencida real.
   const pendingRows = useMemo(() => {
     const now = new Date();
     const weekAhead = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+    const courseStart = courseInfo?.StartDate ? new Date(courseInfo.StartDate) : null;
+    const validStart = courseStart && !Number.isNaN(courseStart.getTime()) ? courseStart : null;
     return assignRows
       .filter((r) => r.hasSubmission === false)
       .map((r) => {
         const d = r.dueDate ? new Date(r.dueDate) : null;
         const validDue = d && !Number.isNaN(d.getTime()) ? d : null;
-        const isOverdue = validDue ? validDue < now : false;
-        const isDueSoon = validDue ? !isOverdue && validDue <= weekAhead : false;
-        return { ...r, isOverdue, isDueSoon };
+        const isStaleDate = !!(validDue && validStart && validDue < validStart);
+        const isOverdue = validDue ? validDue < now && !isStaleDate : false;
+        const isDueSoon = validDue ? !isOverdue && !isStaleDate && validDue <= weekAhead : false;
+        return { ...r, isOverdue, isDueSoon, isStaleDate };
       });
-  }, [assignRows]);
+  }, [assignRows, courseInfo?.StartDate]);
   const overdueNotSubmitted = useMemo(
     () => pendingRows.filter((r) => r.isOverdue),
     [pendingRows]

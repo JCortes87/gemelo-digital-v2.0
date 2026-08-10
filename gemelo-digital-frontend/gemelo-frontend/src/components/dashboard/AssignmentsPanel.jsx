@@ -12,7 +12,7 @@ import { toDate, fmtPct } from "../../utils/helpers";
  * Brightspace entrega por folder: DueDate, TotalUsers,
  * TotalUsersWithSubmissions y TotalUsersWithFeedback.
  */
-function AssignmentsPanel({ orgUnitId }) {
+function AssignmentsPanel({ orgUnitId, courseStart }) {
   const [folders, setFolders] = useState(null); // null = cargando, [] = sin datos
   const [err, setErr] = useState("");
   const [showList, setShowList] = useState(false); // detalle colapsado por defecto
@@ -50,6 +50,12 @@ function AssignmentsPanel({ orgUnitId }) {
 
   const { rows, stats } = useMemo(() => {
     const now = new Date();
+    // Inicio del curso actual: separa vencimientos reales de fechas
+    // heredadas. Al importar contenido de un curso anterior, las
+    // asignaciones llegan con fechas de cierre viejas (p. ej. del semestre
+    // pasado); una fecha de cierre ANTERIOR al inicio de este curso no
+    // puede ser un vencimiento real de este semestre.
+    const courseStartDate = toDate(courseStart) || null;
     // Solo asignaciones publicadas (no ocultas para los estudiantes)
     const visible = (folders || []).filter((f) => f?.IsHidden !== true);
     const rows = visible.map((f) => {
@@ -59,7 +65,8 @@ function AssignmentsPanel({ orgUnitId }) {
       const totalUsers = Number(f?.TotalUsers ?? 0) || 0;
       const withSub = Number(f?.TotalUsersWithSubmissions ?? 0) || 0;
       const withFb = Number(f?.TotalUsersWithFeedback ?? 0) || 0;
-      const isOverdue = !!(due && due < now);
+      const isStaleDate = !!(due && courseStartDate && due < courseStartDate);
+      const isOverdue = !!(due && due < now && !isStaleDate);
       const isScheduled = !!(start && start > now);
       const submissionPct = totalUsers > 0 ? (withSub / totalUsers) * 100 : null;
       // "Calificada" = ya hay feedback para todas las entregas recibidas
@@ -69,6 +76,7 @@ function AssignmentsPanel({ orgUnitId }) {
         name: f?.Name || `Asignación ${f?.Id ?? ""}`,
         due,
         isOverdue,
+        isStaleDate,
         isScheduled,
         totalUsers,
         withSub,
@@ -96,10 +104,11 @@ function AssignmentsPanel({ orgUnitId }) {
       withSubmissions: rows.filter((r) => r.withSub > 0).length,
       graded: rows.filter((r) => r.isGraded).length,
       overdue: rows.filter((r) => r.isOverdue).length,
+      staleDates: rows.filter((r) => r.isStaleDate).length,
       globalSubmissionPct: sumUsers > 0 ? (sumSubs / sumUsers) * 100 : null,
     };
     return { rows, stats };
-  }, [folders]);
+  }, [folders, courseStart]);
 
   const fmtDue = (d) =>
     d
@@ -288,6 +297,16 @@ function AssignmentsPanel({ orgUnitId }) {
         </div>
       )}
 
+      {/* Fechas heredadas de un curso anterior (importación): no cuentan
+          como vencidas — la fecha de cierre es anterior al inicio del curso */}
+      {stats.staleDates > 0 && (
+        <div style={{ fontSize: 11, color: "var(--muted)", background: "var(--bg)", border: "1px solid var(--border)", borderRadius: 8, padding: "6px 10px" }}>
+          📋 {stats.staleDates} asignación{stats.staleDates !== 1 ? "es tienen" : " tiene"} <strong>fecha heredada</strong> de
+          un curso anterior (cierre previo al inicio de este curso) y no se
+          cuenta{stats.staleDates !== 1 ? "n" : ""} como vencida{stats.staleDates !== 1 ? "s" : ""}. Puedes actualizar esas fechas en Brightspace.
+        </div>
+      )}
+
       {/* Botón para desplegar el detalle por asignación (colapsado por defecto) */}
       <button
         className="btn"
@@ -311,7 +330,9 @@ function AssignmentsPanel({ orgUnitId }) {
         }}
       >
         {rows.map((r) => {
-          const statusChip = r.isOverdue
+          const statusChip = r.isStaleDate
+            ? { label: "Fecha heredada", color: "var(--muted)", bg: "var(--bg)" }
+            : r.isOverdue
             ? { label: "Vencida", color: COLORS.critical, bg: "var(--critical-bg)" }
             : r.isScheduled
             ? { label: "Programada", color: "var(--muted)", bg: "var(--bg)" }
