@@ -344,6 +344,15 @@ class BrightspaceClient:
         except Exception:
             return []
 
+    async def get_course_info(self, orgUnitId: int) -> Dict[str, Any]:
+        """Info del course offering (Name, StartDate, EndDate…). {} si falla."""
+        url = f"{self.base_url}/d2l/api/lp/{self.lp_version}/courses/{orgUnitId}"
+        try:
+            data = await self._request_json("GET", url)
+            return data if isinstance(data, dict) else {}
+        except Exception:
+            return {}
+
     async def get_grade_value(
         self, orgUnitId: int, gradeObjectId: int, userId: int
     ) -> Dict[str, Any]:
