@@ -990,6 +990,21 @@ principal y respaldadas en `gemelo-digital-v2.0`; cada una se mergeó a
   curso", "Entraron…" → **"Ingresaron…"**, "Sin entrar hace +14 días" →
   **"Sin ingresar hace +14 días"** y "Nunca han entrado" → **"Nunca han
   ingresado"**.
+- **Estudiantes prioritarios: detalle de vencidos y regla heredada en
+  backend (10 ago)**: el stat "Vencido X%" de la tarjeta es el **peso**
+  del gradebook en ítems con fecha vencida y sin calificar (por eso
+  puede ser idéntico entre estudiantes: si nadie tiene nota en esos
+  ítems, todos comparten el mismo conjunto); "Cobertura" es el % del
+  peso ya calificado (0% = sin calificaciones publicadas aún). Nuevo
+  desplegable **"Ver ítems vencidos"** bajo el stat: carga bajo demanda
+  (con caché) los ítems del estudiante y lista nombre + fecha,
+  separando vencidos reales de los de **fecha heredada**. Además la
+  regla de fechas heredadas se aplicó **en el backend**
+  (`_course_start_date` + `is_overdue` en `build_gemelo` y
+  `compute_students_gradebook_metrics`, nuevo
+  `get_course_info` en el cliente): los ítems con vencimiento anterior
+  al inicio del curso ya no inflan "Vencido" ni "Vencido sin registro";
+  los snapshots de DB reflejan la regla tras el siguiente sync.
 - **Fechas heredadas de importación (10 ago)**: al importar contenido
   de un curso anterior, las asignaciones llegan con fechas de cierre
   viejas y se contaban como "vencidas". Nueva regla: una fecha de

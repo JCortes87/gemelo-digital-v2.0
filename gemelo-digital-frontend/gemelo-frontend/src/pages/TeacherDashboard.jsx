@@ -1848,6 +1848,37 @@ const contentKpis = useMemo(() => {
   const [consumptionStudentOpen, setConsumptionStudentOpen] = useState(null);
   // Desglose por tipo en el KPI de contenidos publicados
   const [contentTypesOpen, setContentTypesOpen] = useState(false);
+  // Desplegable de ítems vencidos por estudiante en "Estudiantes prioritarios".
+  // El detalle se carga bajo demanda (al abrir) desde /student/{id} con caché.
+  const [priorityOverdueOpen, setPriorityOverdueOpen] = useState(null); // userId abierto
+  const [priorityOverdueData, setPriorityOverdueData] = useState({});   // userId -> {loading, real, stale, error}
+  const togglePriorityOverdue = async (userId) => {
+    setPriorityOverdueOpen((v) => (v === userId ? null : userId));
+    if (priorityOverdueData[userId]) return;
+    setPriorityOverdueData((p) => ({ ...p, [userId]: { loading: true, real: [], stale: [] } }));
+    try {
+      const g = await apiGetCached(`/gemelo/course/${orgUnitId}/student/${userId}`, { ttl: 300_000 });
+      const evs = Array.isArray(g?.gradebook?.evidences) ? g.gradebook.evidences : [];
+      const now = new Date();
+      const start = toDate(courseInfo?.StartDate);
+      const real = [];
+      const stale = [];
+      for (const e of evs) {
+        if (e?.isCorte === true || e?.scorePct != null) continue;
+        const d = toDate(e?.dueDate);
+        if (!d || d >= now) continue;
+        const entry = { name: e?.name || `Ítem ${e?.gradeObjectId}`, dueDate: d };
+        // Fecha heredada de importación: vencimiento anterior al inicio del curso
+        if (start && d < start) stale.push(entry);
+        else real.push(entry);
+      }
+      real.sort((a, b) => a.dueDate - b.dueDate);
+      stale.sort((a, b) => a.dueDate - b.dueDate);
+      setPriorityOverdueData((p) => ({ ...p, [userId]: { loading: false, real, stale } }));
+    } catch {
+      setPriorityOverdueData((p) => ({ ...p, [userId]: { loading: false, real: [], stale: [], error: true } }));
+    }
+  };
   const performanceBands = useMemo(() => {
   const bands = [
     { name: "Excelente", key: "excellent", value: 0, color: COLORS.ok },
@@ -2809,14 +2840,58 @@ const contentKpis = useMemo(() => {
                             </div>
                           )}
                           {hasOverdue && (
-                            <div style={{ flex: 1, textAlign: "center", padding: "3px 7px", borderRadius: 8, background: "rgba(255,255,255,0.6)", border: "1px solid #FECDCA" }}>
+                            <div
+                              title="Peso de los ítems del gradebook con fecha de entrega vencida y sin calificación para este estudiante"
+                              style={{ flex: 1, textAlign: "center", padding: "3px 7px", borderRadius: 8, background: "rgba(255,255,255,0.6)", border: "1px solid #FECDCA" }}
+                            >
                               <div style={{ fontSize: 9, color: "var(--muted)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.04em" }}>Vencido</div>
                               <div style={{ fontSize: 12, fontWeight: 900, fontFamily: "var(--font-mono)", color: COLORS.critical }}>{fmtPct(item.notSubmittedWeightPct)}</div>
                             </div>
                           )}
                         </div>
+                        {hasOverdue && (
+                          <button
+                            onClick={(e) => { e.stopPropagation(); togglePriorityOverdue(item.userId); }}
+                            aria-expanded={priorityOverdueOpen === item.userId}
+                            style={{ alignSelf: "center", background: "none", border: "none", cursor: "pointer", fontSize: 10, fontWeight: 700, color: "var(--brand)", padding: 0, display: "inline-flex", alignItems: "center", gap: 4 }}
+                          >
+                            {priorityOverdueOpen === item.userId ? "Ocultar ítems vencidos ▴" : "Ver ítems vencidos ▾"}
+                          </button>
+                        )}
+                        {priorityOverdueOpen === item.userId && (() => {
+                          const det = priorityOverdueData[item.userId];
+                          const fmtD = (dt) => dt.toLocaleDateString("es-CO", { day: "2-digit", month: "short", year: "numeric" });
+                          if (!det || det.loading) {
+                            return <div style={{ fontSize: 10, color: "var(--muted)", textAlign: "center" }}>Cargando ítems…</div>;
+                          }
+                          if (det.error) {
+                            return <div style={{ fontSize: 10, color: "var(--muted)", textAlign: "center" }}>No se pudo cargar el detalle.</div>;
+                          }
+                          if (!det.real.length && !det.stale.length) {
+                            return <div style={{ fontSize: 10, color: "var(--muted)", textAlign: "center" }}>Sin ítems vencidos sin calificar.</div>;
+                          }
+                          return (
+                            <div onClick={(e) => e.stopPropagation()} style={{ display: "flex", flexDirection: "column", gap: 3, background: "rgba(255,255,255,0.6)", border: "1px solid var(--border)", borderRadius: 8, padding: "6px 8px", cursor: "default" }}>
+                              {det.real.map((it2, i) => (
+                                <div key={`r-${i}`} style={{ display: "flex", justifyContent: "space-between", gap: 8, fontSize: 10 }}>
+                                  <span style={{ color: "var(--text)", fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={it2.name}>{it2.name}</span>
+                                  <span style={{ color: COLORS.critical, fontWeight: 800, flexShrink: 0 }}>Venció: {fmtD(it2.dueDate)}</span>
+                                </div>
+                              ))}
+                              {det.stale.map((it2, i) => (
+                                <div key={`s-${i}`} style={{ display: "flex", justifyContent: "space-between", gap: 8, fontSize: 10 }}>
+                                  <span style={{ color: "var(--muted)", fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={it2.name}>{it2.name}</span>
+                                  <span style={{ color: "var(--muted)", flexShrink: 0 }}>Fecha heredada · {fmtD(it2.dueDate)}</span>
+                                </div>
+                              ))}
+                            </div>
+                          );
+                        })()}
                         <div style={{ width: "100%" }}>
-                          <div style={{ fontSize: 10, color: "var(--muted)", fontWeight: 700, textTransform: "uppercase", marginBottom: 3 }}>Cobertura</div>
+                          <div style={{ fontSize: 10, color: "var(--muted)", fontWeight: 700, textTransform: "uppercase", marginBottom: 3, display: "inline-flex", alignItems: "center", gap: 4 }}>
+                            Cobertura
+                            <InfoTooltip text="Porcentaje del peso del gradebook que ya está calificado para este estudiante. 0% significa que aún no tiene calificaciones publicadas en este curso." />
+                          </div>
                           <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
                             <div style={{ flex: 1, height: 5, borderRadius: 999, background: "rgba(148,163,184,0.2)", overflow: "hidden" }}>
                               <div style={{ height: "100%", width: `${item.coveragePct}%`, background: covColor, borderRadius: 999 }} />

@@ -1827,6 +1827,10 @@ class GemeloService:
                         values.append({"item": it, "value": {}})
 
             _now = datetime.now(timezone.utc)
+            # Regla de fechas heredadas: vencido real = fecha pasada PERO
+            # posterior al inicio del curso (las anteriores vienen de
+            # importar contenido de un curso previo).
+            _course_start = await self._course_start_date(orgUnitId)
 
             graded: List[Tuple[float, float]] = []
             total_weight = 0.0
@@ -1862,7 +1866,10 @@ class GemeloService:
                 weighted_den = val.get("WeightedDenominator")
 
                 due_dt = _due_date_for_grade_item(it)
-                is_overdue = bool(due_dt and due_dt < _now)
+                is_overdue = bool(
+                    due_dt and due_dt < _now
+                    and (_course_start is None or due_dt >= _course_start)
+                )
 
                 has_grade = _is_graded(points_num, points_den)
 
@@ -2243,6 +2250,28 @@ class GemeloService:
     # --------------------------------------------------
     # Métricas masivas (para /students?with_metrics=true)
     # --------------------------------------------------
+    async def _course_start_date(self, orgUnitId: int) -> Optional[datetime]:
+        """Fecha de inicio del curso, para la regla de FECHAS HEREDADAS.
+
+        Al importar contenido de un curso anterior, las actividades llegan
+        con fechas de vencimiento viejas. Una fecha de vencimiento ANTERIOR
+        al inicio de este curso no puede ser un vencimiento real del
+        semestre — no debe contarse como "vencido". None si no se puede
+        resolver (en ese caso se conserva el comportamiento clasico).
+        """
+        get_info = getattr(self.bs, "get_course_info", None)
+        if not callable(get_info):
+            return None
+        try:
+            info = await _get_course_data_cached(
+                "course_info", orgUnitId, lambda: get_info(orgUnitId)
+            )
+            if isinstance(info, dict):
+                return _parse_iso_dt(info.get("StartDate"))
+        except Exception:
+            pass
+        return None
+
     async def compute_students_gradebook_metrics(
         self,
         orgUnitId: int,
@@ -2346,6 +2375,9 @@ class GemeloService:
             due_date_by_id[gid] = _due_date_for_grade_item(it)
 
         _now = datetime.now(timezone.utc)
+        # Regla de fechas heredadas: vencido real = fecha pasada PERO posterior
+        # al inicio del curso (las anteriores vienen de una importacion).
+        _course_start = await self._course_start_date(orgUnitId)
 
         async def _calc_one(uid: int) -> Tuple[int, Dict[str, Any]]:
             vals = await list_values_fn(orgUnitId, uid)
@@ -2387,7 +2419,10 @@ class GemeloService:
                 v = by_id.get(gid) or {}
                 is_graded_v = _is_graded_value(v)
                 due_dt = due_date_by_id.get(gid)
-                is_overdue = bool(due_dt and due_dt < _now)
+                is_overdue = bool(
+                    due_dt and due_dt < _now
+                    and (_course_start is None or due_dt >= _course_start)
+                )
 
                 if is_graded_v:
                     graded_count += 1
