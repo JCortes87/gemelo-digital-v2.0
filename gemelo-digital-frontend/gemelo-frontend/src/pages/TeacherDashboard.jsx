@@ -1477,13 +1477,41 @@ const weakestAssignment = useMemo(() => {
     () => pendingGradingList.reduce((acc, f) => acc + f.pendingNames.length, 0),
     [pendingGradingList]
   );
+  // Total de asignaciones publicadas (denominador del "X/Y por calificar")
+  const totalAssignmentsCount = (dropboxGradingStatus?.items || []).length;
 
-  // Estudiantes prioritarios — criterios centrados en el ESTUDIANTE:
+  // Asignaciones SIN fecha de vencimiento donde la mayoría ya entregó:
+  // no se puede saber si "vencieron", pero si un número significativo de
+  // estudiantes entregó (≥50%, mínimo 3), los que faltan probablemente van
+  // tarde — se listan para que el profesor los empuje.
+  const missingNoDueList = useMemo(() => {
+    const items = dropboxGradingStatus?.items || [];
+    if (!items.length || !studentRows.length) return [];
+    const total = studentRows.length;
+    const threshold = Math.max(3, Math.ceil(total * 0.5));
+    const out = [];
+    for (const f of items) {
+      if (f.ok !== true || f.isGroup) continue;
+      if (f.dueDate) continue; // solo asignaciones sin fecha de vencimiento
+      const submitted = new Set((f.submittedIds || []).map(String));
+      if (submitted.size < threshold) continue;
+      const missing = studentRows
+        .filter((s) => !submitted.has(String(s.userId)))
+        .map((s) => s.displayName || `Estudiante ${s.userId}`);
+      if (!missing.length) continue;
+      out.push({ id: f.id, name: f.name, submittedCount: submitted.size, total, missing });
+    }
+    return out.sort((a, b) => b.submittedCount - a.submittedCount);
+  }, [dropboxGradingStatus, studentRows]);
+
+  // Estudiantes prioritarios — criterios de INCLUSIÓN centrados en el
+  // estudiante:
   // 1. Calificación crítica (<5, riesgo alto)
   // 2. Asignaciones vencidas sin entrega
-  // 3. Sin ingresar al aula hace más de 7 días (o nunca)
-  // Lo que es trabajo del profesor (entregas pendientes de calificar,
-  // cobertura baja) vive en "Evaluación y Feedback".
+  // La inactividad (+7 días sin ingresar) NO incluye por sí sola — para eso
+  // está la tarjeta "Accesos al curso"; aquí solo se muestra como alerta
+  // adicional de los ya incluidos. Lo que es trabajo del profesor (entregas
+  // pendientes de calificar, cobertura baja) vive en "Evaluación y Feedback".
   const assignmentRiskData = useMemo(() => {
     const loaded = studentRows.filter((s) => !s.isLoading);
     const list = [];
@@ -1492,8 +1520,8 @@ const weakestAssignment = useMemo(() => {
       const overdueList = overdueNoSubmitByUser.get(s.userId) || [];
       const isLowGrade = risk === "alto";
       const hasOverdue = overdueList.length > 0;
+      if (!isLowGrade && !hasOverdue) continue;
       const isInactive = inactivityByUser.has(s.userId);
-      if (!isLowGrade && !hasOverdue && !isInactive) continue;
       list.push({
         userId: s.userId,
         name: s.displayName || `Estudiante ${s.userId}`,
@@ -1505,10 +1533,10 @@ const weakestAssignment = useMemo(() => {
         overdueList,
         isInactive,
         inactiveDays: inactivityByUser.get(s.userId), // null = nunca ingresó
-        type: isLowGrade ? "low_grade" : hasOverdue ? "overdue" : "inactive",
+        type: isLowGrade ? "low_grade" : "overdue",
       });
     }
-    const typeOrder = { low_grade: 0, overdue: 1, inactive: 2 };
+    const typeOrder = { low_grade: 0, overdue: 1 };
     list.sort((a, b) => {
       const to = (typeOrder[a.type] ?? 3) - (typeOrder[b.type] ?? 3);
       if (to !== 0) return to;
@@ -1766,10 +1794,10 @@ const contentKpis = useMemo(() => {
   const accessStats = useMemo(() => {
     if (!studentRows.length || !Object.keys(lastAccessMap).length) return null;
     const now = Date.now();
-    const todayList = [];   // entraron en las últimas 24 h
-    const weekList = [];    // entraron en los últimos 7 días (incluye hoy)
-    const staleList = [];   // llevan más de 14 días SIN entrar
-    const neverList = [];   // nunca han entrado al curso
+    const todayList = [];   // ingresaron en las últimas 24 h
+    const weekList = [];    // ingresaron en los últimos 7 días (incluye hoy)
+    const staleList = [];   // llevan más de 7 días SIN ingresar
+    const neverList = [];   // nunca han ingresado al curso
     for (const r of studentRows) {
       const iso = lastAccessMap[String(r.userId)];
       if (!iso) {
@@ -1780,7 +1808,7 @@ const contentKpis = useMemo(() => {
       const entry = { userId: r.userId, name: r.displayName, days: Math.floor(days) };
       if (days <= 1) todayList.push(entry);
       if (days <= 7) weekList.push(entry);
-      else if (days > 14) staleList.push(entry);
+      else staleList.push(entry);
     }
     todayList.sort((a, b) => a.days - b.days);
     weekList.sort((a, b) => a.days - b.days);
@@ -1895,8 +1923,10 @@ const contentKpis = useMemo(() => {
   // "Estudiantes prioritarios" (los datos vienen de overdueNoSubmitByUser,
   // ya cargados con el grading-status del curso — no requiere fetch extra).
   const [priorityOverdueOpen, setPriorityOverdueOpen] = useState(null); // userId abierto
-  // Desplegable de "pendientes por calificar" en Evaluación y Feedback
+  // Desplegables de "pendientes por calificar" y "faltan por entregar"
+  // en Evaluación y Feedback
   const [pendingGradingOpen, setPendingGradingOpen] = useState(false);
+  const [missingNoDueOpen, setMissingNoDueOpen] = useState(false);
   const performanceBands = useMemo(() => {
   const bands = [
     { name: "Excelente", key: "excellent", value: 0, color: COLORS.ok },
@@ -2697,16 +2727,30 @@ const contentKpis = useMemo(() => {
                 />
               )}
 
-              {/* Entregas de estudiantes pendientes de calificar (trabajo del
-                  profesor): cuáles asignaciones y de quiénes */}
-              {totalPendingGrading > 0 && (
+              {/* Asignaciones por calificar (trabajo del profesor): número,
+                  barra de progreso y desplegable con las entregas de quiénes */}
+              {pendingGradingList.length > 0 && (
                 <div style={{ marginTop: 12, borderTop: "1px solid var(--border)", paddingTop: 10 }}>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, marginBottom: 4 }}>
+                    <span style={{ fontSize: 11, fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.04em", display: "inline-flex", alignItems: "center", gap: 4 }}>
+                      ⏳ Asignaciones por calificar
+                      <InfoTooltip text="Asignaciones con entregas de estudiantes que aún no tienen calificación ni feedback, sobre el total de asignaciones publicadas. Las que ya vencieron van primero." />
+                    </span>
+                    <span style={{ fontSize: 13, fontWeight: 900, fontFamily: "var(--font-mono)", color: pendingGradingList.some((f) => f.isPastDue) ? COLORS.critical : COLORS.watch }}>
+                      {pendingGradingList.length}/{totalAssignmentsCount}
+                    </span>
+                  </div>
+                  <ProgressBar
+                    value={totalAssignmentsCount > 0 ? (pendingGradingList.length / totalAssignmentsCount) * 100 : 0}
+                    color={pendingGradingList.some((f) => f.isPastDue) ? COLORS.critical : COLORS.watch}
+                    animate={false}
+                  />
                   <button
                     onClick={() => setPendingGradingOpen((v) => !v)}
                     aria-expanded={pendingGradingOpen}
-                    style={{ background: "none", border: "none", cursor: "pointer", fontSize: 11, fontWeight: 800, color: "var(--brand)", padding: 0, display: "inline-flex", alignItems: "center", gap: 5 }}
+                    style={{ marginTop: 6, background: "none", border: "none", cursor: "pointer", fontSize: 11, fontWeight: 700, color: "var(--brand)", padding: 0, display: "inline-flex", alignItems: "center", gap: 4 }}
                   >
-                    ⏳ Pendientes por calificar ({totalPendingGrading} entrega{totalPendingGrading !== 1 ? "s" : ""}) {pendingGradingOpen ? "▴" : "▾"}
+                    {pendingGradingOpen ? "Ocultar entregas" : `Ver entregas por calificar (${totalPendingGrading})`} <span style={{ fontSize: 9 }}>{pendingGradingOpen ? "▲" : "▼"}</span>
                   </button>
                   {pendingGradingOpen && (
                     <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 6, maxHeight: 220, overflowY: "auto", paddingRight: 2 }}>
@@ -2725,6 +2769,43 @@ const contentKpis = useMemo(() => {
                           <div style={{ fontSize: 10, color: "var(--muted)", marginTop: 3, lineHeight: 1.5 }}>
                             {f.pendingNames.length} de {f.submittedCount} entrega{f.submittedCount !== 1 ? "s" : ""} sin calificar:{" "}
                             <span style={{ color: "var(--muted-strong)" }}>{f.pendingNames.join(", ")}</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Asignaciones SIN fecha de vencimiento con la mayoría entregada:
+                  quiénes faltan por entregar (probablemente van tarde) */}
+              {missingNoDueList.length > 0 && (
+                <div style={{ marginTop: 12, borderTop: "1px solid var(--border)", paddingTop: 10 }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.04em", display: "inline-flex", alignItems: "center", gap: 4, marginBottom: 4 }}>
+                    📥 Faltan por entregar (sin fecha límite)
+                    <InfoTooltip text="Asignaciones sin fecha de vencimiento donde la mayoría del curso ya entregó (50% o más): no se puede saber si 'vencieron', pero los que faltan probablemente van tarde." />
+                  </div>
+                  <button
+                    onClick={() => setMissingNoDueOpen((v) => !v)}
+                    aria-expanded={missingNoDueOpen}
+                    style={{ background: "none", border: "none", cursor: "pointer", fontSize: 11, fontWeight: 700, color: "var(--brand)", padding: 0, display: "inline-flex", alignItems: "center", gap: 4 }}
+                  >
+                    {missingNoDueOpen ? "Ocultar" : `Ver asignaciones (${missingNoDueList.length})`} <span style={{ fontSize: 9 }}>{missingNoDueOpen ? "▲" : "▼"}</span>
+                  </button>
+                  {missingNoDueOpen && (
+                    <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 6, maxHeight: 180, overflowY: "auto", paddingRight: 2 }}>
+                      {missingNoDueList.map((f) => (
+                        <div key={f.id} style={{ border: "1px solid var(--border)", borderRadius: 8, padding: "6px 9px", background: "var(--bg)" }}>
+                          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+                            <span style={{ fontSize: 11, fontWeight: 700, color: "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={f.name}>
+                              {f.name}
+                            </span>
+                            <span style={{ fontSize: 10, fontWeight: 800, flexShrink: 0, color: "var(--muted)", fontFamily: "var(--font-mono)" }}>
+                              {f.submittedCount}/{f.total} entregaron
+                            </span>
+                          </div>
+                          <div style={{ fontSize: 10, color: "var(--muted)", marginTop: 3, lineHeight: 1.5 }}>
+                            Faltan: <span style={{ color: "var(--muted-strong)" }}>{f.missing.join(", ")}</span>
                           </div>
                         </div>
                       ))}
@@ -2800,7 +2881,7 @@ const contentKpis = useMemo(() => {
           <div ref={priorityRef} style={{ order: 4, display: "flex" }}>
           <Card
             style={{ flex: 1 }}
-            title={<span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>🚨 Estudiantes prioritarios <InfoTooltip text="Estudiantes que requieren tu atención: calificación crítica (<5), asignaciones vencidas que NO entregaron, o sin ingresar al aula hace más de 7 días. Lo que ya entregaron y falta calificar es trabajo tuyo — está en la tarjeta Evaluación y Feedback." /></span>} accent="critical"
+            title={<span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>🚨 Estudiantes prioritarios <InfoTooltip text="Estudiantes con calificación crítica (<5) o con asignaciones vencidas que NO entregaron. Si además llevan más de 7 días sin ingresar, se muestra la alerta — pero la inactividad por sí sola no los incluye aquí (esa vista completa está en Accesos al curso). Lo que ya entregaron y falta calificar está en Evaluación y Feedback." /></span>} accent="critical"
             right={
               assignmentRiskData.length > 0
                 ? <span className="tag" style={{ background: "var(--critical-bg)", color: "#B42318" }}>Requieren atención</span>
@@ -2815,7 +2896,7 @@ const contentKpis = useMemo(() => {
             ) : assignmentRiskData.length > 0 ? (
               <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                 <div style={{ fontSize: 11, color: "var(--muted)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: 4 }}>
-                  Calificación &lt;5 · vencidas sin entrega · sin ingresar +7 días
+                  Calificación &lt;5 · vencidas sin entrega
                 </div>
                 <div style={{ overflowY: "auto", maxHeight: 300, paddingRight: 2, display: "flex", flexDirection: "column", gap: 6 }}>
                 {assignmentRiskData.map((item) => {
@@ -3173,7 +3254,7 @@ const contentKpis = useMemo(() => {
                 {[
                   { key: "today", label: "Ingresaron hoy", value: accessStats.today, color: COLORS.ok },
                   { key: "week", label: "Ingresaron en los últimos 7 días", value: accessStats.week, color: COLORS.brand },
-                  { key: "stale", label: "Sin ingresar hace +14 días", value: accessStats.stale, color: accessStats.stale > 0 ? COLORS.watch : "var(--muted)" },
+                  { key: "stale", label: "Sin ingresar hace +7 días", value: accessStats.stale, color: accessStats.stale > 0 ? COLORS.critical : "var(--muted)" },
                   { key: "never", label: "Nunca han ingresado", value: accessStats.never, color: accessStats.never > 0 ? COLORS.critical : "var(--muted)" },
                 ].map((row) => {
                   const canExpand = row.value > 0;
@@ -3220,7 +3301,7 @@ const contentKpis = useMemo(() => {
                     stale: accessStats.staleList,
                     never: accessStats.neverList,
                   };
-                  const colors = { today: COLORS.ok, week: COLORS.brand, stale: COLORS.watch, never: COLORS.critical };
+                  const colors = { today: COLORS.ok, week: COLORS.brand, stale: COLORS.critical, never: COLORS.critical };
                   const rightLabel = (s) => {
                     if (accessListOpen === "never") return "Nunca";
                     if (s.days === 0) return "Hoy";
