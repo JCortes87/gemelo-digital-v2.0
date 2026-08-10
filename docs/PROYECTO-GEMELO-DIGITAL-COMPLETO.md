@@ -996,9 +996,12 @@ principal y respaldadas en `gemelo-digital-v2.0`; cada una se mergeó a
   puede ser idéntico entre estudiantes: si nadie tiene nota en esos
   ítems, todos comparten el mismo conjunto); "Cobertura" es el % del
   peso ya calificado (0% = sin calificaciones publicadas aún). Nuevo
-  desplegable **"Ver ítems vencidos"** bajo el stat: carga bajo demanda
-  (con caché) los ítems del estudiante y lista nombre + fecha,
-  separando vencidos reales de los de **fecha heredada**. Además la
+  desplegable **"Ver asignaciones vencidas sin entrega"** bajo el stat:
+  carga bajo demanda (con caché) las evidencias del estudiante cruzadas
+  con el estado de entregas dropbox y lista nombre + fecha SOLO de las
+  asignaciones vencidas que el estudiante **no entregó** (si entregó y
+  falta calificar no se lista — no es problema del estudiante; las de
+  fecha heredada tampoco se listan aquí). Además la
   regla de fechas heredadas se aplicó **en el backend**
   (`_course_start_date` + `is_overdue` en `build_gemelo` y
   `compute_students_gradebook_metrics`, nuevo

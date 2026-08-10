@@ -1848,35 +1848,48 @@ const contentKpis = useMemo(() => {
   const [consumptionStudentOpen, setConsumptionStudentOpen] = useState(null);
   // Desglose por tipo en el KPI de contenidos publicados
   const [contentTypesOpen, setContentTypesOpen] = useState(false);
-  // Desplegable de ítems vencidos por estudiante en "Estudiantes prioritarios".
-  // El detalle se carga bajo demanda (al abrir) desde /student/{id} con caché.
+  // Desplegable de asignaciones vencidas SIN ENTREGA por estudiante en
+  // "Estudiantes prioritarios". Se cargan bajo demanda (al abrir) y se cruzan
+  // dos fuentes: el gradebook (qué está vencido sin calificar) y el estado de
+  // entregas dropbox (si el estudiante entregó). Si entregó y solo falta
+  // calificar NO es problema del estudiante — no se lista aquí. Las fechas
+  // heredadas de importación (vencimiento anterior al inicio del curso)
+  // tampoco se listan en esta tarjeta.
   const [priorityOverdueOpen, setPriorityOverdueOpen] = useState(null); // userId abierto
-  const [priorityOverdueData, setPriorityOverdueData] = useState({});   // userId -> {loading, real, stale, error}
+  const [priorityOverdueData, setPriorityOverdueData] = useState({});   // userId -> {loading, items, error}
   const togglePriorityOverdue = async (userId) => {
     setPriorityOverdueOpen((v) => (v === userId ? null : userId));
     if (priorityOverdueData[userId]) return;
-    setPriorityOverdueData((p) => ({ ...p, [userId]: { loading: true, real: [], stale: [] } }));
+    setPriorityOverdueData((p) => ({ ...p, [userId]: { loading: true, items: [] } }));
     try {
-      const g = await apiGetCached(`/gemelo/course/${orgUnitId}/student/${userId}`, { ttl: 300_000 });
-      const evs = Array.isArray(g?.gradebook?.evidences) ? g.gradebook.evidences : [];
+      const [gRes, subRes] = await Promise.allSettled([
+        apiGetCached(`/gemelo/course/${orgUnitId}/student/${userId}`, { ttl: 300_000 }),
+        apiGetCached(`/brightspace/course/${orgUnitId}/dropbox/student/${userId}/status`, { ttl: 300_000 }),
+      ]);
+      if (gRes.status !== "fulfilled") throw gRes.reason;
+      const evs = Array.isArray(gRes.value?.gradebook?.evidences) ? gRes.value.gradebook.evidences : [];
+      // gradeItemId (dropbox) ↔ gradeObjectId (gradebook) → ¿entregó?
+      const submittedByGradeId = new Map();
+      if (subRes.status === "fulfilled" && Array.isArray(subRes.value?.items)) {
+        for (const it of subRes.value.items) {
+          if (it?.gradeItemId != null) submittedByGradeId.set(String(it.gradeItemId), it.hasSubmission);
+        }
+      }
       const now = new Date();
       const start = toDate(courseInfo?.StartDate);
-      const real = [];
-      const stale = [];
+      const items = [];
       for (const e of evs) {
         if (e?.isCorte === true || e?.scorePct != null) continue;
         const d = toDate(e?.dueDate);
         if (!d || d >= now) continue;
-        const entry = { name: e?.name || `Ítem ${e?.gradeObjectId}`, dueDate: d };
-        // Fecha heredada de importación: vencimiento anterior al inicio del curso
-        if (start && d < start) stale.push(entry);
-        else real.push(entry);
+        if (start && d < start) continue; // fecha heredada de importación
+        if (submittedByGradeId.get(String(e?.gradeObjectId)) === true) continue; // entregó — solo falta calificar
+        items.push({ name: e?.name || `Asignación ${e?.gradeObjectId}`, dueDate: d });
       }
-      real.sort((a, b) => a.dueDate - b.dueDate);
-      stale.sort((a, b) => a.dueDate - b.dueDate);
-      setPriorityOverdueData((p) => ({ ...p, [userId]: { loading: false, real, stale } }));
+      items.sort((a, b) => a.dueDate - b.dueDate);
+      setPriorityOverdueData((p) => ({ ...p, [userId]: { loading: false, items } }));
     } catch {
-      setPriorityOverdueData((p) => ({ ...p, [userId]: { loading: false, real: [], stale: [], error: true } }));
+      setPriorityOverdueData((p) => ({ ...p, [userId]: { loading: false, items: [], error: true } }));
     }
   };
   const performanceBands = useMemo(() => {
@@ -2855,33 +2868,27 @@ const contentKpis = useMemo(() => {
                             aria-expanded={priorityOverdueOpen === item.userId}
                             style={{ alignSelf: "center", background: "none", border: "none", cursor: "pointer", fontSize: 10, fontWeight: 700, color: "var(--brand)", padding: 0, display: "inline-flex", alignItems: "center", gap: 4 }}
                           >
-                            {priorityOverdueOpen === item.userId ? "Ocultar ítems vencidos ▴" : "Ver ítems vencidos ▾"}
+                            {priorityOverdueOpen === item.userId ? "Ocultar asignaciones vencidas ▴" : "Ver asignaciones vencidas sin entrega ▾"}
                           </button>
                         )}
                         {priorityOverdueOpen === item.userId && (() => {
                           const det = priorityOverdueData[item.userId];
                           const fmtD = (dt) => dt.toLocaleDateString("es-CO", { day: "2-digit", month: "short", year: "numeric" });
                           if (!det || det.loading) {
-                            return <div style={{ fontSize: 10, color: "var(--muted)", textAlign: "center" }}>Cargando ítems…</div>;
+                            return <div style={{ fontSize: 10, color: "var(--muted)", textAlign: "center" }}>Cargando asignaciones…</div>;
                           }
                           if (det.error) {
                             return <div style={{ fontSize: 10, color: "var(--muted)", textAlign: "center" }}>No se pudo cargar el detalle.</div>;
                           }
-                          if (!det.real.length && !det.stale.length) {
-                            return <div style={{ fontSize: 10, color: "var(--muted)", textAlign: "center" }}>Sin ítems vencidos sin calificar.</div>;
+                          if (!det.items.length) {
+                            return <div style={{ fontSize: 10, color: "var(--muted)", textAlign: "center" }}>Sin asignaciones vencidas sin entregar.</div>;
                           }
                           return (
                             <div onClick={(e) => e.stopPropagation()} style={{ display: "flex", flexDirection: "column", gap: 3, background: "rgba(255,255,255,0.6)", border: "1px solid var(--border)", borderRadius: 8, padding: "6px 8px", cursor: "default" }}>
-                              {det.real.map((it2, i) => (
-                                <div key={`r-${i}`} style={{ display: "flex", justifyContent: "space-between", gap: 8, fontSize: 10 }}>
+                              {det.items.map((it2, i) => (
+                                <div key={i} style={{ display: "flex", justifyContent: "space-between", gap: 8, fontSize: 10 }}>
                                   <span style={{ color: "var(--text)", fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={it2.name}>{it2.name}</span>
                                   <span style={{ color: COLORS.critical, fontWeight: 800, flexShrink: 0 }}>Venció: {fmtD(it2.dueDate)}</span>
-                                </div>
-                              ))}
-                              {det.stale.map((it2, i) => (
-                                <div key={`s-${i}`} style={{ display: "flex", justifyContent: "space-between", gap: 8, fontSize: 10 }}>
-                                  <span style={{ color: "var(--muted)", fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={it2.name}>{it2.name}</span>
-                                  <span style={{ color: "var(--muted)", flexShrink: 0 }}>Fecha heredada · {fmtD(it2.dueDate)}</span>
                                 </div>
                               ))}
                             </div>
