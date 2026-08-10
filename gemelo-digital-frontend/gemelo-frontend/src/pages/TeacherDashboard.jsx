@@ -326,6 +326,10 @@ export default function TeacherDashboard() {
   // Elementos de contenido con metadatos completos (Url/TopicType) para
   // clasificar por tipo (PDF, Word, etc.) — el content/root no trae Url
   const [contentTopics, setContentTopics] = useState(null);
+  // Estado de entregas/calificación por asignación (dropbox) de TODO el curso:
+  // alimenta "pendientes por calificar" (Evaluación y Feedback) y las
+  // "vencidas sin entrega" por estudiante (Estudiantes prioritarios).
+  const [dropboxGradingStatus, setDropboxGradingStatus] = useState(null);
   const [consumption, setConsumption] = useState(null);
   const [overview, setOverview] = useState(null);
   const [studentsList, setStudentsList] = useState(null);
@@ -1057,6 +1061,7 @@ export default function TeacherDashboard() {
     setInstructors(null);
     setContentTopics(null);
     setConsumption(null);
+    setDropboxGradingStatus(null);
 
     (async () => {
       try {
@@ -1073,6 +1078,15 @@ export default function TeacherDashboard() {
         if (alive) setContentTopics(Array.isArray(ct?.items) ? ct.items : []);
       } catch {
         if (alive) setContentTopics([]);
+      }
+    })();
+
+    (async () => {
+      try {
+        const gs = await apiGetCached(`/brightspace/course/${orgUnitId}/dropbox/grading-status`, { ttl: 300_000 });
+        if (alive) setDropboxGradingStatus(gs && Array.isArray(gs.items) ? gs : { items: [] });
+      } catch {
+        if (alive) setDropboxGradingStatus({ items: [] });
       }
     })();
 
@@ -1392,89 +1406,118 @@ const weakestAssignment = useMemo(() => {
   return pool[0];
 }, [learningOutcomesData]);
 
-  const assignmentRiskData = useMemo(() => {
-    const toItem = (raw, perf, overduePct, pendingPct, coveragePct) => {
-      const risk = computeRiskFromPct(perf);
-      const type =
-        risk === "alto" || (perf != null && Number(perf) < 50)
-          ? "low_grade"
-          : overduePct > 0
-          ? "overdue"
-          : pendingPct > 0
-          ? "pending_submitted"
-          : "low_coverage";
-      return {
-        ...raw, type, risk,
-        currentPerformancePct: perf != null ? Number(perf) : null,
-        notSubmittedWeightPct: overduePct,
-        pendingSubmittedWeightPct: pendingPct,
-        coveragePct: Number(coveragePct ?? 0),
-      };
-    };
-
-    // Lookup de nombres desde studentRows (classlist) para enriquecer
-    // cuando el backend devuelve displayName == String(userId) (DB sin sync de classlist aún)
-    const nameByUserId = new Map();
-    for (const s of studentRows) {
-      if (s.userId != null && s.displayName) {
-        nameByUserId.set(String(s.userId), s.displayName);
+  // Asignaciones vencidas SIN ENTREGA por estudiante (cruce dropbox): solo
+  // asignaciones individuales, con fecha pasada y posterior al inicio del
+  // curso (las heredadas de importación no cuentan). Un folder cuya lista de
+  // submissions no se pudo leer (ok=false) se salta para no marcar a todos.
+  const overdueNoSubmitByUser = useMemo(() => {
+    const map = new Map(); // userId -> [{name, dueDate}]
+    const items = dropboxGradingStatus?.items || [];
+    if (!items.length || !studentRows.length) return map;
+    const now = new Date();
+    const start = toDate(courseInfo?.StartDate);
+    for (const f of items) {
+      if (f.ok !== true || f.isGroup) continue;
+      const d = toDate(f.dueDate);
+      if (!d || d >= now) continue;
+      if (start && d < start) continue; // fecha heredada
+      const submitted = new Set((f.submittedIds || []).map(String));
+      for (const s of studentRows) {
+        if (submitted.has(String(s.userId))) continue;
+        const arr = map.get(s.userId) || [];
+        arr.push({ name: f.name, dueDate: d });
+        map.set(s.userId, arr);
       }
     }
-    const resolveName = (userId, fallbackName) => {
-      const richer = nameByUserId.get(String(userId));
-      if (richer) return richer;
-      // Si el "name" backend es solo el userId (sin sincronizar), no mostrar dígitos
-      if (fallbackName && String(fallbackName) !== String(userId)) return fallbackName;
-      return `Estudiante ${userId}`;
-    };
+    for (const arr of map.values()) arr.sort((a, b) => a.dueDate - b.dueDate);
+    return map;
+  }, [dropboxGradingStatus, studentRows, courseInfo?.StartDate]);
 
-    // Fuente 1: overview.studentsAtRisk (backend)
-    const backendRisk = Array.isArray(overview?.studentsAtRisk) ? overview.studentsAtRisk : [];
-    let candidates = [];
-    if (backendRisk.length > 0) {
-      candidates = backendRisk.map((s) =>
-        toItem(
-          { userId: s.userId, name: resolveName(s.userId, s.displayName) },
-          s.currentPerformancePct,
-          Number(s.overdueUnscoredWeightPct ?? s.notSubmittedWeightPct ?? 0),
-          Number(s.pendingUngradedWeightPct ?? s.pendingSubmittedWeightPct ?? 0),
-          s.coveragePct,
-        )
-      );
-    } else {
-      // Fuente 2: studentRows cargados
-      const loaded = studentRows.filter((s) => !s.isLoading);
-      candidates = loaded.map((s) =>
-        toItem(
-          { userId: s.userId, name: s.displayName },
-          s.currentPerformancePct,
-          Number(s.notSubmittedWeightPct ?? s.overdueWeightPct ?? 0),
-          Number(s.pendingSubmittedWeightPct ?? 0),
-          s.coveragePct,
-        )
-      );
+  // Inactividad: estudiantes sin ingresar al aula hace más de 7 días
+  // (o que nunca han ingresado), del LastAccessed del classlist.
+  const inactivityByUser = useMemo(() => {
+    const map = new Map(); // userId -> días sin ingresar (null = nunca)
+    if (!Object.keys(lastAccessMap).length) return map;
+    const nowMs = Date.now();
+    for (const s of studentRows) {
+      const iso = lastAccessMap[String(s.userId)];
+      if (!iso) { map.set(s.userId, null); continue; }
+      const d = new Date(iso);
+      if (Number.isNaN(d.getTime())) continue;
+      const days = Math.floor((nowMs - d.getTime()) / 86400000);
+      if (days > 7) map.set(s.userId, days);
     }
+    return map;
+  }, [lastAccessMap, studentRows]);
 
-    const filtered = candidates.filter((s) => {
-      if (s.risk === "alto" || s.risk === "medio") return true;
-      if (s.risk === "pending") return s.coveragePct < 60 || s.notSubmittedWeightPct > 0 || s.pendingSubmittedWeightPct > 0;
-      return s.notSubmittedWeightPct > 10 || s.pendingSubmittedWeightPct > 10;
-    });
+  // Asignaciones ENTREGADAS pendientes de calificar (trabajo del profesor):
+  // se muestran en "Evaluación y Feedback", no en estudiantes prioritarios.
+  const pendingGradingList = useMemo(() => {
+    const items = dropboxGradingStatus?.items || [];
+    if (!items.length) return [];
+    const now = new Date();
+    const nameById = new Map(studentRows.map((s) => [String(s.userId), s.displayName]));
+    return items
+      .filter((f) => f.ok === true && Array.isArray(f.pendingGrading) && f.pendingGrading.length > 0)
+      .map((f) => {
+        const d = toDate(f.dueDate);
+        return {
+          id: f.id,
+          name: f.name,
+          due: d,
+          isPastDue: !!(d && d < now),
+          isGroup: !!f.isGroup,
+          submittedCount: (f.submittedIds || []).length,
+          pendingNames: f.pendingGrading.map((p) => nameById.get(String(p.id)) || p.name || `ID ${p.id}`),
+        };
+      })
+      .sort((a, b) => (Number(b.isPastDue) - Number(a.isPastDue)) || ((a.due?.getTime() ?? Infinity) - (b.due?.getTime() ?? Infinity)));
+  }, [dropboxGradingStatus, studentRows]);
+  const totalPendingGrading = useMemo(
+    () => pendingGradingList.reduce((acc, f) => acc + f.pendingNames.length, 0),
+    [pendingGradingList]
+  );
 
-    const riskOrder = { alto: 0, medio: 1, pending: 2, bajo: 3 };
-    filtered.sort((a, b) => {
-      const ro = (riskOrder[a.risk] ?? 3) - (riskOrder[b.risk] ?? 3);
-      if (ro !== 0) return ro;
+  // Estudiantes prioritarios — criterios centrados en el ESTUDIANTE:
+  // 1. Calificación crítica (<5, riesgo alto)
+  // 2. Asignaciones vencidas sin entrega
+  // 3. Sin ingresar al aula hace más de 7 días (o nunca)
+  // Lo que es trabajo del profesor (entregas pendientes de calificar,
+  // cobertura baja) vive en "Evaluación y Feedback".
+  const assignmentRiskData = useMemo(() => {
+    const loaded = studentRows.filter((s) => !s.isLoading);
+    const list = [];
+    for (const s of loaded) {
+      const risk = computeRiskFromPct(s.currentPerformancePct);
+      const overdueList = overdueNoSubmitByUser.get(s.userId) || [];
+      const isLowGrade = risk === "alto";
+      const hasOverdue = overdueList.length > 0;
+      const isInactive = inactivityByUser.has(s.userId);
+      if (!isLowGrade && !hasOverdue && !isInactive) continue;
+      list.push({
+        userId: s.userId,
+        name: s.displayName || `Estudiante ${s.userId}`,
+        risk,
+        currentPerformancePct: s.currentPerformancePct != null ? Number(s.currentPerformancePct) : null,
+        coveragePct: Number(s.coveragePct ?? 0),
+        isLowGrade,
+        hasOverdue,
+        overdueList,
+        isInactive,
+        inactiveDays: inactivityByUser.get(s.userId), // null = nunca ingresó
+        type: isLowGrade ? "low_grade" : hasOverdue ? "overdue" : "inactive",
+      });
+    }
+    const typeOrder = { low_grade: 0, overdue: 1, inactive: 2 };
+    list.sort((a, b) => {
+      const to = (typeOrder[a.type] ?? 3) - (typeOrder[b.type] ?? 3);
+      if (to !== 0) return to;
+      const ov = (b.overdueList?.length ?? 0) - (a.overdueList?.length ?? 0);
+      if (ov !== 0) return ov;
       return (a.currentPerformancePct ?? 999) - (b.currentPerformancePct ?? 999);
     });
-
-    const seen = new Set();
-    return filtered.filter((s) => {
-      if (seen.has(s.userId)) return false;
-      seen.add(s.userId);
-      return true;
-    }).slice(0, 8);
-  }, [overview, studentRows]);
+    return list.slice(0, 10);
+  }, [studentRows, overdueNoSubmitByUser, inactivityByUser]);
 
   const avgPerfPct = overview?.courseGradebook?.avgCurrentPerformancePct ?? null;
   const avgCov = overview?.courseGradebook?.avgCoveragePct ?? null;
@@ -1848,52 +1891,12 @@ const contentKpis = useMemo(() => {
   const [consumptionStudentOpen, setConsumptionStudentOpen] = useState(null);
   // Desglose por tipo en el KPI de contenidos publicados
   const [contentTypesOpen, setContentTypesOpen] = useState(false);
-  // Desplegable de asignaciones vencidas SIN ENTREGA por estudiante en
-  // "Estudiantes prioritarios". Se cargan bajo demanda (al abrir) y se cruzan
-  // dos fuentes: el gradebook (qué está vencido sin calificar) y el estado de
-  // entregas dropbox (si el estudiante entregó). Si entregó y solo falta
-  // calificar NO es problema del estudiante — no se lista aquí. Las fechas
-  // heredadas de importación (vencimiento anterior al inicio del curso)
-  // tampoco se listan en esta tarjeta.
+  // Desplegable de asignaciones vencidas sin entrega por estudiante en
+  // "Estudiantes prioritarios" (los datos vienen de overdueNoSubmitByUser,
+  // ya cargados con el grading-status del curso — no requiere fetch extra).
   const [priorityOverdueOpen, setPriorityOverdueOpen] = useState(null); // userId abierto
-  const [priorityOverdueData, setPriorityOverdueData] = useState({});   // userId -> {loading, items, error}
-  const togglePriorityOverdue = async (userId) => {
-    setPriorityOverdueOpen((v) => (v === userId ? null : userId));
-    if (priorityOverdueData[userId]) return;
-    setPriorityOverdueData((p) => ({ ...p, [userId]: { loading: true, items: [] } }));
-    try {
-      const [gRes, subRes] = await Promise.allSettled([
-        apiGetCached(`/gemelo/course/${orgUnitId}/student/${userId}`, { ttl: 300_000 }),
-        apiGetCached(`/brightspace/course/${orgUnitId}/dropbox/student/${userId}/status`, { ttl: 300_000 }),
-      ]);
-      if (gRes.status !== "fulfilled") throw gRes.reason;
-      const evs = Array.isArray(gRes.value?.gradebook?.evidences) ? gRes.value.gradebook.evidences : [];
-      // gradeItemId (dropbox) ↔ gradeObjectId (gradebook) → ¿entregó?
-      const submittedByGradeId = new Map();
-      if (subRes.status === "fulfilled" && Array.isArray(subRes.value?.items)) {
-        for (const it of subRes.value.items) {
-          if (it?.gradeItemId != null) submittedByGradeId.set(String(it.gradeItemId), it.hasSubmission);
-        }
-      }
-      const now = new Date();
-      const start = toDate(courseInfo?.StartDate);
-      const items = [];
-      let staleCount = 0;      // vencidas con fecha heredada (excluidas)
-      let submittedCount = 0;  // vencidas pero YA entregadas (excluidas)
-      for (const e of evs) {
-        if (e?.isCorte === true || e?.scorePct != null) continue;
-        const d = toDate(e?.dueDate);
-        if (!d || d >= now) continue;
-        if (start && d < start) { staleCount += 1; continue; } // fecha heredada de importación
-        if (submittedByGradeId.get(String(e?.gradeObjectId)) === true) { submittedCount += 1; continue; } // entregó — solo falta calificar
-        items.push({ name: e?.name || `Asignación ${e?.gradeObjectId}`, dueDate: d });
-      }
-      items.sort((a, b) => a.dueDate - b.dueDate);
-      setPriorityOverdueData((p) => ({ ...p, [userId]: { loading: false, items, staleCount, submittedCount } }));
-    } catch {
-      setPriorityOverdueData((p) => ({ ...p, [userId]: { loading: false, items: [], staleCount: 0, submittedCount: 0, error: true } }));
-    }
-  };
+  // Desplegable de "pendientes por calificar" en Evaluación y Feedback
+  const [pendingGradingOpen, setPendingGradingOpen] = useState(false);
   const performanceBands = useMemo(() => {
   const bands = [
     { name: "Excelente", key: "excellent", value: 0, color: COLORS.ok },
@@ -2693,6 +2696,42 @@ const contentKpis = useMemo(() => {
                   overduePct={avgOverdueUnscoredPct}
                 />
               )}
+
+              {/* Entregas de estudiantes pendientes de calificar (trabajo del
+                  profesor): cuáles asignaciones y de quiénes */}
+              {totalPendingGrading > 0 && (
+                <div style={{ marginTop: 12, borderTop: "1px solid var(--border)", paddingTop: 10 }}>
+                  <button
+                    onClick={() => setPendingGradingOpen((v) => !v)}
+                    aria-expanded={pendingGradingOpen}
+                    style={{ background: "none", border: "none", cursor: "pointer", fontSize: 11, fontWeight: 800, color: "var(--brand)", padding: 0, display: "inline-flex", alignItems: "center", gap: 5 }}
+                  >
+                    ⏳ Pendientes por calificar ({totalPendingGrading} entrega{totalPendingGrading !== 1 ? "s" : ""}) {pendingGradingOpen ? "▴" : "▾"}
+                  </button>
+                  {pendingGradingOpen && (
+                    <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 6, maxHeight: 220, overflowY: "auto", paddingRight: 2 }}>
+                      {pendingGradingList.map((f) => (
+                        <div key={f.id} style={{ border: "1px solid var(--border)", borderRadius: 8, padding: "6px 9px", background: "var(--bg)" }}>
+                          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+                            <span style={{ fontSize: 11, fontWeight: 700, color: "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={f.name}>
+                              {f.name}{f.isGroup ? " (grupal)" : ""}
+                            </span>
+                            <span style={{ fontSize: 10, fontWeight: 800, flexShrink: 0, color: f.isPastDue ? COLORS.critical : "var(--muted)" }}>
+                              {f.due
+                                ? `${f.isPastDue ? "Venció" : "Vence"}: ${f.due.toLocaleDateString("es-CO", { day: "2-digit", month: "short" })}`
+                                : "Sin fecha"}
+                            </span>
+                          </div>
+                          <div style={{ fontSize: 10, color: "var(--muted)", marginTop: 3, lineHeight: 1.5 }}>
+                            {f.pendingNames.length} de {f.submittedCount} entrega{f.submittedCount !== 1 ? "s" : ""} sin calificar:{" "}
+                            <span style={{ color: "var(--muted-strong)" }}>{f.pendingNames.join(", ")}</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           </Card>
           </div>
@@ -2761,28 +2800,28 @@ const contentKpis = useMemo(() => {
           <div ref={priorityRef} style={{ order: 4, display: "flex" }}>
           <Card
             style={{ flex: 1 }}
-            title={<span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>🚨 Estudiantes prioritarios <InfoTooltip text="Estudiantes que requieren tu atención inmediata: nota crítica (<5), cobertura baja (<60%), ítems vencidos sin calificar o pendientes de calificación. Ordenados por nivel de riesgo." /></span>} accent="critical"
+            title={<span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>🚨 Estudiantes prioritarios <InfoTooltip text="Estudiantes que requieren tu atención: calificación crítica (<5), asignaciones vencidas que NO entregaron, o sin ingresar al aula hace más de 7 días. Lo que ya entregaron y falta calificar es trabajo tuyo — está en la tarjeta Evaluación y Feedback." /></span>} accent="critical"
             right={
               assignmentRiskData.length > 0
                 ? <span className="tag" style={{ background: "var(--critical-bg)", color: "#B42318" }}>Requieren atención</span>
                 : <StatusBadge status="solido" />
             }
           >
-            {studentRows.some((s) => s.isLoading) && !assignmentRiskData.length ? (
+            {(studentRows.some((s) => s.isLoading) || dropboxGradingStatus === null) && !assignmentRiskData.length ? (
               <div className="empty-state" style={{ minHeight: 120 }}>
                 <span className="pulse-dot" style={{ background: COLORS.brand, width: 10, height: 10 }} />
-                <span style={{ fontSize: 12 }}>Cargando datos de cobertura…</span>
+                <span style={{ fontSize: 12 }}>Cargando datos de entregas…</span>
               </div>
             ) : assignmentRiskData.length > 0 ? (
               <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                 <div style={{ fontSize: 11, color: "var(--muted)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: 4 }}>
-                  Nota &lt;5 · cobertura baja · ítems vencidos
+                  Calificación &lt;5 · vencidas sin entrega · sin ingresar +7 días
                 </div>
                 <div style={{ overflowY: "auto", maxHeight: 300, paddingRight: 2, display: "flex", flexDirection: "column", gap: 6 }}>
                 {assignmentRiskData.map((item) => {
                   const covColor = colorForPct(item.coveragePct, thresholds);
-                  const hasOverdue = item.notSubmittedWeightPct > 0;
-                  const hasLowGrade = item.type === "low_grade";
+                  const hasOverdue = item.hasOverdue;
+                  const hasLowGrade = item.isLowGrade;
                   const grade10 = item.currentPerformancePct != null ? (item.currentPerformancePct / 10).toFixed(1) : null;
                   const gradeColor = item.currentPerformancePct != null ? colorForPct(item.currentPerformancePct, thresholds) : COLORS.pending;
                   const borderColor = hasLowGrade ? "#FECDCA" : hasOverdue ? "#FED7AA" : "var(--border)";
@@ -2822,18 +2861,17 @@ const contentKpis = useMemo(() => {
                           <div style={{ fontSize: 12, fontWeight: 800, color: "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                             {item.name}
                           </div>
-                          <div style={{ marginTop: 2 }}>
-                            {item.type === "pending_submitted" && (
-                              <span style={{ fontSize: 9, fontWeight: 800, color: COLORS.brand, textTransform: "uppercase", letterSpacing: "0.06em" }}>⏳ Pendiente calificación</span>
+                          <div style={{ marginTop: 2, display: "flex", flexWrap: "wrap", gap: "2px 10px" }}>
+                            {item.isLowGrade && (
+                              <span style={{ fontSize: 9, fontWeight: 800, color: COLORS.critical, textTransform: "uppercase", letterSpacing: "0.06em" }}>⚠️ Calificación crítica</span>
                             )}
-                            {item.type === "overdue" && (
-                              <span style={{ fontSize: 9, fontWeight: 800, color: COLORS.critical, textTransform: "uppercase", letterSpacing: "0.06em" }}>🔴 Vencido sin entrega</span>
+                            {item.hasOverdue && (
+                              <span style={{ fontSize: 9, fontWeight: 800, color: COLORS.critical, textTransform: "uppercase", letterSpacing: "0.06em" }}>🔴 {item.overdueList.length} vencida{item.overdueList.length !== 1 ? "s" : ""} sin entrega</span>
                             )}
-                            {item.type === "low_grade" && (
-                              <span style={{ fontSize: 9, fontWeight: 800, color: COLORS.critical, textTransform: "uppercase", letterSpacing: "0.06em" }}>⚠️ Nota crítica</span>
-                            )}
-                            {item.type === "low_coverage" && (
-                              <span style={{ fontSize: 9, fontWeight: 800, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.06em" }}>📉 Cobertura baja</span>
+                            {item.isInactive && (
+                              <span style={{ fontSize: 9, fontWeight: 800, color: COLORS.watch, textTransform: "uppercase", letterSpacing: "0.06em" }}>
+                                🕐 {item.inactiveDays == null ? "Nunca ha ingresado" : `Sin ingresar hace ${item.inactiveDays} días`}
+                              </span>
                             )}
                           </div>
                         </div>
@@ -2848,68 +2886,48 @@ const contentKpis = useMemo(() => {
                               <div style={{ fontSize: 14, fontWeight: 900, fontFamily: "var(--font-mono)", color: gradeColor, lineHeight: 1.1 }}>{grade10}</div>
                             </div>
                           )}
-                          {item.pendingSubmittedWeightPct > 0 && (
-                            <div style={{ flex: 1, textAlign: "center", padding: "3px 7px", borderRadius: 8, background: "rgba(255,255,255,0.6)", border: "1px solid #FED7AA" }}>
-                              <div style={{ fontSize: 9, color: "var(--muted)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.04em" }}>Pendiente</div>
-                              <div style={{ fontSize: 12, fontWeight: 900, fontFamily: "var(--font-mono)", color: COLORS.watch }}>{fmtPct(item.pendingSubmittedWeightPct)}</div>
-                            </div>
-                          )}
                           {hasOverdue && (
                             <div
-                              title="Peso de los ítems del gradebook con fecha de entrega vencida y sin calificación para este estudiante"
+                              title="Asignaciones con fecha vencida que este estudiante NO ha entregado (las de fecha heredada de importación no cuentan)"
                               style={{ flex: 1, textAlign: "center", padding: "3px 7px", borderRadius: 8, background: "rgba(255,255,255,0.6)", border: "1px solid #FECDCA" }}
                             >
-                              <div style={{ fontSize: 9, color: "var(--muted)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.04em" }}>Vencido</div>
-                              <div style={{ fontSize: 12, fontWeight: 900, fontFamily: "var(--font-mono)", color: COLORS.critical }}>{fmtPct(item.notSubmittedWeightPct)}</div>
+                              <div style={{ fontSize: 9, color: "var(--muted)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.04em" }}>Sin entregar</div>
+                              <div style={{ fontSize: 12, fontWeight: 900, fontFamily: "var(--font-mono)", color: COLORS.critical }}>{item.overdueList.length}</div>
+                            </div>
+                          )}
+                          {item.isInactive && (
+                            <div
+                              title="Último ingreso del estudiante al aula en Brightspace"
+                              style={{ flex: 1, textAlign: "center", padding: "3px 7px", borderRadius: 8, background: "rgba(255,255,255,0.6)", border: "1px solid #FED7AA" }}
+                            >
+                              <div style={{ fontSize: 9, color: "var(--muted)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.04em" }}>Último ingreso</div>
+                              <div style={{ fontSize: 12, fontWeight: 900, fontFamily: "var(--font-mono)", color: COLORS.watch }}>
+                                {item.inactiveDays == null ? "Nunca" : `${item.inactiveDays}d`}
+                              </div>
                             </div>
                           )}
                         </div>
                         {hasOverdue && (
                           <button
-                            onClick={(e) => { e.stopPropagation(); togglePriorityOverdue(item.userId); }}
+                            onClick={(e) => { e.stopPropagation(); setPriorityOverdueOpen((v) => (v === item.userId ? null : item.userId)); }}
                             aria-expanded={priorityOverdueOpen === item.userId}
                             style={{ alignSelf: "center", background: "none", border: "none", cursor: "pointer", fontSize: 10, fontWeight: 700, color: "var(--brand)", padding: 0, display: "inline-flex", alignItems: "center", gap: 4 }}
                           >
                             {priorityOverdueOpen === item.userId ? "Ocultar asignaciones vencidas ▴" : "Ver asignaciones vencidas sin entrega ▾"}
                           </button>
                         )}
-                        {priorityOverdueOpen === item.userId && (() => {
-                          const det = priorityOverdueData[item.userId];
-                          const fmtD = (dt) => dt.toLocaleDateString("es-CO", { day: "2-digit", month: "short", year: "numeric" });
-                          if (!det || det.loading) {
-                            return <div style={{ fontSize: 10, color: "var(--muted)", textAlign: "center" }}>Cargando asignaciones…</div>;
-                          }
-                          if (det.error) {
-                            return <div style={{ fontSize: 10, color: "var(--muted)", textAlign: "center" }}>No se pudo cargar el detalle.</div>;
-                          }
-                          if (!det.items.length) {
-                            // Vacío explicado: el % "Vencido" puede venir de fechas
-                            // heredadas o de entregas aún sin calificar
-                            const reasons = [];
-                            if (det.staleCount > 0) {
-                              reasons.push(`${det.staleCount} vencida${det.staleCount !== 1 ? "s" : ""} tiene${det.staleCount !== 1 ? "n" : ""} fecha heredada de un curso anterior (no son vencimientos reales de este semestre)`);
-                            }
-                            if (det.submittedCount > 0) {
-                              reasons.push(`${det.submittedCount} ya ${det.submittedCount !== 1 ? "fueron entregadas y están" : "fue entregada y está"} pendiente${det.submittedCount !== 1 ? "s" : ""} de calificación`);
-                            }
-                            return (
-                              <div onClick={(e) => e.stopPropagation()} style={{ fontSize: 10, color: "var(--muted)", textAlign: "center", background: "rgba(255,255,255,0.6)", border: "1px solid var(--border)", borderRadius: 8, padding: "6px 8px", cursor: "default", lineHeight: 1.5 }}>
-                                Sin asignaciones vencidas sin entregar.
-                                {reasons.length > 0 && <> El "Vencido" de arriba viene de que {reasons.join(" y ")}.</>}
+                        {priorityOverdueOpen === item.userId && item.overdueList.length > 0 && (
+                          <div onClick={(e) => e.stopPropagation()} style={{ display: "flex", flexDirection: "column", gap: 3, background: "rgba(255,255,255,0.6)", border: "1px solid var(--border)", borderRadius: 8, padding: "6px 8px", cursor: "default" }}>
+                            {item.overdueList.map((it2, i) => (
+                              <div key={i} style={{ display: "flex", justifyContent: "space-between", gap: 8, fontSize: 10 }}>
+                                <span style={{ color: "var(--text)", fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={it2.name}>{it2.name}</span>
+                                <span style={{ color: COLORS.critical, fontWeight: 800, flexShrink: 0 }}>
+                                  Venció: {it2.dueDate.toLocaleDateString("es-CO", { day: "2-digit", month: "short", year: "numeric" })}
+                                </span>
                               </div>
-                            );
-                          }
-                          return (
-                            <div onClick={(e) => e.stopPropagation()} style={{ display: "flex", flexDirection: "column", gap: 3, background: "rgba(255,255,255,0.6)", border: "1px solid var(--border)", borderRadius: 8, padding: "6px 8px", cursor: "default" }}>
-                              {det.items.map((it2, i) => (
-                                <div key={i} style={{ display: "flex", justifyContent: "space-between", gap: 8, fontSize: 10 }}>
-                                  <span style={{ color: "var(--text)", fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={it2.name}>{it2.name}</span>
-                                  <span style={{ color: COLORS.critical, fontWeight: 800, flexShrink: 0 }}>Venció: {fmtD(it2.dueDate)}</span>
-                                </div>
-                              ))}
-                            </div>
-                          );
-                        })()}
+                            ))}
+                          </div>
+                        )}
                         <div style={{ width: "100%" }}>
                           <div style={{ fontSize: 10, color: "var(--muted)", fontWeight: 700, textTransform: "uppercase", marginBottom: 3, display: "inline-flex", alignItems: "center", gap: 4 }}>
                             Cobertura

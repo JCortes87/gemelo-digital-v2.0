@@ -1345,6 +1345,105 @@ async def brightspace_dropbox_student_status(
     }
 
 
+@router.get("/brightspace/course/{org_unit_id}/dropbox/grading-status")
+async def brightspace_dropbox_grading_status(request: Request, org_unit_id: int):
+    """Estado de entregas y calificación por asignación para TODO el curso.
+
+    Por cada asignación publicada devuelve: quiénes entregaron
+    (submittedIds) y quiénes tienen la entrega SIN feedback del docente
+    (pendingGrading, con nombre). Alimenta dos vistas del dashboard:
+    - "Evaluación y Feedback": entregadas pendientes de calificar y de quién.
+    - "Estudiantes prioritarios": vencidas sin entrega por estudiante
+      (complemento de submittedIds en asignaciones con fecha pasada).
+    En carpetas de entrega GRUPAL no se expanden los grupos a estudiantes:
+    se marca isGroup=True y los ids/nombres son de la entidad grupo (se
+    excluyen del cálculo por-estudiante en el frontend)."""
+    token, err = _require_token_from_request(request)
+    if err:
+        return err
+    headers = _auth_headers(token)
+
+    status_f, folders_data = await _bs_get(
+        f"{BRIGHTSPACE_BASE_URL}/d2l/api/le/{LE_VERSION}/{org_unit_id}/dropbox/folders/",
+        headers,
+    )
+    if status_f != 200:
+        return JSONResponse(status_code=status_f, content=folders_data)
+    folders = folders_data if isinstance(folders_data, list) else (
+        (folders_data or {}).get("Objects") or (folders_data or {}).get("Items") or []
+    )
+    visible = [f for f in folders if isinstance(f, dict) and f.get("IsHidden") is not True]
+
+    sem = asyncio.Semaphore(8)
+
+    async def _folder_status(f):
+        fid = f.get("Id")
+        due = f.get("DueDate") or (f.get("Availability") or {}).get("EndDate")
+        base = {
+            "id": fid,
+            "name": f.get("Name") or f"Asignación {fid}",
+            "dueDate": due,
+            "isGroup": f.get("GroupTypeId") is not None,
+            "submittedIds": [],
+            "pendingGrading": [],
+            "ok": False,
+        }
+        if not fid:
+            return base
+        try:
+            async with sem:
+                s, subs_data = await _bs_get_cached(
+                    f"{BRIGHTSPACE_BASE_URL}/d2l/api/le/{LE_VERSION}"
+                    f"/{org_unit_id}/dropbox/folders/{fid}/submissions/",
+                    headers,
+                )
+            if s != 200:
+                return base
+            subs_list = subs_data if isinstance(subs_data, list) else (
+                (subs_data or {}).get("Items") or (subs_data or {}).get("items") or []
+            )
+            for entry in subs_list:
+                if not isinstance(entry, dict):
+                    continue
+                ent = entry.get("Entity") or {}
+                eid = (
+                    entry.get("EntityId")
+                    or ent.get("EntityId")
+                    or entry.get("UserId")
+                )
+                if eid is None:
+                    continue
+                inner = entry.get("Submissions") or entry.get("submissions") or []
+                has_sub = isinstance(inner, list) and len(inner) > 0
+                if not has_sub:
+                    continue
+                base["submittedIds"].append(str(eid))
+                if not entry.get("Feedback"):
+                    base["pendingGrading"].append({
+                        "id": str(eid),
+                        "name": ent.get("DisplayName") or ent.get("Name") or str(eid),
+                    })
+            base["ok"] = True
+        except Exception as e:
+            logger.warning(
+                "dropbox grading status failed folder=%s: %s", fid, e
+            )
+        return base
+
+    items = list(await asyncio.gather(*[_folder_status(f) for f in visible]))
+
+    def _due_key(x):
+        return (x.get("dueDate") is None, x.get("dueDate") or "", str(x.get("name") or ""))
+    items.sort(key=_due_key)
+
+    known = [i for i in items if i.get("ok")]
+    return {
+        "orgUnitId": org_unit_id,
+        "items": items,
+        "partial": len(known) < len(items),
+    }
+
+
 @router.get("/brightspace/course/{org_unit_id}/dropbox/folder/{folder_id}/student/{user_id}/download")
 async def brightspace_dropbox_download(
     request: Request, org_unit_id: int, folder_id: int, user_id: int

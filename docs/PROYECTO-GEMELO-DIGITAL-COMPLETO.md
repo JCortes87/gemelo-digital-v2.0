@@ -45,7 +45,16 @@ agregada y predictiva sobre el desempeño de cada curso.
   "Cumplimiento evaluativo") con el "Índice de actividades evaluadas y
   retroalimentadas", y **contenidos consumidos por estudiantes**
   (promedio de temas abiertos, vía user progress de Brightspace).
-- **Estudiantes prioritarios** — quiénes necesitan intervención y por qué.
+- **Estudiantes prioritarios** — centrada en el ESTUDIANTE, con tres
+  criterios: calificación crítica (<5), **asignaciones vencidas sin
+  entrega** (cruce real con dropbox; desplegable con nombre y fecha) y
+  **sin ingresar al aula hace más de 7 días** (o nunca). Lo que es
+  trabajo del profesor no aparece aquí.
+- **Evaluación y Feedback** — además del índice de actividades evaluadas
+  y retroalimentadas, el desplegable **"Pendientes por calificar"**:
+  entregas de estudiantes sin feedback, por asignación, con la fecha
+  (marca "Venció" si pasó) y los **nombres de quienes esperan
+  calificación**.
 - **Resultados de aprendizaje** — RA del curso en 2 columnas, ordenados
   de menor a mayor desempeño, con botón Vincular.
 - **Asignaciones del curso** (`AssignmentsPanel`) — creadas, con entregas
@@ -990,6 +999,20 @@ principal y respaldadas en `gemelo-digital-v2.0`; cada una se mergeó a
   curso", "Entraron…" → **"Ingresaron…"**, "Sin entrar hace +14 días" →
   **"Sin ingresar hace +14 días"** y "Nunca han entrado" → **"Nunca han
   ingresado"**.
+- **Rediseño de prioritarios en dos escenarios (10 ago)**: nuevo
+  endpoint `GET /brightspace/course/{ou}/dropbox/grading-status`
+  (entregas y feedback por asignación de TODO el curso, cacheado; las
+  carpetas grupales se marcan `isGroup` y se excluyen del cálculo
+  por-estudiante). Con él: **"Estudiantes prioritarios"** pasa a
+  criterios centrados en el estudiante — calificación crítica,
+  **vencidas sin entrega** (conteo + desplegable local con nombre y
+  fecha, sin fetch por estudiante) y **sin ingresar hace +7 días** (o
+  nunca, chip y stat de último ingreso); ya NO lista estudiantes por
+  "pendiente de calificación" ni "cobertura baja" (eso es trabajo del
+  profesor). **"Evaluación y Feedback"** gana el desplegable
+  **"Pendientes por calificar (N entregas)"**: por asignación, fecha
+  (Venció/Vence) y nombres de los estudiantes que entregaron y esperan
+  feedback.
 - **Estudiantes prioritarios: detalle de vencidos y regla heredada en
   backend (10 ago)**: el stat "Vencido X%" de la tarjeta es el **peso**
   del gradebook en ítems con fecha vencida y sin calificar (por eso
