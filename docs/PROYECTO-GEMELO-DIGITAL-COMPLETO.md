@@ -59,9 +59,10 @@ agregada y predictiva sobre el desempeño de cada curso.
   de menor a mayor desempeño, con botón Vincular.
 - **Asignaciones del curso** (`AssignmentsPanel`) — creadas, con entregas
   (+% de entrega), calificadas y vencidas; listado detallado colapsable.
-- **Accesos al curso** — recencia del último acceso por estudiante
-  ("Ingresaron hoy" / "Ingresaron en los últimos 7 días" / "Sin ingresar
-  hace +14 días" / "Nunca han ingresado") y accesos del profesor, del
+- **Accesos al curso** — recencia del último acceso por estudiante en
+  cuatro grupos **excluyentes** que suman 100%: "Ingresaron hoy" /
+  "Ingresaron entre ayer y hace 7 días" / "Sin ingresar hace +7 días"
+  (en rojo) / "Nunca han ingresado"; y accesos del profesor, del
   `LastAccessed` del classlist;
   abajo, el desplegable **"Acceso a contenidos"** con el detalle por
   estudiante y qué contenidos abrió cada uno — en esta tarjeta se les
@@ -999,6 +1000,11 @@ principal y respaldadas en `gemelo-digital-v2.0`; cada una se mergeó a
   curso", "Entraron…" → **"Ingresaron…"**, "Sin entrar hace +14 días" →
   **"Sin ingresar hace +14 días"** y "Nunca han entrado" → **"Nunca han
   ingresado"**.
+- **Buckets de accesos excluyentes (10 ago)**: "Ingresaron en los
+  últimos 7 días" incluía también a los de hoy, duplicando la lectura
+  con "Ingresaron hoy". Ahora los cuatro grupos son excluyentes — hoy /
+  **entre ayer y hace 7 días** / +7 días / nunca — cada estudiante cae
+  en uno solo y los porcentajes suman 100%.
 - **Afinación de los dos escenarios (10 ago, 2ª ronda)**: en
   "Evaluación y Feedback", "Pendientes por calificar" ahora se muestra
   como **"X/Y asignaciones por calificar"** con barra de progreso (roja

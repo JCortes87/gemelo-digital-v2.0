@@ -1794,8 +1794,10 @@ const contentKpis = useMemo(() => {
   const accessStats = useMemo(() => {
     if (!studentRows.length || !Object.keys(lastAccessMap).length) return null;
     const now = Date.now();
+    // Buckets EXCLUYENTES (cada estudiante cae en uno solo, suman 100%):
+    // hoy · entre ayer y 7 días · +7 días · nunca
     const todayList = [];   // ingresaron en las últimas 24 h
-    const weekList = [];    // ingresaron en los últimos 7 días (incluye hoy)
+    const weekList = [];    // ingresaron entre ayer y hace 7 días (sin contar hoy)
     const staleList = [];   // llevan más de 7 días SIN ingresar
     const neverList = [];   // nunca han ingresado al curso
     for (const r of studentRows) {
@@ -1807,7 +1809,7 @@ const contentKpis = useMemo(() => {
       const days = (now - new Date(iso).getTime()) / 86400000;
       const entry = { userId: r.userId, name: r.displayName, days: Math.floor(days) };
       if (days <= 1) todayList.push(entry);
-      if (days <= 7) weekList.push(entry);
+      else if (days <= 7) weekList.push(entry);
       else staleList.push(entry);
     }
     todayList.sort((a, b) => a.days - b.days);
@@ -3253,7 +3255,7 @@ const contentKpis = useMemo(() => {
               <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
                 {[
                   { key: "today", label: "Ingresaron hoy", value: accessStats.today, color: COLORS.ok },
-                  { key: "week", label: "Ingresaron en los últimos 7 días", value: accessStats.week, color: COLORS.brand },
+                  { key: "week", label: "Ingresaron entre ayer y hace 7 días", value: accessStats.week, color: COLORS.brand },
                   { key: "stale", label: "Sin ingresar hace +7 días", value: accessStats.stale, color: accessStats.stale > 0 ? COLORS.critical : "var(--muted)" },
                   { key: "never", label: "Nunca han ingresado", value: accessStats.never, color: accessStats.never > 0 ? COLORS.critical : "var(--muted)" },
                 ].map((row) => {
