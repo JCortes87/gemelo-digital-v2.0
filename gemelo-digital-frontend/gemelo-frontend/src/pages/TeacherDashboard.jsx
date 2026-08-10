@@ -84,7 +84,7 @@ function contentTypeLabel(title, url, topicType) {
 }
 
 const CONTENT_TYPE_ICONS = {
-  HTML: "🌐", PDF: "📙", Excel: "📗", Word: "📘",
+  HTML: "🌐", PDF: "📃", Excel: "📗", Word: "📘",
   "Imágenes": "🖼️", Audios: "🎧", Videos: "🎬", Enlace: "🔗", Otros: "📄",
 };
 
@@ -1878,18 +1878,20 @@ const contentKpis = useMemo(() => {
       const now = new Date();
       const start = toDate(courseInfo?.StartDate);
       const items = [];
+      let staleCount = 0;      // vencidas con fecha heredada (excluidas)
+      let submittedCount = 0;  // vencidas pero YA entregadas (excluidas)
       for (const e of evs) {
         if (e?.isCorte === true || e?.scorePct != null) continue;
         const d = toDate(e?.dueDate);
         if (!d || d >= now) continue;
-        if (start && d < start) continue; // fecha heredada de importación
-        if (submittedByGradeId.get(String(e?.gradeObjectId)) === true) continue; // entregó — solo falta calificar
+        if (start && d < start) { staleCount += 1; continue; } // fecha heredada de importación
+        if (submittedByGradeId.get(String(e?.gradeObjectId)) === true) { submittedCount += 1; continue; } // entregó — solo falta calificar
         items.push({ name: e?.name || `Asignación ${e?.gradeObjectId}`, dueDate: d });
       }
       items.sort((a, b) => a.dueDate - b.dueDate);
-      setPriorityOverdueData((p) => ({ ...p, [userId]: { loading: false, items } }));
+      setPriorityOverdueData((p) => ({ ...p, [userId]: { loading: false, items, staleCount, submittedCount } }));
     } catch {
-      setPriorityOverdueData((p) => ({ ...p, [userId]: { loading: false, items: [], error: true } }));
+      setPriorityOverdueData((p) => ({ ...p, [userId]: { loading: false, items: [], staleCount: 0, submittedCount: 0, error: true } }));
     }
   };
   const performanceBands = useMemo(() => {
@@ -2881,7 +2883,21 @@ const contentKpis = useMemo(() => {
                             return <div style={{ fontSize: 10, color: "var(--muted)", textAlign: "center" }}>No se pudo cargar el detalle.</div>;
                           }
                           if (!det.items.length) {
-                            return <div style={{ fontSize: 10, color: "var(--muted)", textAlign: "center" }}>Sin asignaciones vencidas sin entregar.</div>;
+                            // Vacío explicado: el % "Vencido" puede venir de fechas
+                            // heredadas o de entregas aún sin calificar
+                            const reasons = [];
+                            if (det.staleCount > 0) {
+                              reasons.push(`${det.staleCount} vencida${det.staleCount !== 1 ? "s" : ""} tiene${det.staleCount !== 1 ? "n" : ""} fecha heredada de un curso anterior (no son vencimientos reales de este semestre)`);
+                            }
+                            if (det.submittedCount > 0) {
+                              reasons.push(`${det.submittedCount} ya ${det.submittedCount !== 1 ? "fueron entregadas y están" : "fue entregada y está"} pendiente${det.submittedCount !== 1 ? "s" : ""} de calificación`);
+                            }
+                            return (
+                              <div onClick={(e) => e.stopPropagation()} style={{ fontSize: 10, color: "var(--muted)", textAlign: "center", background: "rgba(255,255,255,0.6)", border: "1px solid var(--border)", borderRadius: 8, padding: "6px 8px", cursor: "default", lineHeight: 1.5 }}>
+                                Sin asignaciones vencidas sin entregar.
+                                {reasons.length > 0 && <> El "Vencido" de arriba viene de que {reasons.join(" y ")}.</>}
+                              </div>
+                            );
                           }
                           return (
                             <div onClick={(e) => e.stopPropagation()} style={{ display: "flex", flexDirection: "column", gap: 3, background: "rgba(255,255,255,0.6)", border: "1px solid var(--border)", borderRadius: 8, padding: "6px 8px", cursor: "default" }}>

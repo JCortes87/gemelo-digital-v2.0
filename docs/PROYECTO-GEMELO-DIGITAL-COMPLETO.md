@@ -1001,7 +1001,12 @@ principal y respaldadas en `gemelo-digital-v2.0`; cada una se mergeó a
   con el estado de entregas dropbox y lista nombre + fecha SOLO de las
   asignaciones vencidas que el estudiante **no entregó** (si entregó y
   falta calificar no se lista — no es problema del estudiante; las de
-  fecha heredada tampoco se listan aquí). Además la
+  fecha heredada tampoco se listan aquí). Cuando la lista queda vacía
+  pero el stat "Vencido" muestra un %, el desplegable **explica el
+  porqué** ("N tienen fecha heredada…", "N ya fueron entregadas y están
+  pendientes de calificación"). El icono del PDF pasó de 📙 a **📃**
+  (documento neutro — el librito se veía rojizo según la fuente de
+  emojis del sistema). Además la
   regla de fechas heredadas se aplicó **en el backend**
   (`_course_start_date` + `is_overdue` en `build_gemelo` y
   `compute_students_gradebook_metrics`, nuevo
