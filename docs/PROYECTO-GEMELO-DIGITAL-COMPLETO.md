@@ -990,6 +990,15 @@ principal y respaldadas en `gemelo-digital-v2.0`; cada una se mergeó a
   curso", "Entraron…" → **"Ingresaron…"**, "Sin entrar hace +14 días" →
   **"Sin ingresar hace +14 días"** y "Nunca han entrado" → **"Nunca han
   ingresado"**.
+- **Fix del conteo de recursos educativos (10 ago)**: la tarjeta
+  "Recursos educativos publicados" descartaba los recursos con
+  `LastModifiedDate` anterior al inicio del curso — el material cargado
+  con antelación (aula preparada o copiada antes del semestre)
+  desaparecía del conteo y un curso con 5+ PDFs mostraba "1 PDF".
+  Ahora cuenta **todos los recursos visibles** del curso (ocultos
+  excluidos), con el desglose por tipo (PDF, Word, Excel, Imágenes,
+  Audios, Videos, HTML, Enlace, Otros) sobre esa misma base; el
+  tooltip se actualizó ("sin importar cuándo se cargaron").
 - **Toggle de vistas para profesores y dona de riesgo (3 ago)**: el
   toggle "Vista profesor / Vista estudiante" del topbar (con su
   selector de estudiantes del curso) dejó de ser exclusivo de

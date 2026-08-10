@@ -1816,13 +1816,15 @@ const contentKpis = useMemo(() => {
   // Preferimos /content/topics (con Url para clasificar); fallback al root.
   const elementsStats = useMemo(() => {
     if (Array.isArray(contentTopics) && contentTopics.length) {
-      const start = toDate(courseInfo?.StartDate);
+      // Cuenta TODOS los recursos visibles publicados en el curso. Antes se
+      // descartaban los que tenian LastModifiedDate anterior al inicio del
+      // curso, y el material cargado con antelacion (caso tipico: aula
+      // preparada o copiada antes del semestre) desaparecia del conteo —
+      // un curso con 5+ PDFs mostraba "1 PDF".
       const counts = {};
       let total = 0;
       for (const t of contentTopics) {
         if (t?.IsHidden === true) continue;
-        const d = toDate(t?.LastModifiedDate);
-        if (start && (!d || d < start)) continue;
         const label = contentTypeLabel(t?.Title, t?.Url, t?.TopicType);
         counts[label] = (counts[label] || 0) + 1;
         total += 1;
@@ -1839,7 +1841,7 @@ const contentKpis = useMemo(() => {
       breakdown: contentKpis?.typeBreakdown || [],
       rhythm: contentRhythmMeta,
     };
-  }, [contentTopics, courseInfo?.StartDate, contentKpis, contentRhythmMeta]);
+  }, [contentTopics, contentKpis, contentRhythmMeta]);
 
   // Detalle de consumo desplegable
   const [consumptionDetailOpen, setConsumptionDetailOpen] = useState(false);
@@ -2529,7 +2531,7 @@ const contentKpis = useMemo(() => {
           {/* Contenidos creados — número grande + ritmo */}
           <div className="kpi-card" style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 6, padding: isMobile ? 12 : 14, textAlign: "center" }}>
             <div style={{ fontSize: 12, fontWeight: 800, color: "var(--text)", letterSpacing: "0.01em", display: "inline-flex", alignItems: "center", gap: 4 }}>
-              Recursos educativos publicados <InfoTooltip text="Recursos educativos dentro de los módulos de contenido del curso (PDF, Word, Excel, páginas, enlaces…) creados o actualizados desde el inicio del curso. No incluye asignaciones (dropbox) — esas se cuentan aparte en la tarjeta de Asignaciones." />
+              Recursos educativos publicados <InfoTooltip text="Todos los recursos visibles en los módulos de contenido del curso (PDF, Word, Excel, imágenes, enlaces, páginas…), sin importar cuándo se cargaron. No incluye asignaciones (dropbox) — esas se cuentan aparte en la tarjeta de Asignaciones." />
             </div>
             <div style={{ fontSize: isMobile ? 30 : 38, fontWeight: 900, color: elementsStats.total != null ? elementsStats.rhythm.color : "var(--muted)", fontFamily: "var(--font-mono)", lineHeight: 1 }}>
               {elementsStats.total ?? "—"}
