@@ -990,6 +990,18 @@ principal y respaldadas en `gemelo-digital-v2.0`; cada una se mergeó a
   curso", "Entraron…" → **"Ingresaron…"**, "Sin entrar hace +14 días" →
   **"Sin ingresar hace +14 días"** y "Nunca han entrado" → **"Nunca han
   ingresado"**.
+- **Fechas heredadas de importación (10 ago)**: al importar contenido
+  de un curso anterior, las asignaciones llegan con fechas de cierre
+  viejas y se contaban como "vencidas". Nueva regla: una fecha de
+  cierre **anterior al inicio del curso actual** no puede ser un
+  vencimiento real — se marca como **"Fecha heredada"** (chip gris en
+  el detalle de Asignaciones, con aviso de cuántas hay y sugerencia de
+  actualizarlas en Brightspace) y se excluye del contador "Vencidas";
+  un cierre posterior al inicio del curso y ya pasado sí cuenta como
+  vencida. La misma regla aplica en el portal del estudiante (las
+  heredadas no disparan el aviso de "sin entregar con fecha vencida"
+  ni salen en rojo). El icono del PDF cambió de 📕 a 📙 (el rojo se
+  leía como alarma).
 - **Fix del conteo de recursos educativos (10 ago)**: la tarjeta
   "Recursos educativos publicados" descartaba los recursos con
   `LastModifiedDate` anterior al inicio del curso — el material cargado

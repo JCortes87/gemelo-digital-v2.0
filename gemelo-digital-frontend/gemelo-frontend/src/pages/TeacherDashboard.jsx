@@ -84,7 +84,7 @@ function contentTypeLabel(title, url, topicType) {
 }
 
 const CONTENT_TYPE_ICONS = {
-  HTML: "🌐", PDF: "📕", Excel: "📗", Word: "📘",
+  HTML: "🌐", PDF: "📙", Excel: "📗", Word: "📘",
   "Imágenes": "🖼️", Audios: "🎧", Videos: "🎬", Enlace: "🔗", Otros: "📄",
 };
 
@@ -3035,7 +3035,7 @@ const contentKpis = useMemo(() => {
             accent="brand"
           >
             <ErrorBoundary sectionName="Asignaciones del curso">
-              <AssignmentsPanel orgUnitId={orgUnitId} />
+              <AssignmentsPanel orgUnitId={orgUnitId} courseStart={courseInfo?.StartDate} />
             </ErrorBoundary>
           </Card>
         </div>
