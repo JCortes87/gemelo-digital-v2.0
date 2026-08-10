@@ -999,6 +999,20 @@ principal y respaldadas en `gemelo-digital-v2.0`; cada una se mergeó a
   curso", "Entraron…" → **"Ingresaron…"**, "Sin entrar hace +14 días" →
   **"Sin ingresar hace +14 días"** y "Nunca han entrado" → **"Nunca han
   ingresado"**.
+- **Afinación de los dos escenarios (10 ago, 2ª ronda)**: en
+  "Evaluación y Feedback", "Pendientes por calificar" ahora se muestra
+  como **"X/Y asignaciones por calificar"** con barra de progreso (roja
+  si alguna ya venció) y la flechita para ver las entregas de quiénes;
+  además, nueva sección **"Faltan por entregar (sin fecha límite)"**:
+  asignaciones sin fecha de vencimiento donde ≥50% del curso ya entregó
+  — los que faltan probablemente van tarde, se listan sus nombres. En
+  "Estudiantes prioritarios" la **inactividad dejó de ser criterio de
+  inclusión** (solo-inactivos viven en "Accesos al curso"): se incluye
+  por calificación crítica o vencidas sin entrega, y la alerta "+7 días
+  sin ingresar" se muestra solo como dato adicional de los ya
+  incluidos. En "Accesos al curso" el bucket pasó de "+14 días" a
+  **"Sin ingresar hace +7 días" en rojo** (antes había un hueco: los de
+  8–14 días no aparecían en ningún grupo).
 - **Rediseño de prioritarios en dos escenarios (10 ago)**: nuevo
   endpoint `GET /brightspace/course/{ou}/dropbox/grading-status`
   (entregas y feedback por asignación de TODO el curso, cacheado; las
