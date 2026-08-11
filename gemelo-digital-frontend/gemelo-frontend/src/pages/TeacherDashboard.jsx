@@ -2612,7 +2612,7 @@ const contentKpis = useMemo(() => {
           {/* Contenidos creados — número grande + ritmo */}
           <div className="kpi-card" style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 6, padding: isMobile ? 12 : 14, textAlign: "center" }}>
             <div style={{ fontSize: 12, fontWeight: 800, color: "var(--text)", letterSpacing: "0.01em", display: "inline-flex", alignItems: "center", gap: 4 }}>
-              Recursos educativos publicados <InfoTooltip text="Todos los recursos visibles en los módulos de contenido del curso (PDF, Word, Excel, imágenes, enlaces, páginas…), sin importar cuándo se cargaron. No incluye asignaciones (dropbox) — esas se cuentan aparte en la tarjeta de Asignaciones." />
+              Recursos educativos publicados <InfoTooltip text="Todos los recursos visibles en los módulos de contenido del curso (PDF, Word, Excel, imágenes, enlaces, páginas…), sin importar cuándo se cargaron. No incluye las asignaciones — esas se cuentan aparte en la tarjeta de Asignaciones." />
             </div>
             <div style={{ fontSize: isMobile ? 30 : 38, fontWeight: 900, color: elementsStats.total != null ? elementsStats.rhythm.color : "var(--muted)", fontFamily: "var(--font-mono)", lineHeight: 1 }}>
               {elementsStats.total ?? "—"}
@@ -2821,7 +2821,7 @@ const contentKpis = useMemo(() => {
 
           {/* ── Riesgo académico ── */}
           <div style={{ order: 1, display: "flex" }}>
-            <Card style={{ flex: 1 }} title={<span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>⚠️ Riesgo académico <InfoTooltip text="Distribución de los estudiantes según su calificación actual: Alto (<5.0), Medio (5.0–7.0), Bajo (≥7.0). Calculado solo con calificaciones reales del gradebook, excluye columnas 'Corte'." /></span>} accent="pending">
+            <Card style={{ flex: 1 }} title={<span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>⚠️ Riesgo académico <InfoTooltip text="Distribución de los estudiantes según su calificación actual: Alto (<5.0), Medio (5.0–7.0), Bajo (≥7.0). Se calcula solo con calificaciones reales publicadas, sin contar las columnas de corte." /></span>} accent="pending">
               {/* Dona (CircularRing), mismo tipo de gráfico que "Calificación promedio" */}
               <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 8, padding: "4px 0 6px" }}>
                 <CircularRing
@@ -3014,7 +3014,7 @@ const contentKpis = useMemo(() => {
                         <div style={{ width: "100%" }}>
                           <div style={{ fontSize: 10, color: "var(--muted)", fontWeight: 700, textTransform: "uppercase", marginBottom: 3, display: "inline-flex", alignItems: "center", gap: 4 }}>
                             Cobertura
-                            <InfoTooltip text="Porcentaje del peso del gradebook que ya está calificado para este estudiante. 0% significa que aún no tiene calificaciones publicadas en este curso." />
+                            <InfoTooltip text="Qué tanto del curso ya tiene calificación para este estudiante. 0% significa que aún no tiene calificaciones publicadas en este curso." />
                           </div>
                           <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
                             <div style={{ flex: 1, height: 5, borderRadius: 999, background: "rgba(148,163,184,0.2)", overflow: "hidden" }}>
@@ -3230,7 +3230,7 @@ const contentKpis = useMemo(() => {
         <div style={{ display: "flex" }}>
           <Card
             style={{ flex: 1 }}
-            title={<span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>📝 Asignaciones del curso <InfoTooltip text="Estado de las asignaciones (dropbox) que has creado en Brightspace: cuántas tienen entregas de estudiantes (con % de entrega), cuántas ya están completamente calificadas y cuántas vencieron. Ordenadas por fecha de entrega." /></span>}
+            title={<span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>📝 Asignaciones del curso <InfoTooltip text="Estado de las asignaciones publicadas en Brightspace: cuántas tienen entregas de estudiantes (con % de entrega), cuántas ya están completamente calificadas y cuántas vencieron. Ordenadas por fecha de entrega." /></span>}
             accent="brand"
           >
             <ErrorBoundary sectionName="Asignaciones del curso">
@@ -3243,7 +3243,7 @@ const contentKpis = useMemo(() => {
         <div style={{ display: "flex" }}>
           <Card
             style={{ flex: 1 }}
-            title={<span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>🔑 Accesos al curso <InfoTooltip text="Último acceso de cada estudiante al curso en Brightspace (dato del classlist). Útil para detectar estudiantes desconectados. En la pestaña Estudiantes ves el último acceso de cada uno." /></span>}
+            title={<span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>🔑 Accesos al curso <InfoTooltip text="Último ingreso de cada estudiante al curso en Brightspace. Útil para detectar estudiantes desconectados. En la pestaña Estudiantes ves el último ingreso de cada uno." /></span>}
             accent="brand"
           >
             {accessStats == null ? (
@@ -3352,7 +3352,7 @@ const contentKpis = useMemo(() => {
                   <div style={{ fontSize: 10, color: "var(--muted)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em" }}>
                     Accesos del profesor
                   </div>
-                  <InfoTooltip text="Último ingreso al curso de cada miembro del equipo docente (roles no-estudiante del classlist de Brightspace)." />
+                  <InfoTooltip text="Último ingreso al curso de cada miembro del equipo docente." />
                 </div>
                 {teacherAccessList.length === 0 ? (
                   <div style={{ fontSize: 11, color: "var(--muted)" }}>Dato no disponible.</div>
@@ -3521,7 +3521,7 @@ const contentKpis = useMemo(() => {
               {courseInfo?.Name || `Curso ${orgUnitId}`}
             </div>
           </div>
-          <Card title={<span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>Calendario de entregas <InfoTooltip text="Próximas entregas del curso con detección de sobrecarga (3+ en el mismo día). Heatmap semanal al final. Toma los datos directamente del gradebook del curso." /></span>}>
+          <Card title={<span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>Calendario de entregas <InfoTooltip text="Próximas entregas del curso con detección de sobrecarga (3 o más en el mismo día). Al final hay un mapa de calor semanal. Toma las fechas de las actividades calificables del curso." /></span>}>
             <ErrorBoundary sectionName="Calendario de entregas">
               <DueDateCalendar orgUnitId={orgUnitId} studentRows={studentRows} />
             </ErrorBoundary>
@@ -4701,7 +4701,7 @@ const contentKpis = useMemo(() => {
                     <span className="empty-state-icon">📭</span>
                     <span>Sin evidencias calificadas disponibles</span>
                     <span style={{ fontSize: 12, color: "var(--muted)" }}>
-                      Los ítems del gradebook aún no tienen nota registrada.
+                      Las actividades del curso aún no tienen calificación registrada.
                     </span>
                   </div>
                 )}
