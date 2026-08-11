@@ -1000,6 +1000,17 @@ principal y respaldadas en `gemelo-digital-v2.0`; cada una se mergeó a
   curso", "Entraron…" → **"Ingresaron…"**, "Sin entrar hace +14 días" →
   **"Sin ingresar hace +14 días"** y "Nunca han entrado" → **"Nunca han
   ingresado"**.
+- **Lenguaje sencillo en textos y tooltips (11 ago)**: se eliminó la
+  jerga técnica de todos los textos visibles del dashboard docente —
+  nada de "dropbox", "gradebook", "classlist" ni nombres de variables:
+  ahora se habla de "asignaciones publicadas", "actividades
+  calificables", "calificaciones publicadas", "último ingreso", etc.
+  El vacío de la tarjeta Asignaciones pasó de "no tiene asignaciones
+  creadas… cuando crees asignaciones (dropbox)" a **"Este curso no
+  tiene asignaciones publicadas. Cuando publiques asignaciones en
+  Brightspace aparecerán aquí…"** (lo correcto: pueden existir sin
+  estar publicadas). Convención fija: los textos que lee el
+  usuario final no llevan términos técnicos ni nombres de variables.
 - **Buckets de accesos excluyentes (10 ago)**: "Ingresaron en los
   últimos 7 días" incluía también a los de hoy, duplicando la lectura
   con "Ingresaron hoy". Ahora los cuatro grupos son excluyentes — hoy /

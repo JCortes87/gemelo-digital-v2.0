@@ -144,9 +144,9 @@ function AssignmentsPanel({ orgUnitId, courseStart }) {
     return (
       <div className="empty-state" style={{ minHeight: 120 }}>
         <span className="empty-state-icon">📭</span>
-        <span style={{ fontSize: 12 }}>Este curso no tiene asignaciones creadas</span>
+        <span style={{ fontSize: 12 }}>Este curso no tiene asignaciones publicadas</span>
         <span style={{ fontSize: 11, color: "var(--muted)", textAlign: "center" }}>
-          Cuando crees asignaciones (dropbox) en Brightspace aparecerán aquí con su
+          Cuando publiques asignaciones en Brightspace aparecerán aquí con su
           estado de entregas y calificación.
         </span>
       </div>

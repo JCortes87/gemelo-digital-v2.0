@@ -193,7 +193,7 @@ function DueDateCalendar({ orgUnitId, studentRows, studentEvidences }) {
         <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 4 }}>
           {items.length === 0
             ? "El curso no tiene ítems calificables aún."
-            : `${items.length} ítems del gradebook, pero ninguno tiene fecha configurada.`}
+            : `${items.length} actividades calificables, pero ninguna tiene fecha configurada.`}
         </div>
       </div>
     );
@@ -393,7 +393,7 @@ function DueDateCalendar({ orgUnitId, studentRows, studentEvidences }) {
       </div>
 
       <div style={{ fontSize: 10, color: "var(--muted)", textAlign: "center", borderTop: "1px solid var(--border)", paddingTop: 8 }}>
-        {items.length} ítems del curso · {assignments.length} con fecha de entrega
+        {items.length} actividades del curso · {assignments.length} con fecha de entrega
       </div>
     </div>
   );

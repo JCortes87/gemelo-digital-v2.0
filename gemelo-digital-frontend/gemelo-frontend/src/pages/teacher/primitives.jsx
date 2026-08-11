@@ -520,7 +520,7 @@ export function CoverageBars({ donePct, pendingPct, overduePct, openPct }) {
         Índice de actividades evaluadas y retroalimentadas
       </div>
       <BarRow label="Calificado" value={d} color={COLORS.ok}
-        tooltip="Ítems con nota numérica publicada en el gradebook." />
+        tooltip="Actividades que ya tienen calificación publicada." />
       <BarRow label="Pendiente calificación" value={p} color={COLORS.brand}
         tooltip="El estudiante entregó pero el docente aún no ha publicado nota numérica." />
       {op > 0.5 && (
