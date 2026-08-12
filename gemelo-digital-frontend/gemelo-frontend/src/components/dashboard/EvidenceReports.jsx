@@ -477,7 +477,7 @@ export default function EvidenceReports({
             {/* Print-only header (hidden on screen) */}
             <div className="print-only" style={{ padding: "16px 18px 0", borderBottom: "2px solid #000" }}>
               <div style={{ fontSize: 10, fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.06em", color: "#555" }}>
-                CESA · G.D · Retroalimentación del Docente
+                CESA · Visor de desempeño estudiantil · Retroalimentación del Docente
               </div>
               <div style={{ fontSize: 16, fontWeight: 800, margin: "4px 0 2px" }}>{feedbackModal.evidenceName}</div>
               <div style={{ fontSize: 12, color: "#555" }}>

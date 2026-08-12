@@ -19,6 +19,13 @@ Superiores de Administración). Se integra con **Brightspace** (el LMS de
 CESA) y muestra a docentes, coordinadores y estudiantes información
 agregada y predictiva sobre el desempeño de cada curso.
 
+> **Nombre visible del producto**: desde el 11 ago 2026 la interfaz ya no
+> muestra las siglas "G.D" — el nombre que ven los usuarios es **"Visor de
+> desempeño estudiantil"** (en el sidebar, login, portales, reportes
+> exportados, tutorial, correos de reporte de errores, etc.). "Gemelo
+> Digital" sigue siendo el nombre interno del proyecto (repos, código,
+> endpoints `/gemelo/*`, esta documentación).
+
 ### Funcionalidades principales
 
 #### Vista de docente (rediseñada en julio 2026, estilo dashboard analítico)
@@ -1000,6 +1007,15 @@ principal y respaldadas en `gemelo-digital-v2.0`; cada una se mergeó a
   curso", "Entraron…" → **"Ingresaron…"**, "Sin entrar hace +14 días" →
   **"Sin ingresar hace +14 días"** y "Nunca han entrado" → **"Nunca han
   ingresado"**.
+- **Renombre visible: "G.D" → "Visor de desempeño estudiantil" (11
+  ago)**: se reemplazaron las ~57 apariciones de las siglas en todos
+  los textos visibles del frontend (sidebar, topbar, pantallas de
+  login/carga, portal del estudiante, panel coordinador, consola
+  superadmin, tutorial de bienvenida, novedades, reportes exportados a
+  HTML/print, asunto del correo de reporte de errores), con los
+  ajustes gramaticales del caso ("a G.D" → "al Visor…", "de G.D" →
+  "del Visor…"). El nombre interno del proyecto (repos, endpoints
+  `/gemelo/*`, código) no cambia.
 - **Lenguaje sencillo en textos y tooltips (11 ago)**: se eliminó la
   jerga técnica de todos los textos visibles del dashboard docente —
   nada de "dropbox", "gradebook", "classlist" ni nombres de variables:

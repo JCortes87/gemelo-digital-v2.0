@@ -91,7 +91,7 @@ export default function RoutesView({ studentRows, courseInfo, thresholds, onSele
       {/* Page header */}
       <div>
         <div style={{ fontSize: 10, fontWeight: 800, color: "var(--brand)", textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: 4 }}>
-          G.D · Rutas de atención
+          Visor de desempeño estudiantil · Rutas de atención
         </div>
         <h1 style={{ fontSize: isMobile ? 20 : 26, fontWeight: 900, color: "var(--text)", letterSpacing: "-0.02em", lineHeight: 1.1 }}>
           {courseInfo?.Name || "Curso activo"}

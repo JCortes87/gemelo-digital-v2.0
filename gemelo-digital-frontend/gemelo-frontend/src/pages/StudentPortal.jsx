@@ -174,7 +174,7 @@ function StudentAnnouncements({ onClose }) {
 
         <div style={{ textAlign: "center", marginBottom: 18 }}>
           <span style={{ fontSize: 11, fontWeight: 800, color: "var(--brand)", textTransform: "uppercase", letterSpacing: "0.1em" }}>
-            🔔 Novedades · G.D
+            🔔 Novedades · Visor de desempeño estudiantil
           </span>
         </div>
 
@@ -565,7 +565,7 @@ export default function StudentPortal({ orgUnitIdOverride, userIdOverride, allow
           <div style={{ fontSize: 48, marginBottom: 16 }}>🎓</div>
           <h2 style={{ fontSize: 20, fontWeight: 900, color: "var(--text)", margin: "0 0 10px" }}>Portal Estudiante</h2>
           <p style={{ fontSize: 14, color: "var(--muted)", lineHeight: 1.6, margin: "0 0 24px" }}>
-            Hola, {firstName}. Para ver tu información académica, accede desde tu curso en Brightspace usando el enlace de G.D.
+            Hola, {firstName}. Para ver tu información académica, accede desde tu curso en Brightspace usando el enlace del Visor de desempeño estudiantil.
           </p>
           <button onClick={logout} style={{ background: "none", border: "1px solid var(--border)", borderRadius: 8, padding: "8px 16px", fontSize: 12, fontWeight: 700, color: "var(--muted)", cursor: "pointer" }}>
             Cerrar sesión
@@ -623,7 +623,7 @@ export default function StudentPortal({ orgUnitIdOverride, userIdOverride, allow
         <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
           <div style={{ width: 32, height: 32, borderRadius: 8, background: "var(--brand)", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: 10, fontWeight: 900, flexShrink: 0 }}>CESA</div>
           <div style={{ minWidth: 0 }}>
-            <div style={{ fontSize: 13, fontWeight: 800, color: "var(--text)" }}>G.D</div>
+            <div style={{ fontSize: 13, fontWeight: 800, color: "var(--text)" }}>Visor de desempeño estudiantil</div>
             <div style={{ fontSize: 9, fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.08em" }}>Portal Estudiante</div>
           </div>
           {courseName && (
@@ -800,7 +800,7 @@ export default function StudentPortal({ orgUnitIdOverride, userIdOverride, allow
         {/* Page Header */}
         <div style={{ marginBottom: 20 }}>
           <div style={{ fontSize: 10, fontWeight: 800, color: "var(--brand)", textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: 4 }}>
-            G.D · Mi Rendimiento
+            Visor de desempeño estudiantil · Mi Rendimiento
           </div>
           <h1 style={{ fontSize: isMobile ? 22 : 28, fontWeight: 900, color: "var(--text)", letterSpacing: "-0.03em", lineHeight: 1.1 }}>
             Hola, {firstName}
@@ -1198,7 +1198,7 @@ export default function StudentPortal({ orgUnitIdOverride, userIdOverride, allow
 
         {/* Footer */}
         <div style={{ textAlign: "center", padding: "20px 0 40px", fontSize: 11, color: "var(--muted)" }}>
-          CESA · G.D 2026.8.7 · Portal Estudiante
+          CESA · Visor de desempeño estudiantil 2026.8.7 · Portal Estudiante
         </div>
       </main>
 

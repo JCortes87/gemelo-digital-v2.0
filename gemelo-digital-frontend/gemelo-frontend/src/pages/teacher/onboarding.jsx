@@ -11,11 +11,11 @@ const TUTORIAL_VOICE_ENABLED = false;
 const ONBOARDING_STEPS = [
   {
     id: "welcome",
-    title: "Bienvenido a G.D",
+    title: "Bienvenido al Visor de desempeño estudiantil",
     icon: "🎓",
     desc: "Tu asistente académico inteligente para CESA. Monitorea el desempeño de tus estudiantes en tiempo real, identifica riesgos y toma decisiones de acompañamiento basadas en datos.",
     highlight: null,
-    voice: (name) => `Bienvenido a G.D${name ? ", " + name : ""}. Tu asistente académico inteligente para el seguimiento de tus estudiantes.`,
+    voice: (name) => `Bienvenido al Visor de desempeño estudiantil${name ? ", " + name : ""}. Tu asistente académico inteligente para el seguimiento de tus estudiantes.`,
   },
   {
     id: "dashboard",
@@ -129,7 +129,7 @@ export function AnnouncementsModal({ onClose }) {
 
         <div style={{ textAlign: "center", marginBottom: 18 }}>
           <span style={{ fontSize: 11, fontWeight: 800, color: "var(--brand)", textTransform: "uppercase", letterSpacing: "0.1em" }}>
-            🆕 Novedades · G.D
+            🆕 Novedades · Visor de desempeño estudiantil
           </span>
         </div>
 

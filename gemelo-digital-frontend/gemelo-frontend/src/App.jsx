@@ -133,7 +133,7 @@ export default function App() {
         <ThemeProvider>
           <ToastProvider>
             <AuthProvider>
-              <ErrorBoundary sectionName="G.D">
+              <ErrorBoundary sectionName="Visor de desempeño estudiantil">
                 <AppRoutes />
               </ErrorBoundary>
             </AuthProvider>

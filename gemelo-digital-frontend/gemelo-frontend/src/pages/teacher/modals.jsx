@@ -39,7 +39,7 @@ export function BugReportModal({ onClose }) {
   const handleSend = async () => {
     if (!canSend) return;
     setSending(true);
-    const subject = `[G.D Bug] ${title.trim() || "Reporte de error"}`;
+    const subject = `[Visor de desempeño estudiantil - Bug] ${title.trim() || "Reporte de error"}`;
     try {
       const res = await apiPost("/gemelo/bug-report", {
         title: title.trim(),
@@ -69,7 +69,7 @@ export function BugReportModal({ onClose }) {
   const handleCopy = async () => {
     try {
       await navigator.clipboard.writeText(
-        `Para: ${BUG_REPORT_EMAIL}\nAsunto: [G.D Bug] ${title.trim() || "Reporte de error"}\n\n${buildBody()}`
+        `Para: ${BUG_REPORT_EMAIL}\nAsunto: [Visor de desempeño estudiantil - Bug] ${title.trim() || "Reporte de error"}\n\n${buildBody()}`
       );
       setCopied(true);
       setTimeout(() => setCopied(false), 2500);
@@ -107,7 +107,7 @@ export function BugReportModal({ onClose }) {
           <>
             <div style={{ marginBottom: 6 }}>
               <span style={{ fontSize: 11, fontWeight: 800, color: "var(--brand)", textTransform: "uppercase", letterSpacing: "0.1em" }}>
-                🐞 Reportar un error · G.D
+                🐞 Reportar un error · Visor de desempeño estudiantil
               </span>
             </div>
             <p style={{ fontSize: 13, color: "var(--muted)", lineHeight: 1.55, margin: "0 0 20px" }}>

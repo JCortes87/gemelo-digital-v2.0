@@ -2332,7 +2332,7 @@ const contentKpis = useMemo(() => {
           {/* Description */}
           <p style={{ fontSize: 13, color: "var(--muted)", lineHeight: 1.6, margin: "0 0 24px" }}>
             {isNoAccess
-              ? `No tienes rol de instructor o coordinador en el curso ${orgUnitId}. Solo los docentes asignados pueden ver el G.D de un curso.`
+              ? `No tienes rol de instructor o coordinador en el curso ${orgUnitId}. Solo los docentes asignados pueden ver el Visor de desempeño estudiantil de un curso.`
               : isNotFound
               ? `El curso con ID ${orgUnitId} no existe en Brightspace o fue eliminado.`
               : err
@@ -2448,7 +2448,7 @@ const contentKpis = useMemo(() => {
           <div className="fade-up tab-enter">
             <div style={{ marginBottom: 16 }}>
               <div style={{ fontSize: 10, fontWeight: 800, color: "var(--brand)", textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: 4 }}>
-                G.D · Predicciones
+                Visor de desempeño estudiantil · Predicciones
               </div>
               <h1 style={{ fontSize: isMobile ? 20 : 26, fontWeight: 900, color: "var(--text)", letterSpacing: "-0.02em", lineHeight: 1.1, marginBottom: 4 }}>
                 Predicción de calificaciones finales
@@ -2475,7 +2475,7 @@ const contentKpis = useMemo(() => {
           <div className="fade-up tab-enter">
             <div style={{ marginBottom: 16 }}>
               <div style={{ fontSize: 10, fontWeight: 800, color: "var(--brand)", textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: 4 }}>
-                G.D · Informes de evidencias
+                Visor de desempeño estudiantil · Informes de evidencias
               </div>
               <h1 style={{ fontSize: isMobile ? 20 : 26, fontWeight: 900, color: "var(--text)", letterSpacing: "-0.02em", lineHeight: 1.1, marginBottom: 4 }}>
                 Evidencias por banda de desempeño
@@ -2535,7 +2535,7 @@ const contentKpis = useMemo(() => {
           <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>
             <div>
               <div style={{ fontSize: 10, fontWeight: 800, color: "var(--brand)", textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: 4 }}>
-                G.D · Vista Docente
+                Visor de desempeño estudiantil · Vista Docente
               </div>
               <h1 style={{ fontSize: isMobile ? 22 : 28, fontWeight: 900, color: "var(--text)", letterSpacing: "-0.03em", lineHeight: 1.1 }}>
                 {courseInfo?.Name || (orgUnitId ? `Curso ${orgUnitId}` : "Selecciona un curso")}
@@ -3490,7 +3490,7 @@ const contentKpis = useMemo(() => {
         <div className="fade-up tab-enter">
           <div style={{ marginBottom: 16 }}>
             <div style={{ fontSize: 10, fontWeight: 800, color: "var(--brand)", textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: 4 }}>
-              G.D · Tendencias
+              Visor de desempeño estudiantil · Tendencias
             </div>
             <h1 style={{ fontSize: isMobile ? 20 : 26, fontWeight: 900, color: "var(--text)", letterSpacing: "-0.02em", lineHeight: 1.1, marginBottom: 4 }}>
               Tendencias del curso
@@ -3512,7 +3512,7 @@ const contentKpis = useMemo(() => {
         <div className="fade-up tab-enter">
           <div style={{ marginBottom: 16 }}>
             <div style={{ fontSize: 10, fontWeight: 800, color: "var(--brand)", textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: 4 }}>
-              G.D · Calendario
+              Visor de desempeño estudiantil · Calendario
             </div>
             <h1 style={{ fontSize: isMobile ? 20 : 26, fontWeight: 900, color: "var(--text)", letterSpacing: "-0.02em", lineHeight: 1.1, marginBottom: 4 }}>
               Calendario de entregas
@@ -3534,7 +3534,7 @@ const contentKpis = useMemo(() => {
         <div className="fade-up tab-enter">
           <div style={{ marginBottom: 16 }}>
             <div style={{ fontSize: 10, fontWeight: 800, color: "var(--brand)", textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: 4 }}>
-              G.D · Estudiantes
+              Visor de desempeño estudiantil · Estudiantes
             </div>
             <h1 style={{ fontSize: isMobile ? 20 : 26, fontWeight: 900, color: "var(--text)", letterSpacing: "-0.02em", lineHeight: 1.1, marginBottom: 4 }}>
               Listado de estudiantes
@@ -4178,7 +4178,7 @@ const contentKpis = useMemo(() => {
           setStudentLoading(false);
         }}
         title={selectedStudent ? `${selectedStudent.displayName}` : "Estudiante"}
-        subtitle={`ID ${selectedStudent?.userId ?? "—"} · G.D · Vista docente`}
+        subtitle={`ID ${selectedStudent?.userId ?? "—"} · Visor de desempeño estudiantil · Vista docente`}
         extraHeader={isSuperAdmin && selectedStudent && (
           <button
             onClick={() => setImpersonateStudent({

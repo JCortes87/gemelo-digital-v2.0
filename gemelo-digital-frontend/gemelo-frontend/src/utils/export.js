@@ -206,7 +206,7 @@ export function exportCourseReport(studentRows, courseInfo, overview) {
 </style>
 </head>
 <body>
-  <h1>G.D · Reporte de Curso</h1>
+  <h1>Visor de desempeño estudiantil · Reporte de Curso</h1>
   <div class="sub">${escapeHtml(courseName)} · Generado ${escapeHtml(today)}</div>
 
   <div class="stats">
@@ -253,7 +253,7 @@ export function exportCourseReport(studentRows, courseInfo, overview) {
   </table>
 
   <div class="footer">
-    CESA · G.D 2026.8.7 · Reporte generado automáticamente
+    CESA · Visor de desempeño estudiantil 2026.8.7 · Reporte generado automáticamente
   </div>
 
   <script>
@@ -531,7 +531,7 @@ export function exportInstitutionalFeedbackPdf({
     <img src="${logoUrl}" alt="CESA" onerror="this.style.display='none'" />
     <div class="h-text">
       <div class="h-title">Colegio de Estudios Superiores de Administración</div>
-      <div class="h-sub">G.D · Reporte de Retroalimentación</div>
+      <div class="h-sub">Visor de desempeño estudiantil · Reporte de Retroalimentación</div>
       <div class="h-meta">Generado el ${escapeHtml(today)}</div>
     </div>
   </div>
@@ -615,7 +615,7 @@ export function exportInstitutionalFeedbackPdf({
   </div>
 
   <div class="footer">
-    CESA · G.D · Reporte de retroalimentación generado automáticamente<br/>
+    CESA · Visor de desempeño estudiantil · Reporte de retroalimentación generado automáticamente<br/>
     Este documento es de uso académico interno y contiene información confidencial del estudiante.
   </div>
 

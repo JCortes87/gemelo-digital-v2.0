@@ -235,7 +235,7 @@ export default function CoordinatorDashboard({ onClose }) {
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <div style={{ width: 32, height: 32, borderRadius: 8, background: "var(--brand)", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: 10, fontWeight: 900 }}>CESA</div>
           <div>
-            <div style={{ fontSize: 13, fontWeight: 800, color: "var(--text)" }}>G.D</div>
+            <div style={{ fontSize: 13, fontWeight: 800, color: "var(--text)" }}>Visor de desempeño estudiantil</div>
             <div style={{ fontSize: 9, fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.08em" }}>Panel Coordinador</div>
           </div>
         </div>
@@ -259,7 +259,7 @@ export default function CoordinatorDashboard({ onClose }) {
         ]} />
 
         <div style={{ fontSize: 10, fontWeight: 800, color: "var(--brand)", textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: 4 }}>
-          G.D
+          Visor de desempeño estudiantil
         </div>
         <h1 style={{ fontSize: 28, fontWeight: 900, color: "var(--text)", letterSpacing: "-0.03em", marginBottom: 16 }}>
           Panel Coordinador
@@ -570,7 +570,7 @@ export default function CoordinatorDashboard({ onClose }) {
         )}
 
         <div style={{ textAlign: "center", padding: "24px 0", fontSize: 11, color: "var(--muted)" }}>
-          CESA · G.D 2026.8.7 · Panel Coordinador
+          CESA · Visor de desempeño estudiantil 2026.8.7 · Panel Coordinador
         </div>
       </main>
     </div>

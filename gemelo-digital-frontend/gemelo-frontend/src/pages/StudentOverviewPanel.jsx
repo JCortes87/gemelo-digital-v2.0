@@ -224,7 +224,7 @@ export default function StudentOverviewPanel({ userId, period, onClose }) {
             color: "#fff", fontSize: 10, fontWeight: 900,
           }}>CESA</div>
           <div>
-            <div style={{ fontSize: 13, fontWeight: 800, color: "var(--text)" }}>G.D</div>
+            <div style={{ fontSize: 13, fontWeight: 800, color: "var(--text)" }}>Visor de desempeño estudiantil</div>
             <div style={{ fontSize: 9, fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.08em" }}>
               Panel Estudiante · Super Admin
             </div>
@@ -246,7 +246,7 @@ export default function StudentOverviewPanel({ userId, period, onClose }) {
         {/* Student Info Header */}
         <div style={{ marginBottom: 20 }}>
           <div style={{ fontSize: 10, fontWeight: 800, color: "var(--brand)", textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: 4 }}>
-            G.D · Rendimiento General{period ? ` · Período ${period}` : ""}
+            Visor de desempeño estudiantil · Rendimiento General{period ? ` · Período ${period}` : ""}
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
             <div style={{

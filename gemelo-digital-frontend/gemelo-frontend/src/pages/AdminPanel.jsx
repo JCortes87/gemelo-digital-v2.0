@@ -163,7 +163,7 @@ export default function AdminPanel() {
         <div style={{ textAlign: "center", color: "var(--muted)" }}>
           <ShieldCheck size={40} strokeWidth={1.6} style={{ marginBottom: 12 }} />
           <div style={{ fontSize: 16, fontWeight: 800, color: "var(--text)", marginBottom: 6 }}>Acceso restringido</div>
-          <div style={{ fontSize: 13, marginBottom: 18 }}>Este panel es solo para administradores de G.D.</div>
+          <div style={{ fontSize: 13, marginBottom: 18 }}>Este panel es solo para administradores del Visor de desempeño estudiantil.</div>
           <button
             onClick={() => navigate("/")}
             style={{ padding: "10px 18px", borderRadius: 10, border: "1px solid var(--border)", background: "var(--card)", color: "var(--text)", fontWeight: 700, cursor: "pointer", fontFamily: "var(--font)" }}
@@ -211,7 +211,7 @@ export default function AdminPanel() {
               Panel de Administración
             </div>
             <div style={{ fontSize: 10.5, color: "var(--muted)", fontWeight: 600 }}>
-              Uso de la plataforma · G.D CESA
+              Uso de la plataforma · Visor de desempeño estudiantil CESA
             </div>
           </div>
         </div>
@@ -271,7 +271,7 @@ export default function AdminPanel() {
           <>
             {/* ── KPIs ── */}
             <div style={{ display: "flex", flexWrap: "wrap", gap: 12, marginBottom: 22 }}>
-              <KpiCard icon={Users} label="Usuarios G.D" value={totals.users ?? "—"} hint="Han ingresado al menos una vez" />
+              <KpiCard icon={Users} label="Usuarios del Visor de desempeño estudiantil" value={totals.users ?? "—"} hint="Han ingresado al menos una vez" />
               <KpiCard icon={Activity} label="Activos 7 días" value={totals.active7d ?? "—"} accent="var(--ok, #16a34a)" hint="Usuarios únicos" />
               <KpiCard icon={TrendingUp} label="Activos 30 días" value={totals.active30d ?? "—"} accent="var(--ok, #16a34a)" hint="Usuarios únicos" />
               <KpiCard icon={LogIn} label="Ingresos hoy" value={totals.loginsToday ?? "—"} />
@@ -329,7 +329,7 @@ export default function AdminPanel() {
                 <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
                   <Users size={16} strokeWidth={2.4} style={{ color: "var(--brand)" }} />
                   <span style={{ fontSize: 14, fontWeight: 800, color: "var(--text)" }}>
-                    Usuarios que han usado G.D
+                    Usuarios que han usado el Visor de desempeño estudiantil
                   </span>
                   <span style={{ fontSize: 11.5, color: "var(--muted)", fontWeight: 600 }}>
                     {usersFiltered.length} de {users.length}

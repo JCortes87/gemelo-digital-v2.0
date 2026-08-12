@@ -20,7 +20,7 @@ const translations = {
     "common.print": "Imprimir",
     "common.logout": "Cerrar sesión",
     // Dashboard
-    "dashboard.title": "G.D · Vista Docente",
+    "dashboard.title": "Visor de desempeño estudiantil · Vista Docente",
     "dashboard.students": "Estudiantes",
     "dashboard.courseManagement": "Gestión del curso",
     "dashboard.riskAcademic": "Riesgo académico",
@@ -59,7 +59,7 @@ const translations = {
     "topbar.darkMode": "Tema oscuro",
     "topbar.print": "Imprimir vista",
     // Portal
-    "portal.title": "G.D · Mi Rendimiento",
+    "portal.title": "Visor de desempeño estudiantil · Mi Rendimiento",
     "portal.greeting": "Hola",
     "portal.myGrade": "Mi Nota Actual",
     "portal.coverage": "Cobertura",

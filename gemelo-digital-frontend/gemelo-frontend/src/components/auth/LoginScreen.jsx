@@ -182,7 +182,7 @@ export default function LoginScreen({ orgUnitId }) {
   return (
     <main
       role="main"
-      aria-label="Inicio de sesion - G.D CESA"
+      aria-label="Inicio de sesion - Visor de desempeño estudiantil CESA"
       style={{
         minHeight: "100vh", background: "var(--bg)",
         display: "flex", alignItems: "center", justifyContent: "center",
@@ -200,7 +200,7 @@ export default function LoginScreen({ orgUnitId }) {
             color: "#fff", fontSize: 15, fontWeight: 900, letterSpacing: "-0.03em",
           }}>CESA</div>
           <div style={{ textAlign: "left" }}>
-            <div style={{ fontSize: 16, fontWeight: 900, color: "var(--text)", letterSpacing: "-0.02em" }}>G.D</div>
+            <div style={{ fontSize: 16, fontWeight: 900, color: "var(--text)", letterSpacing: "-0.02em" }}>Visor de desempeño estudiantil</div>
             <div style={{ fontSize: 11, fontWeight: 600, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.08em" }}>
               2026.8.7
             </div>
@@ -246,7 +246,7 @@ export default function LoginScreen({ orgUnitId }) {
             </h2>
             <p style={{ fontSize: 14, color: "var(--muted)", lineHeight: 1.6, margin: "0 0 20px" }}>
               La autenticacion con Microsoft fue exitosa. Haz clic para completar
-              el acceso a G.D.
+              el acceso al Visor de desempeño estudiantil.
             </p>
             <button
               onClick={handleRetry}
@@ -259,7 +259,7 @@ export default function LoginScreen({ orgUnitId }) {
               onMouseLeave={e => e.currentTarget.style.opacity = "1"}
             >
               {msIcon}
-              Completar acceso a G.D
+              Completar acceso al Visor de desempeño estudiantil
             </button>
             <button
               onClick={handleLogin}
@@ -311,7 +311,7 @@ export default function LoginScreen({ orgUnitId }) {
             }}>
               <p style={{ fontSize: 11, color: "var(--brand)", fontWeight: 700, margin: 0 }}>
                 Tambien puedes acceder directamente desde tu curso en Brightspace
-                usando el enlace de la herramienta G.D.
+                usando el enlace de la herramiental Visor de desempeño estudiantil.
               </p>
             </div>
           </>
