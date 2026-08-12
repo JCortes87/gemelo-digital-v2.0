@@ -261,7 +261,7 @@ export function RaLinker({ orgUnitId, courseName }) {
       {/* Header */}
       <div>
         <div style={{ fontSize: 10, fontWeight: 800, color: "var(--brand)", textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: 4 }}>
-          G.D · Vinculación de RA
+          Visor de desempeño estudiantil · Vinculación de RA
         </div>
         <h1 style={{ fontSize: 24, fontWeight: 900, color: "var(--text)", letterSpacing: "-0.02em", lineHeight: 1.1, marginBottom: 4 }}>
           Resultados de aprendizaje

@@ -384,7 +384,7 @@ export default function RoleHome() {
           }}>CESA</div>
           <div>
             <div style={{ fontSize: 14, fontWeight: 800, color: "var(--text)", letterSpacing: "-0.01em" }}>
-              G.D
+              Visor de desempeño estudiantil
             </div>
             <div style={{ fontSize: 9, fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.1em" }}>
               Selecciona tu vista
@@ -433,7 +433,7 @@ export default function RoleHome() {
                 </span>
                 <h1 className="admin-hero-title">Hola, {firstName}</h1>
                 <p className="admin-hero-sub">
-                  Panel de administración de G.D. Gestiona usuarios, revisa el rendimiento académico y comunica novedades a toda la plataforma desde un solo lugar.
+                  Panel de administración del Visor de desempeño estudiantil. Gestiona usuarios, revisa el rendimiento académico y comunica novedades a toda la plataforma desde un solo lugar.
                 </p>
               </div>
               <AdminClock />
@@ -441,7 +441,7 @@ export default function RoleHome() {
             <div className="admin-stat-row">
               <div className="admin-stat">
                 <div className="admin-stat-value">{adminStats ? adminStats.total : "—"}</div>
-                <div className="admin-stat-label"><Users size={12} strokeWidth={2.4} /> Usuarios G.D</div>
+                <div className="admin-stat-label"><Users size={12} strokeWidth={2.4} /> Usuarios del Visor de desempeño estudiantil</div>
               </div>
               <div className="admin-stat">
                 <div className="admin-stat-value">{adminStats ? adminStats.withEmail : "—"}</div>
@@ -469,7 +469,7 @@ export default function RoleHome() {
             fontSize: 10, fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.12em",
             marginBottom: 14,
           }}>
-            <Sparkles size={12} strokeWidth={2.5} /> G.D
+            <Sparkles size={12} strokeWidth={2.5} /> Visor de desempeño estudiantil
           </div>
           <h1 style={{
             fontSize: 34, fontWeight: 900, color: "var(--text)",
@@ -953,7 +953,7 @@ export default function RoleHome() {
                   display: "flex", alignItems: "flex-start", gap: 8, lineHeight: 1.5,
                 }}>
                   <Users size={16} strokeWidth={2.2} style={{ color: "var(--brand)", flexShrink: 0, marginTop: 1 }} />
-                  <span>Quiénes han usado G.D y cuándo: historial de ingresos persistente, usuarios activos por período, gráfica diaria y exportación a CSV.</span>
+                  <span>Quiénes han usado el Visor de desempeño estudiantil y cuándo: historial de ingresos persistente, usuarios activos por período, gráfica diaria y exportación a CSV.</span>
                 </div>
                 <button
                   onClick={() => navigate("/admin")}
@@ -1051,7 +1051,7 @@ export default function RoleHome() {
                   Sin cursos encontrados
                 </div>
                 <div style={{ fontSize: 13, color: "var(--muted)", lineHeight: 1.5, maxWidth: 380 }}>
-                  Accede desde Brightspace usando el enlace de G.D en tu curso.
+                  Accede desde Brightspace usando el enlace del Visor de desempeño estudiantil en tu curso.
                 </div>
               </div>
             )}
@@ -1143,7 +1143,7 @@ export default function RoleHome() {
         {/* Footer */}
         <div style={{ textAlign: "center", padding: "32px 0 8px", fontSize: 11, color: "var(--muted)" }}>
           <div style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-            <Sparkles size={12} strokeWidth={2} /> CESA · G.D 2026.8.7
+            <Sparkles size={12} strokeWidth={2} /> CESA · Visor de desempeño estudiantil 2026.8.7
           </div>
         </div>
       </main>
@@ -1251,7 +1251,7 @@ function AdminAnnounce() {
       }}>
         <ShieldCheck size={16} strokeWidth={2.2} style={{ color: "var(--brand)", flexShrink: 0, marginTop: 1 }} />
         <span>
-          El anuncio se envía por correo a <strong>{stats ? stats.withEmail : "…"}</strong> usuario(s) registrado(s) en G.D y se publica dentro de la app. Los correos van en copia oculta (BCC).
+          El anuncio se envía por correo a <strong>{stats ? stats.withEmail : "…"}</strong> usuario(s) registrado(s) en el Visor de desempeño estudiantil y se publica dentro de la app. Los correos van en copia oculta (BCC).
         </span>
       </div>
 

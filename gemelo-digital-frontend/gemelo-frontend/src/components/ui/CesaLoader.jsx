@@ -14,12 +14,12 @@ import { injectStyles } from "../../styles/global";
  * Respeta `prefers-reduced-motion` desactivando todas las animaciones.
  *
  * Props:
- *   title    — encabezado principal (default: "G.D")
+ *   title    — encabezado principal (default: "Visor de desempeño estudiantil")
  *   subtitle — texto en mayúsculas antes de los puntos (default: "Cargando")
  *   footer   — texto pequeño bajo la barra de progreso (opcional)
  */
 export default function CesaLoader({
-  title = "G.D",
+  title = "Visor de desempeño estudiantil",
   subtitle = "Cargando",
   footer = null,
 }) {

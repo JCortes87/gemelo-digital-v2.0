@@ -37,7 +37,7 @@ export function LoginScreen({ orgUnitId }) {
           }}>CESA</div>
           <div style={{ textAlign: "left" }}>
             <div style={{ fontSize: 16, fontWeight: 900, color: "var(--text)", letterSpacing: "-0.02em" }}>
-              G.D
+              Visor de desempeño estudiantil
             </div>
             <div style={{ fontSize: 11, fontWeight: 600, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.08em" }}>
               Vista Docente · 2026.8.7
@@ -95,7 +95,7 @@ export function LoginScreen({ orgUnitId }) {
         }}>
           <p style={{ fontSize: 11, color: "var(--brand)", fontWeight: 700, margin: 0 }}>
             💡 También puedes acceder directamente desde tu curso en Brightspace
-            usando el enlace de la herramienta G.D.
+            usando el enlace de la herramiental Visor de desempeño estudiantil.
           </p>
         </div>
       </div>
@@ -104,7 +104,7 @@ export function LoginScreen({ orgUnitId }) {
 }
 
 // Loader unificado — delega en el componente compartido CesaLoader
-export function CesaLoader({ title = "G.D", subtitle = "Cargando tablero" }) {
+export function CesaLoader({ title = "Visor de desempeño estudiantil", subtitle = "Cargando tablero" }) {
   return (
     <SharedCesaLoader
       title={title}
