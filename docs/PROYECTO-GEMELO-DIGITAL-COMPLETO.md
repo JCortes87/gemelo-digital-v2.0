@@ -1069,6 +1069,20 @@ principal y respaldadas en `gemelo-digital-v2.0`; cada una se mergeó a
   Brightspace no registra la apertura de archivos enlazados dentro de
   una página o unidad, así que las barras de consumo siguen midiendo
   solo los recursos del árbol de contenido (el tooltip lo aclara).
+- **Ritmo de publicación oculto y enlaces a archivos sin extensión
+  (18 ago, 2ª ronda)**: en la tarjeta "Recursos educativos publicados"
+  se ocultan por ahora el subtítulo **"Mínimo esperado: N"** y la
+  **insignia de ritmo** (Óptimo / En seguimiento / Crítico) — el
+  cálculo sigue intacto detrás del interruptor
+  `SHOW_CONTENT_RHYTHM = false` en `TeacherDashboard.jsx`; ponerlo en
+  `true` para volver a mostrarlos cuando se requiera. Además el conteo
+  reconoce **enlaces a archivos que no llevan extensión en la URL**:
+  enlaces compartidos de **OneDrive/SharePoint** (el tipo va codificado
+  en la ruta: `:b:` PDF, `:w:` Word, `:x:` Excel, `:i:` imagen, `:v:`
+  video) y **enlaces internos de Brightspace a recursos del propio
+  curso** (`viewContent` / `lessons/…/topics`), que se resuelven al
+  recurso real por su Id — si el recurso es visible no se cuenta doble
+  y si está oculto cuenta por su tipo real.
 - **Buckets de accesos excluyentes (10 ago)**: "Ingresaron en los
   últimos 7 días" incluía también a los de hoy, duplicando la lectura
   con "Ingresaron hoy". Ahora los cuatro grupos son excluyentes — hoy /

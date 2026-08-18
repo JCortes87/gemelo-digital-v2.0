@@ -197,6 +197,14 @@ export function fileTypeFromUrl(s) {
   if (/\.(png|jpe?g|gif|svg|webp|bmp|tiff?|ico)(\?|$|\b)/.test(s)) return "Imágenes";
   if (/\.(mp3|wav|ogg|m4a|aac|wma)(\?|$|\b)/.test(s)) return "Audios";
   if (/\.(mp4|mov|avi|webm|mkv|wmv|flv)(\?|$|\b)/.test(s)) return "Videos";
+  // Enlaces compartidos de OneDrive/SharePoint: no traen extensión — el
+  // tipo de archivo va codificado en la ruta (:b: = PDF, :w: = Word,
+  // :x: = Excel, :i: = imagen, :v: = video).
+  if (/sharepoint\.com\/:b:|1drv\.ms\/b\//.test(s)) return "PDF";
+  if (/sharepoint\.com\/:w:|1drv\.ms\/w\//.test(s)) return "Word";
+  if (/sharepoint\.com\/:x:|1drv\.ms\/x\//.test(s)) return "Excel";
+  if (/sharepoint\.com\/:i:|1drv\.ms\/i\//.test(s)) return "Imágenes";
+  if (/sharepoint\.com\/:v:|1drv\.ms\/v\//.test(s)) return "Videos";
   return null;
 }
 
@@ -248,7 +256,9 @@ export function countEducationalResources(topics, moduleLinks) {
   const counts = {};
   let total = 0;
   const topicUrls = new Set();
+  const topicById = new Map();
   for (const t of topics || []) {
+    if (t?.Id != null) topicById.set(String(t.Id), t);
     if (t?.IsHidden === true) continue;
     if (t?.Url) {
       const u = norm(t.Url);
@@ -259,12 +269,29 @@ export function countEducationalResources(topics, moduleLinks) {
     counts[label] = (counts[label] || 0) + 1;
     total += 1;
   }
+  // Enlace interno de Brightspace a un recurso del propio curso (viewContent
+  // o lessons/topics): se resuelve al recurso real por su Id para
+  // clasificarlo por su tipo y no contarlo doble si ya está en el árbol.
+  const internalTopicFor = (h) => {
+    const m = h.match(/\/viewcontent\/(\d+)/) || h.match(/\/lessons\/\d+\/topics\/(\d+)/);
+    return m ? topicById.get(m[1]) : null;
+  };
   const seenLinks = new Set();
   const countLink = (href, { webCountsAsEnlace }) => {
     const h = norm(href);
     if (!h || seenLinks.has(h)) return;
     seenLinks.add(h);
     if (topicUrls.has(h) || topicUrls.has(h.split("?")[0])) return;
+    const target = internalTopicFor(h);
+    if (target) {
+      if (target.IsHidden === true) {
+        // recurso oculto publicado vía enlace: cuenta por su tipo real
+        const label = contentTypeLabel(target.Title, target.Url, target.TopicType);
+        counts[label] = (counts[label] || 0) + 1;
+        total += 1;
+      }
+      return; // visible: ya contado como recurso del árbol
+    }
     const label = fileTypeFromUrl(h) || (webCountsAsEnlace ? "Enlace" : null);
     if (!label) return;
     counts[label] = (counts[label] || 0) + 1;

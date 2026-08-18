@@ -63,6 +63,12 @@ const CONTENT_TYPE_ICONS = {
   "Imágenes": "🖼️", Audios: "🎧", Videos: "🎬", Enlace: "🔗", Otros: "📄",
 };
 
+// Ritmo de publicación de la tarjeta "Recursos educativos publicados"
+// ("Mínimo esperado: N" + insignia Óptimo/En seguimiento/Crítico).
+// OCULTO por ahora a pedido del usuario (18 ago 2026) — el cálculo sigue
+// funcionando; poner en true para volver a mostrarlo cuando se requiera.
+const SHOW_CONTENT_RHYTHM = false;
+
 // Cuentas institucionales/de servicio que no deben aparecer como profesor
 const SERVICE_ACCOUNT_RE = /^cesa\b|laboratorio|desarrollo profesoral|soporte|capacitaci|prueba|demo|test/i;
 
@@ -2589,13 +2595,15 @@ const contentKpis = useMemo(() => {
             <div style={{ fontSize: 12, fontWeight: 800, color: "var(--text)", letterSpacing: "0.01em", display: "inline-flex", alignItems: "center", gap: 4 }}>
               Recursos educativos publicados <InfoTooltip text="Todo lo visible en las unidades del curso: archivos, páginas y enlaces, incluidos los enlazados dentro de páginas y unidades. No incluye las asignaciones." />
             </div>
-            <div style={{ fontSize: isMobile ? 30 : 38, fontWeight: 900, color: elementsStats.total != null ? elementsStats.rhythm.color : "var(--muted)", fontFamily: "var(--font-mono)", lineHeight: 1 }}>
+            <div style={{ fontSize: isMobile ? 30 : 38, fontWeight: 900, color: elementsStats.total == null ? "var(--muted)" : SHOW_CONTENT_RHYTHM ? elementsStats.rhythm.color : "var(--text)", fontFamily: "var(--font-mono)", lineHeight: 1 }}>
               {elementsStats.total ?? "—"}
             </div>
-            <div style={{ fontSize: 10, color: "var(--muted)" }}>
-              {contentKpis?.minExpected != null ? `Mínimo esperado: ${contentKpis.minExpected}` : "Desde inicio del curso"}
-            </div>
-            {elementsStats.total != null && (
+            {SHOW_CONTENT_RHYTHM && (
+              <div style={{ fontSize: 10, color: "var(--muted)" }}>
+                {contentKpis?.minExpected != null ? `Mínimo esperado: ${contentKpis.minExpected}` : "Desde inicio del curso"}
+              </div>
+            )}
+            {SHOW_CONTENT_RHYTHM && elementsStats.total != null && (
               <span className="badge" style={{ background: elementsStats.rhythm.bg, color: elementsStats.rhythm.color, fontSize: 10 }}>
                 {elementsStats.rhythm.label}
               </span>
