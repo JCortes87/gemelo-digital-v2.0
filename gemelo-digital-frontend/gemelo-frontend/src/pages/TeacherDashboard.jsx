@@ -39,6 +39,7 @@ import {
   fmtPct, fmtGrade10FromPct, contentRhythmStatus,
   buildCorteGroups, flattenOutcomeDescriptions,
   computeRiskFromPct, suggestRouteForStudent,
+  contentTypeLabel, countEducationalResources,
 } from "../utils/helpers";
 import { isStudentRole } from "../utils/roles";
 import VoiceAssistant from "../components/dashboard/VoiceAssistant";
@@ -53,36 +54,10 @@ import {
   ProgressBar, InfoTooltip, SortTh, CoverageBars,
 } from "./teacher/primitives";
 
-// Tipo de un elemento de contenido. Prioriza la URL del archivo (lo más
-// confiable), luego el TopicType de Brightspace (3 = enlace externo) y por
-// último el título. Los "elementos" son los archivos/páginas dentro de los
-// módulos de contenido del curso.
-// Categorías acordadas: HTML (páginas construidas en Brightspace), PDF,
-// Excel, Word, Imágenes (todos los formatos), Audios (todos), Videos
-// (todos), Enlace (links externos o internos) y Otros para el resto.
-function contentTypeLabel(title, url, topicType) {
-  const check = (s) => {
-    if (!s) return null;
-    if (s.includes(".pdf")) return "PDF";
-    if (/\.(docx?|rtf)(\?|$|\b)/.test(s)) return "Word";
-    if (/\.(xlsx?|csv)(\?|$|\b)/.test(s)) return "Excel";
-    if (/\.(png|jpe?g|gif|svg|webp|bmp|tiff?|ico)(\?|$|\b)/.test(s)) return "Imágenes";
-    if (/\.(mp3|wav|ogg|m4a|aac|wma)(\?|$|\b)/.test(s)) return "Audios";
-    if (/\.(mp4|mov|avi|webm|mkv|wmv|flv)(\?|$|\b)/.test(s)) return "Videos";
-    if (/\.html?(\?|$|\b)/.test(s)) return "HTML";
-    return null;
-  };
-  const u = String(url || "").toLowerCase();
-  const fromUrl = check(u);
-  if (fromUrl) return fromUrl;
-  if (Number(topicType) === 3) return "Enlace";
-  if (/^https?:/.test(u)) return "Enlace";
-  const fromTitle = check(String(title || "").toLowerCase());
-  if (fromTitle) return fromTitle;
-  if (/https?:|www\.|link|enlace/.test(String(title || "").toLowerCase())) return "Enlace";
-  return "Otros";
-}
-
+// Clasificación por tipo de recurso: contentTypeLabel y
+// countEducationalResources viven en utils/helpers.js (con tests).
+// Categorías: HTML (solo páginas creadas en Brightspace), PDF, Excel, Word,
+// Imágenes, Audios, Videos, Enlace (recurso-enlace a página web) y Otros.
 const CONTENT_TYPE_ICONS = {
   HTML: "🌐", PDF: "📃", Excel: "📗", Word: "📘",
   "Imágenes": "🖼️", Audios: "🎧", Videos: "🎬", Enlace: "🔗", Otros: "📄",
@@ -1889,22 +1864,11 @@ const contentKpis = useMemo(() => {
   // Preferimos /content/topics (con Url para clasificar); fallback al root.
   const elementsStats = useMemo(() => {
     if (Array.isArray(contentTopics) && contentTopics.length) {
-      // Cuenta TODOS los recursos visibles publicados en el curso. Antes se
-      // descartaban los que tenian LastModifiedDate anterior al inicio del
-      // curso, y el material cargado con antelacion (caso tipico: aula
-      // preparada o copiada antes del semestre) desaparecia del conteo —
-      // un curso con 5+ PDFs mostraba "1 PDF".
-      const counts = {};
-      let total = 0;
-      for (const t of contentTopics) {
-        if (t?.IsHidden === true) continue;
-        const label = contentTypeLabel(t?.Title, t?.Url, t?.TopicType);
-        counts[label] = (counts[label] || 0) + 1;
-        total += 1;
-      }
-      const breakdown = Object.entries(counts)
-        .map(([label, count]) => ({ label, count }))
-        .sort((a, b) => b.count - a.count);
+      // Cuenta TODOS los recursos visibles publicados en el curso (sin
+      // importar cuándo se cargaron), incluidos los archivos enlazados
+      // dentro de las páginas del curso (EmbeddedLinks). La lógica y sus
+      // reglas de dedupe viven en countEducationalResources (helpers.js).
+      const { total, breakdown } = countEducationalResources(contentTopics);
       const minExpected = contentKpis?.minExpected ?? null;
       const ratio = minExpected ? clamp(total / minExpected, 0, 2) : null;
       return { total, breakdown, rhythm: contentRhythmStatus(ratio) };
@@ -2612,7 +2576,7 @@ const contentKpis = useMemo(() => {
           {/* Contenidos creados — número grande + ritmo */}
           <div className="kpi-card" style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 6, padding: isMobile ? 12 : 14, textAlign: "center" }}>
             <div style={{ fontSize: 12, fontWeight: 800, color: "var(--text)", letterSpacing: "0.01em", display: "inline-flex", alignItems: "center", gap: 4 }}>
-              Recursos educativos publicados <InfoTooltip text="Todos los recursos visibles en los módulos de contenido del curso (PDF, Word, Excel, imágenes, enlaces, páginas…), sin importar cuándo se cargaron. No incluye las asignaciones — esas se cuentan aparte en la tarjeta de Asignaciones." />
+              Recursos educativos publicados <InfoTooltip text="Todos los recursos visibles en los módulos de contenido del curso, sin importar cuándo se cargaron: archivos (PDF, Word, Excel, imágenes, audios, videos), páginas creadas en Brightspace y enlaces. También cuentan los archivos enlazados dentro de una página: una página con 7 PDFs enlazados suma la página y los 7 PDFs. No incluye las asignaciones — esas se cuentan aparte en la tarjeta de Asignaciones." />
             </div>
             <div style={{ fontSize: isMobile ? 30 : 38, fontWeight: 900, color: elementsStats.total != null ? elementsStats.rhythm.color : "var(--muted)", fontFamily: "var(--font-mono)", lineHeight: 1 }}>
               {elementsStats.total ?? "—"}
@@ -2627,17 +2591,20 @@ const contentKpis = useMemo(() => {
             )}
             {(elementsStats.breakdown?.length ?? 0) > 0 && (
               <>
-                <button
-                  onClick={() => setContentTypesOpen((v) => !v)}
-                  aria-expanded={contentTypesOpen}
-                  style={{
-                    border: "none", background: "transparent", cursor: "pointer",
-                    fontSize: 10, fontWeight: 700, color: "var(--brand)",
-                    fontFamily: "var(--font)", padding: "2px 6px",
-                  }}
-                >
-                  Tipos de recurso educativo {contentTypesOpen ? "▴" : "▾"}
-                </button>
+                <span style={{ display: "inline-flex", alignItems: "center", gap: 2 }}>
+                  <button
+                    onClick={() => setContentTypesOpen((v) => !v)}
+                    aria-expanded={contentTypesOpen}
+                    style={{
+                      border: "none", background: "transparent", cursor: "pointer",
+                      fontSize: 10, fontWeight: 700, color: "var(--brand)",
+                      fontFamily: "var(--font)", padding: "2px 6px",
+                    }}
+                  >
+                    Tipos de recurso educativo {contentTypesOpen ? "▴" : "▾"}
+                  </button>
+                  <InfoTooltip text="Cada recurso publicado cuenta una sola vez. HTML son las páginas creadas dentro de Brightspace; una página cuenta como un solo recurso aunque contenga varios enlaces. Enlace son los enlaces publicados como recurso que llevan a una página web. Si un enlace — publicado como recurso o dentro de una página — lleva a un archivo (PDF, Word, Excel…), cuenta como ese tipo de archivo. Los enlaces a sitios web escritos dentro de una página no se cuentan." />
+                </span>
                 {contentTypesOpen && (
                   <div style={{ display: "flex", flexDirection: "column", gap: 3, width: "100%", maxHeight: 110, overflowY: "auto" }}>
                     {elementsStats.breakdown.map((t) => (
@@ -2674,7 +2641,7 @@ const contentKpis = useMemo(() => {
                       <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 6, display: "flex", justifyContent: "space-between", gap: 6 }}>
                         <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
                           Promedio de acceso a recursos educativos
-                          <InfoTooltip text="De todos los recursos educativos publicados (PDF, Word, páginas, enlaces…), porcentaje que ha abierto en promedio cada estudiante. Cada recurso cuenta una sola vez por estudiante — no mide cuántas veces lo abrió. Ej: 75% = un estudiante típico ha abierto 3 de cada 4 recursos." />
+                          <InfoTooltip text="De los recursos publicados en los módulos del curso, porcentaje que ha abierto en promedio cada estudiante. Cada recurso cuenta una sola vez por estudiante — no mide cuántas veces lo abrió. Ej: 75% = un estudiante típico ha abierto 3 de cada 4 recursos. Brightspace solo registra la apertura de los recursos publicados en los módulos: la apertura de un archivo enlazado dentro de una página no se puede medir y no entra en este porcentaje." />
                         </span>
                         <span style={{ fontFamily: "var(--font-mono)", fontWeight: 800 }}>{fmtPct(consumptionStats.avgPct)}</span>
                       </div>
