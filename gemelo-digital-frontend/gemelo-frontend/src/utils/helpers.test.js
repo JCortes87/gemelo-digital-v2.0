@@ -399,3 +399,41 @@ describe("countEducationalResources — enlaces en la descripción de unidades",
     expect(r.total).toBe(1);
   });
 });
+
+describe("fileTypeFromUrl — enlaces compartidos de OneDrive/SharePoint", () => {
+  it("reconoce el tipo por el código de la ruta", () => {
+    expect(fileTypeFromUrl("https://cesaedu-my.sharepoint.com/:b:/g/personal/x/abc123")).toBe("PDF");
+    expect(fileTypeFromUrl("https://cesaedu-my.sharepoint.com/:w:/g/personal/x/abc")).toBe("Word");
+    expect(fileTypeFromUrl("https://cesaedu.sharepoint.com/:x:/s/equipo/abc")).toBe("Excel");
+    expect(fileTypeFromUrl("https://1drv.ms/b/s!abc")).toBe("PDF");
+  });
+  it("un enlace compartido a carpeta u otro tipo no clasifica", () => {
+    expect(fileTypeFromUrl("https://cesaedu-my.sharepoint.com/:f:/g/personal/x/abc")).toBeNull();
+    expect(fileTypeFromUrl("https://cesaedu-my.sharepoint.com/:u:/g/personal/x/abc")).toBeNull();
+  });
+});
+
+describe("countEducationalResources — enlaces internos al propio curso", () => {
+  it("enlace de unidad a un recurso visible del curso no cuenta doble", () => {
+    const r = countEducationalResources(
+      [{ Id: 9, Title: "Guía", Url: "/content/enforced/1/guia.pdf", TopicType: 1 }],
+      ["/d2l/le/content/1234/viewContent/9/View"],
+    );
+    expect(r.total).toBe(1); // solo el PDF del árbol
+  });
+  it("enlace de unidad a un recurso oculto cuenta por su tipo real", () => {
+    const r = countEducationalResources(
+      [{ Id: 9, Title: "Guía", Url: "/content/enforced/1/guia.pdf", TopicType: 1, IsHidden: true }],
+      ["/d2l/le/content/1234/viewContent/9/View"],
+    );
+    expect(r.total).toBe(1);
+    expect(r.breakdown).toEqual([{ label: "PDF", count: 1 }]);
+  });
+  it("resuelve también el formato lessons/topics", () => {
+    const r = countEducationalResources(
+      [{ Id: 7, Title: "Mapa", Url: "/c/mapa.png", TopicType: 1 }],
+      ["/d2l/le/lessons/1234/topics/7"],
+    );
+    expect(r.total).toBe(1); // ya contado como Imágenes
+  });
+});
