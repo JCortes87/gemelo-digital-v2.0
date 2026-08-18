@@ -15,6 +15,9 @@ import {
   computeRiskFromPct,
   suggestRouteForStudent,
   contentRhythmStatus,
+  fileTypeFromUrl,
+  contentTypeLabel,
+  countEducationalResources,
   parseFormulaReferences,
   detectCortePeriod,
   buildCorteGroups,
@@ -265,5 +268,99 @@ describe("matchEvidencesByFormula", () => {
   });
   it("devuelve [] sin fórmula", () => {
     expect(matchEvidencesByFormula({}, [])).toEqual([]);
+  });
+});
+
+describe("fileTypeFromUrl", () => {
+  it("clasifica archivos por extensión", () => {
+    expect(fileTypeFromUrl("/content/enforced/1/guia.pdf")).toBe("PDF");
+    expect(fileTypeFromUrl("/c/notas.docx")).toBe("Word");
+    expect(fileTypeFromUrl("/c/datos.xlsx")).toBe("Excel");
+    expect(fileTypeFromUrl("/c/mapa.png")).toBe("Imágenes");
+    expect(fileTypeFromUrl("/c/audio.mp3")).toBe("Audios");
+    expect(fileTypeFromUrl("/c/clase.mp4")).toBe("Videos");
+  });
+  it("reconoce el .pdf en quicklinks con query string", () => {
+    expect(fileTypeFromUrl("/d2l/common/dialogs/quicklink/quicklink.d2l?ou=1&type=coursefile&fileid=docs/guia.pdf")).toBe("PDF");
+  });
+  it("NO clasifica .html ni páginas web", () => {
+    expect(fileTypeFromUrl("/content/enforced/1/pagina.html")).toBeNull();
+    expect(fileTypeFromUrl("https://ejemplo.com/articulo")).toBeNull();
+    expect(fileTypeFromUrl("")).toBeNull();
+    expect(fileTypeFromUrl(null)).toBeNull();
+  });
+});
+
+describe("contentTypeLabel", () => {
+  it("HTML: solo páginas internas creadas en Brightspace", () => {
+    expect(contentTypeLabel("Acerca del CESA", "/content/enforced/1/acerca.html", 1)).toBe("HTML");
+  });
+  it("un enlace a una página web externa es Enlace aunque termine en .html", () => {
+    expect(contentTypeLabel("Noticia", "https://ejemplo.com/nota.html", 3)).toBe("Enlace");
+    expect(contentTypeLabel("Sitio", "https://ejemplo.com/", 3)).toBe("Enlace");
+  });
+  it("un enlace a un archivo cuenta por su tipo de archivo", () => {
+    expect(contentTypeLabel("Guía", "https://ejemplo.com/guia.pdf", 3)).toBe("PDF");
+    expect(contentTypeLabel("Datos", "https://ejemplo.com/datos.xlsx", 3)).toBe("Excel");
+  });
+  it("archivos del curso por su extensión", () => {
+    expect(contentTypeLabel("Guía", "/content/enforced/1/guia.pdf", 1)).toBe("PDF");
+  });
+  it("cae al título si no hay URL", () => {
+    expect(contentTypeLabel("resumen.pdf", null, null)).toBe("PDF");
+    expect(contentTypeLabel("pagina.html", null, null)).toBe("HTML");
+    expect(contentTypeLabel("Enlace al foro", null, null)).toBe("Enlace");
+    expect(contentTypeLabel("Bienvenida", null, null)).toBe("Otros");
+  });
+});
+
+describe("countEducationalResources", () => {
+  const page = (id, url, links) => ({ Id: id, Title: `P${id}`, Url: url, TopicType: 1, EmbeddedLinks: links });
+  it("cuenta topics visibles y excluye ocultos", () => {
+    const r = countEducationalResources([
+      { Id: 1, Title: "a", Url: "/c/a.pdf", TopicType: 1 },
+      { Id: 2, Title: "b", Url: "/c/b.pdf", TopicType: 1, IsHidden: true },
+    ]);
+    expect(r.total).toBe(1);
+    expect(r.breakdown).toEqual([{ label: "PDF", count: 1 }]);
+  });
+  it("una página con 7 PDFs enlazados suma la página y los 7 PDFs", () => {
+    const links = Array.from({ length: 7 }, (_, i) => `/content/enforced/1/pdf${i}.pdf`);
+    const r = countEducationalResources([page(1, "/content/enforced/1/pagina.html", links)]);
+    expect(r.total).toBe(8);
+    expect(r.breakdown).toEqual([
+      { label: "PDF", count: 7 },
+      { label: "HTML", count: 1 },
+    ]);
+  });
+  it("los enlaces a sitios web dentro de una página NO cuentan", () => {
+    const r = countEducationalResources([
+      page(1, "/c/p.html", ["https://ejemplo.com/articulo", "/c/guia.pdf"]),
+    ]);
+    expect(r.total).toBe(2); // la página + el PDF
+  });
+  it("dedupe: mismo archivo en dos páginas cuenta una vez", () => {
+    const r = countEducationalResources([
+      page(1, "/c/p1.html", ["/c/guia.pdf"]),
+      page(2, "/c/p2.html", ["/c/guia.pdf"]),
+    ]);
+    expect(r.total).toBe(3); // 2 páginas + 1 PDF
+  });
+  it("dedupe: archivo enlazado que además es recurso propio cuenta una vez", () => {
+    const r = countEducationalResources([
+      { Id: 1, Title: "Guía", Url: "/c/guia.pdf", TopicType: 1 },
+      page(2, "/c/p.html", ["/c/guia.pdf"]),
+    ]);
+    expect(r.total).toBe(2); // el PDF (como recurso) + la página
+  });
+  it("los EmbeddedLinks de páginas ocultas no cuentan", () => {
+    const r = countEducationalResources([
+      { ...page(1, "/c/p.html", ["/c/guia.pdf"]), IsHidden: true },
+    ]);
+    expect(r.total).toBe(0);
+  });
+  it("lista vacía o null", () => {
+    expect(countEducationalResources([]).total).toBe(0);
+    expect(countEducationalResources(null).total).toBe(0);
   });
 });

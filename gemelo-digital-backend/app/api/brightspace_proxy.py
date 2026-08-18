@@ -6,6 +6,8 @@ import base64
 import json
 import logging
 import os
+import re
+import time
 import urllib.parse
 from datetime import datetime, timezone
 from typing import Optional
@@ -20,7 +22,7 @@ from app.api.deps import (
     BRIGHTSPACE_BASE_URL, LP_VERSION, LE_VERSION,
     SESSION_COOKIE, _get_session_id, _require_session,
     _require_token_from_request, _auth_headers, _bs_get, _bs_get_cached,
-    _get_whoami_id,
+    _bs_cache_key, _get_whoami_id,
 )
 
 logger = logging.getLogger("uvicorn.error")
@@ -821,6 +823,71 @@ async def brightspace_classlist(
     return {"count": len(items), "items": items}
 
 
+# ── Enlaces dentro de páginas HTML del curso ─────────────────────────────────
+# Los archivos enlazados dentro de una página creada en Brightspace (p. ej.
+# una página con 7 enlaces a 7 PDFs) también son recursos publicados, pero la
+# API de contenido solo lista los recursos del árbol — el cuerpo de la página
+# nunca aparece. Se descarga el HTML de cada página interna (best-effort,
+# cacheado) y se adjuntan los href como EmbeddedLinks de cada topic para que
+# el frontend los clasifique y cuente por tipo de archivo.
+_HREF_RE = re.compile(r"href\s*=\s*[\"']([^\"'>]+)[\"']", re.IGNORECASE)
+_PAGE_LINKS_CACHE: dict[str, tuple[float, list[str]]] = {}
+_PAGE_LINKS_TTL_S = 300.0
+_PAGE_FETCH_MAX = 60          # máx. páginas HTML leídas por request
+_PAGE_BYTES_MAX = 1_500_000   # ignora archivos HTML anormalmente grandes
+
+
+def _extract_hrefs(html: str, limit: int = 100) -> list[str]:
+    """Extrae los href únicos y navegables de un HTML (función pura).
+
+    Descarta anclas, mailto:, javascript:, data: y tel:. Devuelve los href
+    URL-decodificados (los quicklinks de Brightspace codifican la ruta del
+    archivo, y sin decodificar no se reconoce la extensión .pdf/.docx…).
+    """
+    links: list[str] = []
+    seen: set[str] = set()
+    for href in _HREF_RE.findall(html or ""):
+        h = urllib.parse.unquote(href).strip()
+        low = h.lower()
+        if not h or low.startswith(("#", "mailto:", "javascript:", "data:", "tel:")):
+            continue
+        if low in seen:
+            continue
+        seen.add(low)
+        links.append(h)
+        if len(links) >= limit:
+            break
+    return links
+
+
+async def _page_embedded_links(
+    org_unit_id: int, topic_id, headers: dict, sem: asyncio.Semaphore
+) -> list[str]:
+    """Descarga el HTML de una página de contenido y devuelve sus href."""
+    url = (
+        f"{BRIGHTSPACE_BASE_URL}/d2l/api/le/{LE_VERSION}"
+        f"/{org_unit_id}/content/topics/{topic_id}/file"
+    )
+    key = _bs_cache_key(url, headers, None)
+    now = time.monotonic()
+    hit = _PAGE_LINKS_CACHE.get(key)
+    if hit and (now - hit[0]) < _PAGE_LINKS_TTL_S:
+        return list(hit[1])
+    links: list[str] = []
+    try:
+        async with sem:
+            async with httpx.AsyncClient(timeout=30) as client:
+                r = await client.get(url, headers=headers)
+        if r.status_code == 200 and len(r.content) <= _PAGE_BYTES_MAX:
+            links = _extract_hrefs(r.text)
+            if len(_PAGE_LINKS_CACHE) > 500:
+                _PAGE_LINKS_CACHE.clear()
+            _PAGE_LINKS_CACHE[key] = (now, list(links))
+    except Exception:
+        pass  # best-effort: sin los links de una página, el conteo sigue
+    return links
+
+
 @router.get("/brightspace/course/{org_unit_id}/content/topics")
 async def brightspace_content_topics(request: Request, org_unit_id: int):
     """Elementos de contenido del curso con metadatos completos (Url,
@@ -829,7 +896,9 @@ async def brightspace_content_topics(request: Request, org_unit_id: int):
     saber el tipo de archivo (PDF, Word, etc.).
 
     Devuelve {count, items: [{Id, Title, Url, TopicType, ActivityType,
-    IsHidden, LastModifiedDate}]}.
+    IsHidden, LastModifiedDate, EmbeddedLinks?}]}. EmbeddedLinks solo viene
+    en las páginas HTML internas: son los href encontrados en el cuerpo de
+    la página (los archivos enlazados también cuentan como recursos).
     """
     token, err = _require_token_from_request(request)
     if err:
@@ -884,6 +953,31 @@ async def brightspace_content_topics(request: Request, org_unit_id: int):
                         "IsHidden": it.get("IsHidden"),
                         "LastModifiedDate": it.get("LastModifiedDate"),
                     })
+
+    # Páginas HTML internas visibles → leer su cuerpo y adjuntar los href.
+    # Solo URLs relativas: una Url absoluta http(s) es un enlace, no una
+    # página del curso, y no tiene archivo descargable en la API.
+    page_topics = []
+    for t in topics:
+        if t.get("IsHidden") is True or t.get("Id") is None:
+            continue
+        u = t.get("Url")
+        if not isinstance(u, str):
+            continue
+        low = u.lower()
+        if low.startswith(("http://", "https://")):
+            continue
+        if low.split("?")[0].endswith((".html", ".htm")):
+            page_topics.append(t)
+    for t, links in zip(
+        page_topics[:_PAGE_FETCH_MAX],
+        await asyncio.gather(*[
+            _page_embedded_links(org_unit_id, t["Id"], headers, sem)
+            for t in page_topics[:_PAGE_FETCH_MAX]
+        ]),
+    ):
+        if links:
+            t["EmbeddedLinks"] = links
 
     return {"count": len(topics), "items": topics}
 

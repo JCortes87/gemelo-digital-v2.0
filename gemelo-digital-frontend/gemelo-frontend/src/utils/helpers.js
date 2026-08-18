@@ -185,6 +185,97 @@ export function contentRhythmStatus(progressRatio) {
 }
 
 /**
+ * Tipo de archivo según la extensión presente en una URL o título (en
+ * minúsculas). Devuelve null si no corresponde a un archivo conocido.
+ * NO clasifica .html — las páginas se tratan aparte en contentTypeLabel.
+ */
+export function fileTypeFromUrl(s) {
+  if (!s) return null;
+  if (s.includes(".pdf")) return "PDF";
+  if (/\.(docx?|rtf)(\?|$|\b)/.test(s)) return "Word";
+  if (/\.(xlsx?|csv)(\?|$|\b)/.test(s)) return "Excel";
+  if (/\.(png|jpe?g|gif|svg|webp|bmp|tiff?|ico)(\?|$|\b)/.test(s)) return "Imágenes";
+  if (/\.(mp3|wav|ogg|m4a|aac|wma)(\?|$|\b)/.test(s)) return "Audios";
+  if (/\.(mp4|mov|avi|webm|mkv|wmv|flv)(\?|$|\b)/.test(s)) return "Videos";
+  return null;
+}
+
+/**
+ * Categoría de un recurso educativo publicado en los módulos de contenido.
+ *
+ * Reglas (acordadas ago 2026):
+ * - Un recurso que lleva a un archivo cuenta por su tipo de archivo (PDF,
+ *   Word, Excel, Imágenes, Audios, Videos), aunque haya sido publicado
+ *   como enlace.
+ * - "Enlace" = recurso publicado como enlace que lleva a una página web
+ *   (externa o interna de Brightspace), incluso si la URL termina en .html.
+ * - "HTML" = únicamente las páginas creadas dentro de Brightspace
+ *   ("Crear nuevo → Página"): URL relativa del curso que termina en .html.
+ * - "Otros" para el resto.
+ */
+export function contentTypeLabel(title, url, topicType) {
+  const u = String(url || "").toLowerCase();
+  const fromUrl = fileTypeFromUrl(u);
+  if (fromUrl) return fromUrl;
+  const isLink = Number(topicType) === 3 || /^https?:/.test(u);
+  if (isLink) return "Enlace";
+  if (/\.html?(\?|$|\b)/.test(u)) return "HTML";
+  const t = String(title || "").toLowerCase();
+  const fromTitle = fileTypeFromUrl(t);
+  if (fromTitle) return fromTitle;
+  if (/\.html?(\?|$|\b)/.test(t)) return "HTML";
+  if (/https?:|www\.|link|enlace/.test(t)) return "Enlace";
+  return "Otros";
+}
+
+/**
+ * Total y desglose por tipo de los recursos educativos publicados.
+ *
+ * Cuenta cada recurso visible del árbol de contenido una sola vez, y además
+ * los ARCHIVOS enlazados dentro de las páginas del curso (EmbeddedLinks que
+ * trae /content/topics): una página con 7 enlaces a 7 PDFs suma la página
+ * (HTML) y los 7 PDFs. Los enlaces a sitios web escritos dentro de una
+ * página no se cuentan (solo los publicados como recurso propio cuentan
+ * como "Enlace"). Un archivo enlazado en varias páginas, o enlazado y
+ * además publicado como recurso, cuenta una sola vez.
+ */
+export function countEducationalResources(topics) {
+  const norm = (s) => String(s || "").toLowerCase().trim();
+  const counts = {};
+  let total = 0;
+  const topicUrls = new Set();
+  for (const t of topics || []) {
+    if (t?.IsHidden === true) continue;
+    if (t?.Url) {
+      const u = norm(t.Url);
+      topicUrls.add(u);
+      topicUrls.add(u.split("?")[0]);
+    }
+    const label = contentTypeLabel(t?.Title, t?.Url, t?.TopicType);
+    counts[label] = (counts[label] || 0) + 1;
+    total += 1;
+  }
+  const seenLinks = new Set();
+  for (const t of topics || []) {
+    if (t?.IsHidden === true || !Array.isArray(t?.EmbeddedLinks)) continue;
+    for (const href of t.EmbeddedLinks) {
+      const h = norm(href);
+      if (!h || seenLinks.has(h)) continue;
+      seenLinks.add(h);
+      if (topicUrls.has(h) || topicUrls.has(h.split("?")[0])) continue;
+      const label = fileTypeFromUrl(h);
+      if (!label) continue;
+      counts[label] = (counts[label] || 0) + 1;
+      total += 1;
+    }
+  }
+  const breakdown = Object.entries(counts)
+    .map(([label, count]) => ({ label, count }))
+    .sort((a, b) => b.count - a.count);
+  return { total, breakdown };
+}
+
+/**
  * Parse a Brightspace grade item formula to extract the evidence names it
  * references.
  *

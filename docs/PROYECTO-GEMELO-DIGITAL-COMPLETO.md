@@ -5,8 +5,9 @@
 > cada cosa. Pensado para que cualquier persona técnica que herede el
 > proyecto pueda continuarlo sin pedir contexto a nadie.
 >
-> **Última actualización**: 31 de julio de 2026 — rediseño del dashboard
-> docente y del portal del estudiante (ver sección 15). La versión Word
+> **Última actualización**: 18 de agosto de 2026 — recuento y tipos de
+> recursos educativos afinados (archivos enlazados dentro de páginas;
+> ver sección 15). La versión Word
 > (`Gemelo-Digital-Documentacion-Completa.docx`) corresponde a junio 2026;
 > este Markdown es la versión canónica y más reciente.
 
@@ -418,7 +419,7 @@ Hola, aquí te dejo lo del dashboard     ← conversacional
 | `GET /brightspace/course/{ou}/classlist` | Classlist crudo (incluye `LastAccessed` por estudiante). Lo usan la tarjeta de Accesos y la columna Último acceso |
 | `GET /brightspace/course/{ou}/content/consumption` | **Nuevo (jul 2026)**: consumo de contenidos por estudiante → `{perUser, perUserTopics}` (user progress con fallback a completions por tema) |
 | `GET /brightspace/course/{ou}/instructors` | **Nuevo (jul 2026)**: profesores del curso con rol real (LP enrollments) — lo usa "Accesos del profesor" |
-| `GET /brightspace/course/{ou}/content/topics` | **Nuevo (jul 2026)**: elementos de contenido con Url/TopicType (recorre la estructura de cada módulo) — permite clasificar por tipo (PDF, Word…) |
+| `GET /brightspace/course/{ou}/content/topics` | **Nuevo (jul 2026)**: elementos de contenido con Url/TopicType (recorre la estructura de cada módulo) — permite clasificar por tipo (PDF, Word…). Desde ago 2026 también descarga el HTML de las páginas internas y adjunta sus enlaces como `EmbeddedLinks` |
 
 ---
 
@@ -1027,6 +1028,29 @@ principal y respaldadas en `gemelo-digital-v2.0`; cada una se mergeó a
   Brightspace aparecerán aquí…"** (lo correcto: pueden existir sin
   estar publicadas). Convención fija: los textos que lee el
   usuario final no llevan términos técnicos ni nombres de variables.
+- **Recuento y tipos de recursos educativos afinados (18 ago)**: en la
+  tarjeta "Recursos educativos publicados", **"HTML" es únicamente las
+  páginas creadas dentro de Brightspace** ("Crear nuevo → Página"); un
+  enlace publicado como recurso que lleva a una página web cuenta como
+  **"Enlace"** aunque su URL termine en `.html`, y si lleva a un archivo
+  (PDF, Word, Excel…) cuenta **por su tipo de archivo**. Los módulos
+  ("Nueva unidad") nunca cuentan — solo lo que hay dentro. Además los
+  **archivos enlazados dentro de una página ahora también se cuentan**:
+  el endpoint `/content/topics` descarga el HTML de cada página interna
+  (best-effort, cacheado 5 min, máx. 60 páginas) y devuelve sus enlaces
+  como `EmbeddedLinks`; una página con 7 PDFs enlazados suma la página
+  (HTML) y los 7 PDFs, con dedupe: un archivo enlazado en varias páginas
+  o publicado además como recurso propio cuenta una sola vez. Los
+  enlaces a sitios web escritos dentro de una página **no** se cuentan
+  (solo los publicados como recurso cuentan como "Enlace"). La
+  clasificación se movió a `utils/helpers.js` (`contentTypeLabel`,
+  `fileTypeFromUrl`, `countEducationalResources`) con tests de vitest, y
+  el extractor de enlaces del backend (`_extract_hrefs`) tiene tests de
+  pytest. Los tooltips de la tarjeta y del desglose "Tipos de recurso
+  educativo" explican las reglas. Limitación: Brightspace no registra la
+  apertura de archivos enlazados dentro de una página, así que las
+  barras de consumo siguen midiendo solo los recursos del árbol de
+  contenido (el tooltip lo aclara).
 - **Buckets de accesos excluyentes (10 ago)**: "Ingresaron en los
   últimos 7 días" incluía también a los de hoy, duplicando la lectura
   con "Ingresaron hoy". Ahora los cuatro grupos son excluyentes — hoy /
