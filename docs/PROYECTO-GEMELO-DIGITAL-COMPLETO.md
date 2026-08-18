@@ -8,9 +8,9 @@
 > **Última actualización**: 18 de agosto de 2026 — recuento y tipos de
 > recursos educativos afinados (archivos y enlaces publicados dentro de
 > páginas y en la descripción de las unidades; ver sección 15). La
-> versión Word (`Gemelo-Digital-Documentacion-Completa.docx`)
-> corresponde a junio 2026; este Markdown es la versión canónica y más
-> reciente.
+> versión Word (`Gemelo-Digital-Documentacion-Completa.docx`) se
+> regenera en cada cambio con `node docs/build/generate-docx.js`; este
+> Markdown es la versión canónica.
 
 ---
 
