@@ -255,6 +255,12 @@ export function countEducationalResources(topics, moduleLinks) {
   const norm = (s) => String(s || "").toLowerCase().trim();
   const counts = {};
   let total = 0;
+  // Los quicklinks de Brightspace comparten TODOS la misma ruta
+  // (/d2l/common/dialogs/quickLink/quickLink.d2l) y el recurso real va en el
+  // query (fileId). Para ellos la URL sin query no identifica nada: usarla
+  // en el dedupe hacía descartar como "ya contados" todos los quicklinks de
+  // las unidades cuando existía un recurso-quicklink en el árbol.
+  const isSharedDialogPath = (u) => u.split("?")[0].endsWith("/quicklink.d2l");
   const topicUrls = new Set();
   const topicById = new Map();
   for (const t of topics || []) {
@@ -263,7 +269,7 @@ export function countEducationalResources(topics, moduleLinks) {
     if (t?.Url) {
       const u = norm(t.Url);
       topicUrls.add(u);
-      topicUrls.add(u.split("?")[0]);
+      if (!isSharedDialogPath(u)) topicUrls.add(u.split("?")[0]);
     }
     const label = contentTypeLabel(t?.Title, t?.Url, t?.TopicType);
     counts[label] = (counts[label] || 0) + 1;
@@ -281,7 +287,7 @@ export function countEducationalResources(topics, moduleLinks) {
     const h = norm(href);
     if (!h || seenLinks.has(h)) return;
     seenLinks.add(h);
-    if (topicUrls.has(h) || topicUrls.has(h.split("?")[0])) return;
+    if (topicUrls.has(h) || (!isSharedDialogPath(h) && topicUrls.has(h.split("?")[0]))) return;
     const target = internalTopicFor(h);
     if (target) {
       if (target.IsHidden === true) {

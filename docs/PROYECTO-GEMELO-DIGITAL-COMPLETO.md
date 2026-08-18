@@ -1083,6 +1083,19 @@ principal y respaldadas en `gemelo-digital-v2.0`; cada una se mergeó a
   curso** (`viewContent` / `lessons/…/topics`), que se resuelven al
   recurso real por su Id — si el recurso es visible no se cuenta doble
   y si está oculto cuenta por su tipo real.
+- **Fix del dedupe de quicklinks (18 ago, 3ª ronda)**: los quicklinks de
+  Brightspace comparten TODOS la misma ruta
+  (`/d2l/common/dialogs/quickLink/quickLink.d2l`) y el recurso real va
+  en el query (`fileId`). El dedupe comparaba también la URL sin query,
+  así que si el árbol de contenido tenía un recurso-quicklink,
+  **todos** los quicklinks publicados en las unidades se descartaban
+  como "ya contados" (caso real, curso 46267: los 7 PDFs de la unidad
+  "Juego de roles" no aparecían — la tarjeta decía 1 PDF en vez de 8).
+  Ahora los quicklinks se comparan solo por su URL completa. El
+  diagnóstico se hizo contra el backend de producción con la sesión del
+  navegador: `/content/topics` ya devolvía los 7 quicklinks en
+  `moduleLinks` con `.pdf` en el query — el bug era solo del conteo en
+  el frontend.
 - **Buckets de accesos excluyentes (10 ago)**: "Ingresaron en los
   últimos 7 días" incluía también a los de hoy, duplicando la lectura
   con "Ingresaron hoy". Ahora los cuatro grupos son excluyentes — hoy /
