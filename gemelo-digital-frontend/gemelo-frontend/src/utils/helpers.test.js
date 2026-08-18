@@ -15,7 +15,8 @@ import {
   computeRiskFromPct,
   suggestRouteForStudent,
   contentRhythmStatus,
-  fileTypeFromUrl,
+  docTypeFromUrl,
+  mediaTypeFromUrl,
   contentTypeLabel,
   countEducationalResources,
   parseFormulaReferences,
@@ -271,23 +272,33 @@ describe("matchEvidencesByFormula", () => {
   });
 });
 
-describe("fileTypeFromUrl", () => {
-  it("clasifica archivos por extensión", () => {
-    expect(fileTypeFromUrl("/content/enforced/1/guia.pdf")).toBe("PDF");
-    expect(fileTypeFromUrl("/c/notas.docx")).toBe("Word");
-    expect(fileTypeFromUrl("/c/datos.xlsx")).toBe("Excel");
-    expect(fileTypeFromUrl("/c/mapa.png")).toBe("Imágenes");
-    expect(fileTypeFromUrl("/c/audio.mp3")).toBe("Audios");
-    expect(fileTypeFromUrl("/c/clase.mp4")).toBe("Videos");
+describe("docTypeFromUrl / mediaTypeFromUrl", () => {
+  it("clasifica documentos por extensión (incluye PowerPoint)", () => {
+    expect(docTypeFromUrl("/content/enforced/1/guia.pdf")).toBe("PDF");
+    expect(docTypeFromUrl("/c/notas.docx")).toBe("Word");
+    expect(docTypeFromUrl("/c/datos.xlsx")).toBe("Excel");
+    expect(docTypeFromUrl("/c/clase.pptx")).toBe("PowerPoint");
+    expect(docTypeFromUrl("https://ejemplo.com/slides.ppt")).toBe("PowerPoint");
+  });
+  it("audio y video se clasifican aparte (media)", () => {
+    expect(mediaTypeFromUrl("/c/audio.mp3")).toBe("Audios");
+    expect(mediaTypeFromUrl("/c/clase.mp4")).toBe("Videos");
+    expect(docTypeFromUrl("/c/audio.mp3")).toBeNull();
+    expect(docTypeFromUrl("/c/clase.mp4")).toBeNull();
+  });
+  it("las imágenes ya no son categoría propia", () => {
+    expect(docTypeFromUrl("/c/mapa.png")).toBeNull();
+    expect(mediaTypeFromUrl("/c/mapa.png")).toBeNull();
   });
   it("reconoce el .pdf en quicklinks con query string", () => {
-    expect(fileTypeFromUrl("/d2l/common/dialogs/quicklink/quicklink.d2l?ou=1&type=coursefile&fileid=docs/guia.pdf")).toBe("PDF");
+    expect(docTypeFromUrl("/d2l/common/dialogs/quicklink/quicklink.d2l?ou=1&type=coursefile&fileid=docs/guia.pdf")).toBe("PDF");
   });
   it("NO clasifica .html ni páginas web", () => {
-    expect(fileTypeFromUrl("/content/enforced/1/pagina.html")).toBeNull();
-    expect(fileTypeFromUrl("https://ejemplo.com/articulo")).toBeNull();
-    expect(fileTypeFromUrl("")).toBeNull();
-    expect(fileTypeFromUrl(null)).toBeNull();
+    expect(docTypeFromUrl("/content/enforced/1/pagina.html")).toBeNull();
+    expect(docTypeFromUrl("https://ejemplo.com/articulo")).toBeNull();
+    expect(docTypeFromUrl("")).toBeNull();
+    expect(docTypeFromUrl(null)).toBeNull();
+    expect(mediaTypeFromUrl(null)).toBeNull();
   });
 });
 
@@ -311,6 +322,19 @@ describe("contentTypeLabel", () => {
     expect(contentTypeLabel("pagina.html", null, null)).toBe("HTML");
     expect(contentTypeLabel("Enlace al foro", null, null)).toBe("Enlace");
     expect(contentTypeLabel("Bienvenida", null, null)).toBe("Otros");
+  });
+  it("audio/video solo cuentan si están cargados en Brightspace", () => {
+    expect(contentTypeLabel("Clase", "/content/enforced/1/clase.mp4", 1)).toBe("Videos");
+    expect(contentTypeLabel("Audio", "https://cesa.brightspace.com/content/enforced/1/audio.mp3", 1)).toBe("Audios");
+    expect(contentTypeLabel("Video externo", "https://ejemplo.com/clase.mp4", 3)).toBe("Enlace");
+    expect(contentTypeLabel("YouTube", "https://www.youtube.com/watch", 3)).toBe("Enlace");
+  });
+  it("una imagen cargada va a Otros (sin categoría propia)", () => {
+    expect(contentTypeLabel("Mapa", "/content/enforced/1/mapa.png", 1)).toBe("Otros");
+  });
+  it("un quicklink a una actividad del curso (foro, quiz…) va a Otros", () => {
+    expect(contentTypeLabel("El rol del ciudadano", "/d2l/common/dialogs/quicklink/quicklink.d2l?ou=1&type=discuss&rcode=x-123", 3)).toBe("Otros");
+    expect(contentTypeLabel("Quiz 1", "/d2l/common/dialogs/quicklink/quicklink.d2l?ou=1&type=quiz&rcode=x-9", 3)).toBe("Otros");
   });
 });
 
@@ -400,16 +424,18 @@ describe("countEducationalResources — enlaces en la descripción de unidades",
   });
 });
 
-describe("fileTypeFromUrl — enlaces compartidos de OneDrive/SharePoint", () => {
+describe("docTypeFromUrl — enlaces compartidos de OneDrive/SharePoint", () => {
   it("reconoce el tipo por el código de la ruta", () => {
-    expect(fileTypeFromUrl("https://cesaedu-my.sharepoint.com/:b:/g/personal/x/abc123")).toBe("PDF");
-    expect(fileTypeFromUrl("https://cesaedu-my.sharepoint.com/:w:/g/personal/x/abc")).toBe("Word");
-    expect(fileTypeFromUrl("https://cesaedu.sharepoint.com/:x:/s/equipo/abc")).toBe("Excel");
-    expect(fileTypeFromUrl("https://1drv.ms/b/s!abc")).toBe("PDF");
+    expect(docTypeFromUrl("https://cesaedu-my.sharepoint.com/:b:/g/personal/x/abc123")).toBe("PDF");
+    expect(docTypeFromUrl("https://cesaedu-my.sharepoint.com/:w:/g/personal/x/abc")).toBe("Word");
+    expect(docTypeFromUrl("https://cesaedu.sharepoint.com/:x:/s/equipo/abc")).toBe("Excel");
+    expect(docTypeFromUrl("https://cesaedu.sharepoint.com/:p:/s/equipo/abc")).toBe("PowerPoint");
+    expect(docTypeFromUrl("https://1drv.ms/b/s!abc")).toBe("PDF");
   });
-  it("un enlace compartido a carpeta u otro tipo no clasifica", () => {
-    expect(fileTypeFromUrl("https://cesaedu-my.sharepoint.com/:f:/g/personal/x/abc")).toBeNull();
-    expect(fileTypeFromUrl("https://cesaedu-my.sharepoint.com/:u:/g/personal/x/abc")).toBeNull();
+  it("un enlace compartido a carpeta, video u otro tipo no clasifica como documento", () => {
+    expect(docTypeFromUrl("https://cesaedu-my.sharepoint.com/:f:/g/personal/x/abc")).toBeNull();
+    expect(docTypeFromUrl("https://cesaedu-my.sharepoint.com/:u:/g/personal/x/abc")).toBeNull();
+    expect(docTypeFromUrl("https://cesaedu-my.sharepoint.com/:v:/g/personal/x/abc")).toBeNull();
   });
 });
 
@@ -434,7 +460,7 @@ describe("countEducationalResources — enlaces internos al propio curso", () =>
       [{ Id: 7, Title: "Mapa", Url: "/c/mapa.png", TopicType: 1 }],
       ["/d2l/le/lessons/1234/topics/7"],
     );
-    expect(r.total).toBe(1); // ya contado como Imágenes
+    expect(r.total).toBe(1); // ya contado (como Otros)
   });
 });
 
@@ -469,5 +495,28 @@ describe("countEducationalResources — quicklinks no se pisan entre sí", () =>
       [href],
     );
     expect(r.total).toBe(1);
+  });
+});
+
+describe("countEducationalResources — actividades y media externa en enlaces", () => {
+  it("un enlace de unidad a un foro/quiz del curso no cuenta", () => {
+    const r = countEducationalResources([], [
+      "/d2l/common/dialogs/quickLink/quickLink.d2l?ou=1&type=discuss&rcode=x-166046",
+      "https://www.youtube.com/",
+    ]);
+    expect(r.total).toBe(1); // solo el enlace externo
+    expect(r.breakdown).toEqual([{ label: "Enlace", count: 1 }]);
+  });
+  it("un enlace de unidad a un video externo cuenta como Enlace, no como Video", () => {
+    const r = countEducationalResources([], ["https://ejemplo.com/clase.mp4"]);
+    expect(r.breakdown).toEqual([{ label: "Enlace", count: 1 }]);
+  });
+  it("un enlace de unidad a un video cargado en Brightspace cuenta como Video", () => {
+    const r = countEducationalResources([], ["https://cesa.brightspace.com/content/enforced/1/clase.mp4"]);
+    expect(r.breakdown).toEqual([{ label: "Videos", count: 1 }]);
+  });
+  it("un enlace de unidad a un PowerPoint cuenta como PowerPoint", () => {
+    const r = countEducationalResources([], ["/content/enforced/1/slides.pptx"]);
+    expect(r.breakdown).toEqual([{ label: "PowerPoint", count: 1 }]);
   });
 });
