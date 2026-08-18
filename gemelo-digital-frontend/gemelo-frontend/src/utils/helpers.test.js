@@ -437,3 +437,37 @@ describe("countEducationalResources — enlaces internos al propio curso", () =>
     expect(r.total).toBe(1); // ya contado como Imágenes
   });
 });
+
+describe("countEducationalResources — quicklinks no se pisan entre sí", () => {
+  // Caso real (curso 46267): todos los quicklinks comparten la ruta
+  // /d2l/common/dialogs/quickLink/quickLink.d2l y solo cambia el query.
+  const ql = (q) => `/d2l/common/dialogs/quickLink/quickLink.d2l?${q}`;
+  it("7 quicklinks a PDFs en la unidad cuentan aunque exista un recurso-quicklink en el árbol", () => {
+    const r = countEducationalResources(
+      [
+        { Id: 1, Title: "Acerca del CESA", Url: "/c/acerca.html", TopicType: 1 },
+        { Id: 2, Title: "El rol del ciudadano", Url: ql("ou=46267&type=content&rcode=x"), TopicType: 3 },
+      ],
+      [
+        ...Array.from({ length: 7 }, (_, i) => ql(`ou=46267&type=coursefile&fileId=ficha${i}.pdf`)),
+        "https://www.youtube.com/",
+      ],
+    );
+    expect(r.total).toBe(10); // 1 HTML + 1 Enlace (árbol) + 7 PDF + 1 Enlace (youtube)
+    expect(r.breakdown).toEqual(
+      expect.arrayContaining([
+        { label: "PDF", count: 7 },
+        { label: "HTML", count: 1 },
+        { label: "Enlace", count: 2 },
+      ]),
+    );
+  });
+  it("un quicklink de unidad idéntico al de un recurso del árbol sí se dedupe (URL completa)", () => {
+    const href = ql("ou=1&type=coursefile&fileId=guia.pdf");
+    const r = countEducationalResources(
+      [{ Id: 1, Title: "Guía", Url: href, TopicType: 3 }],
+      [href],
+    );
+    expect(r.total).toBe(1);
+  });
+});
