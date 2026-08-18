@@ -231,15 +231,19 @@ export function contentTypeLabel(title, url, topicType) {
 /**
  * Total y desglose por tipo de los recursos educativos publicados.
  *
- * Cuenta cada recurso visible del árbol de contenido una sola vez, y además
- * los ARCHIVOS enlazados dentro de las páginas del curso (EmbeddedLinks que
- * trae /content/topics): una página con 7 enlaces a 7 PDFs suma la página
- * (HTML) y los 7 PDFs. Los enlaces a sitios web escritos dentro de una
- * página no se cuentan (solo los publicados como recurso propio cuentan
- * como "Enlace"). Un archivo enlazado en varias páginas, o enlazado y
- * además publicado como recurso, cuenta una sola vez.
+ * Cuenta cada recurso visible del árbol de contenido una sola vez, y además:
+ * - Los ARCHIVOS enlazados dentro de las páginas del curso (EmbeddedLinks
+ *   que trae /content/topics): una página con 7 enlaces a 7 PDFs suma la
+ *   página (HTML) y los 7 PDFs. Los enlaces a sitios web escritos dentro
+ *   de una página no se cuentan.
+ * - Los enlaces publicados en la DESCRIPCIÓN de las unidades (moduleLinks):
+ *   a un archivo cuentan por su tipo; a una página web cuentan como
+ *   "Enlace" — están publicados a la vista del estudiante, igual que un
+ *   recurso del árbol.
+ * Dedupe global: un mismo destino enlazado en varias páginas/unidades, o
+ * publicado además como recurso propio, cuenta una sola vez.
  */
-export function countEducationalResources(topics) {
+export function countEducationalResources(topics, moduleLinks) {
   const norm = (s) => String(s || "").toLowerCase().trim();
   const counts = {};
   let total = 0;
@@ -256,18 +260,24 @@ export function countEducationalResources(topics) {
     total += 1;
   }
   const seenLinks = new Set();
+  const countLink = (href, { webCountsAsEnlace }) => {
+    const h = norm(href);
+    if (!h || seenLinks.has(h)) return;
+    seenLinks.add(h);
+    if (topicUrls.has(h) || topicUrls.has(h.split("?")[0])) return;
+    const label = fileTypeFromUrl(h) || (webCountsAsEnlace ? "Enlace" : null);
+    if (!label) return;
+    counts[label] = (counts[label] || 0) + 1;
+    total += 1;
+  };
   for (const t of topics || []) {
     if (t?.IsHidden === true || !Array.isArray(t?.EmbeddedLinks)) continue;
     for (const href of t.EmbeddedLinks) {
-      const h = norm(href);
-      if (!h || seenLinks.has(h)) continue;
-      seenLinks.add(h);
-      if (topicUrls.has(h) || topicUrls.has(h.split("?")[0])) continue;
-      const label = fileTypeFromUrl(h);
-      if (!label) continue;
-      counts[label] = (counts[label] || 0) + 1;
-      total += 1;
+      countLink(href, { webCountsAsEnlace: false });
     }
+  }
+  for (const href of moduleLinks || []) {
+    countLink(href, { webCountsAsEnlace: true });
   }
   const breakdown = Object.entries(counts)
     .map(([label, count]) => ({ label, count }))
