@@ -364,3 +364,38 @@ describe("countEducationalResources", () => {
     expect(countEducationalResources(null).total).toBe(0);
   });
 });
+
+describe("countEducationalResources — enlaces en la descripción de unidades", () => {
+  it("enlace de unidad a un archivo cuenta por su tipo", () => {
+    const r = countEducationalResources([], ["/content/enforced/1/guia.pdf"]);
+    expect(r.total).toBe(1);
+    expect(r.breakdown).toEqual([{ label: "PDF", count: 1 }]);
+  });
+  it("enlace de unidad a una página web cuenta como Enlace", () => {
+    const r = countEducationalResources([], ["https://ejemplo.com/articulo"]);
+    expect(r.total).toBe(1);
+    expect(r.breakdown).toEqual([{ label: "Enlace", count: 1 }]);
+  });
+  it("dedupe contra recursos propios y contra enlaces de páginas", () => {
+    const r = countEducationalResources(
+      [
+        { Id: 1, Title: "Guía", Url: "/c/guia.pdf", TopicType: 1 },
+        { Id: 2, Title: "P", Url: "/c/p.html", TopicType: 1, EmbeddedLinks: ["/c/otro.pdf"] },
+      ],
+      ["/c/guia.pdf", "/c/otro.pdf", "https://ejemplo.com/"],
+    );
+    // guía (recurso), página, otro.pdf (una vez) y el enlace web = 4
+    expect(r.total).toBe(4);
+    expect(r.breakdown).toEqual(
+      expect.arrayContaining([
+        { label: "PDF", count: 2 },
+        { label: "HTML", count: 1 },
+        { label: "Enlace", count: 1 },
+      ]),
+    );
+  });
+  it("sin moduleLinks se comporta igual que antes", () => {
+    const r = countEducationalResources([{ Id: 1, Title: "a", Url: "/c/a.pdf", TopicType: 1 }]);
+    expect(r.total).toBe(1);
+  });
+});

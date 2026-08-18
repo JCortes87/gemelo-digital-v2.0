@@ -301,6 +301,9 @@ export default function TeacherDashboard() {
   // Elementos de contenido con metadatos completos (Url/TopicType) para
   // clasificar por tipo (PDF, Word, etc.) — el content/root no trae Url
   const [contentTopics, setContentTopics] = useState(null);
+  // Enlaces publicados en la descripción de las unidades (moduleLinks del
+  // endpoint /content/topics): también cuentan como recursos educativos.
+  const [contentModuleLinks, setContentModuleLinks] = useState([]);
   // Estado de entregas/calificación por asignación (dropbox) de TODO el curso:
   // alimenta "pendientes por calificar" (Evaluación y Feedback) y las
   // "vencidas sin entrega" por estudiante (Estudiantes prioritarios).
@@ -1035,6 +1038,7 @@ export default function TeacherDashboard() {
     setClasslistItems([]);
     setInstructors(null);
     setContentTopics(null);
+    setContentModuleLinks([]);
     setConsumption(null);
     setDropboxGradingStatus(null);
 
@@ -1050,9 +1054,15 @@ export default function TeacherDashboard() {
     (async () => {
       try {
         const ct = await apiGetCached(`/brightspace/course/${orgUnitId}/content/topics`, { ttl: 300_000 });
-        if (alive) setContentTopics(Array.isArray(ct?.items) ? ct.items : []);
+        if (alive) {
+          setContentTopics(Array.isArray(ct?.items) ? ct.items : []);
+          setContentModuleLinks(Array.isArray(ct?.moduleLinks) ? ct.moduleLinks : []);
+        }
       } catch {
-        if (alive) setContentTopics([]);
+        if (alive) {
+          setContentTopics([]);
+          setContentModuleLinks([]);
+        }
       }
     })();
 
@@ -1863,12 +1873,13 @@ const contentKpis = useMemo(() => {
   // derivado de la MISMA fuente para que el desglose siempre sume el total.
   // Preferimos /content/topics (con Url para clasificar); fallback al root.
   const elementsStats = useMemo(() => {
-    if (Array.isArray(contentTopics) && contentTopics.length) {
+    if (Array.isArray(contentTopics) && (contentTopics.length || contentModuleLinks.length)) {
       // Cuenta TODOS los recursos visibles publicados en el curso (sin
       // importar cuándo se cargaron), incluidos los archivos enlazados
-      // dentro de las páginas del curso (EmbeddedLinks). La lógica y sus
-      // reglas de dedupe viven en countEducationalResources (helpers.js).
-      const { total, breakdown } = countEducationalResources(contentTopics);
+      // dentro de las páginas del curso (EmbeddedLinks) y los enlaces
+      // publicados en la descripción de las unidades (moduleLinks). La
+      // lógica y sus reglas de dedupe viven en countEducationalResources.
+      const { total, breakdown } = countEducationalResources(contentTopics, contentModuleLinks);
       const minExpected = contentKpis?.minExpected ?? null;
       const ratio = minExpected ? clamp(total / minExpected, 0, 2) : null;
       return { total, breakdown, rhythm: contentRhythmStatus(ratio) };
@@ -1878,7 +1889,7 @@ const contentKpis = useMemo(() => {
       breakdown: contentKpis?.typeBreakdown || [],
       rhythm: contentRhythmMeta,
     };
-  }, [contentTopics, contentKpis, contentRhythmMeta]);
+  }, [contentTopics, contentModuleLinks, contentKpis, contentRhythmMeta]);
 
   // Detalle de consumo desplegable
   const [consumptionDetailOpen, setConsumptionDetailOpen] = useState(false);
@@ -2576,7 +2587,7 @@ const contentKpis = useMemo(() => {
           {/* Contenidos creados — número grande + ritmo */}
           <div className="kpi-card" style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 6, padding: isMobile ? 12 : 14, textAlign: "center" }}>
             <div style={{ fontSize: 12, fontWeight: 800, color: "var(--text)", letterSpacing: "0.01em", display: "inline-flex", alignItems: "center", gap: 4 }}>
-              Recursos educativos publicados <InfoTooltip text="Todos los recursos visibles en los módulos de contenido del curso, sin importar cuándo se cargaron: archivos (PDF, Word, Excel, imágenes, audios, videos), páginas creadas en Brightspace y enlaces. También cuentan los archivos enlazados dentro de una página: una página con 7 PDFs enlazados suma la página y los 7 PDFs. No incluye las asignaciones — esas se cuentan aparte en la tarjeta de Asignaciones." />
+              Recursos educativos publicados <InfoTooltip text="Todo lo visible en las unidades del curso: archivos, páginas y enlaces, incluidos los enlazados dentro de páginas y unidades. No incluye las asignaciones." />
             </div>
             <div style={{ fontSize: isMobile ? 30 : 38, fontWeight: 900, color: elementsStats.total != null ? elementsStats.rhythm.color : "var(--muted)", fontFamily: "var(--font-mono)", lineHeight: 1 }}>
               {elementsStats.total ?? "—"}
@@ -2603,7 +2614,7 @@ const contentKpis = useMemo(() => {
                   >
                     Tipos de recurso educativo {contentTypesOpen ? "▴" : "▾"}
                   </button>
-                  <InfoTooltip text="Cada recurso publicado cuenta una sola vez. HTML son las páginas creadas dentro de Brightspace; una página cuenta como un solo recurso aunque contenga varios enlaces. Enlace son los enlaces publicados como recurso que llevan a una página web. Si un enlace — publicado como recurso o dentro de una página — lleva a un archivo (PDF, Word, Excel…), cuenta como ese tipo de archivo. Los enlaces a sitios web escritos dentro de una página no se cuentan." />
+                  <InfoTooltip text="HTML: páginas creadas en Brightspace. Enlace: enlaces a páginas web. Un enlace a un archivo (PDF, Word…) cuenta como ese archivo. Cada recurso cuenta una sola vez." />
                 </span>
                 {contentTypesOpen && (
                   <div style={{ display: "flex", flexDirection: "column", gap: 3, width: "100%", maxHeight: 110, overflowY: "auto" }}>
@@ -2641,7 +2652,7 @@ const contentKpis = useMemo(() => {
                       <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 6, display: "flex", justifyContent: "space-between", gap: 6 }}>
                         <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
                           Promedio de acceso a recursos educativos
-                          <InfoTooltip text="De los recursos publicados en los módulos del curso, porcentaje que ha abierto en promedio cada estudiante. Cada recurso cuenta una sola vez por estudiante — no mide cuántas veces lo abrió. Ej: 75% = un estudiante típico ha abierto 3 de cada 4 recursos. Brightspace solo registra la apertura de los recursos publicados en los módulos: la apertura de un archivo enlazado dentro de una página no se puede medir y no entra en este porcentaje." />
+                          <InfoTooltip text="Porcentaje de los recursos publicados que ha abierto en promedio cada estudiante. Cada recurso cuenta una vez por estudiante. Los enlazados dentro de páginas o unidades no se pueden medir y no entran aquí." />
                         </span>
                         <span style={{ fontFamily: "var(--font-mono)", fontWeight: 800 }}>{fmtPct(consumptionStats.avgPct)}</span>
                       </div>
@@ -2658,7 +2669,7 @@ const contentKpis = useMemo(() => {
                       <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 6, display: "flex", justifyContent: "space-between", gap: 6 }}>
                         <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
                           {consumptionStats.opened} de {consumptionStats.total} estudiantes han abierto recursos educativos
-                          <InfoTooltip text="Estudiantes que han abierto al menos uno de los recursos educativos publicados del curso (PDF, Word, páginas, enlaces…)." />
+                          <InfoTooltip text="Estudiantes que han abierto al menos un recurso publicado del curso." />
                         </span>
                         <span style={{ fontFamily: "var(--font-mono)", fontWeight: 800 }}>{fmtPct(consumptionStats.openedPct)}</span>
                       </div>

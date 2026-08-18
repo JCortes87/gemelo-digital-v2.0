@@ -896,9 +896,13 @@ async def brightspace_content_topics(request: Request, org_unit_id: int):
     saber el tipo de archivo (PDF, Word, etc.).
 
     Devuelve {count, items: [{Id, Title, Url, TopicType, ActivityType,
-    IsHidden, LastModifiedDate, EmbeddedLinks?}]}. EmbeddedLinks solo viene
-    en las páginas HTML internas: son los href encontrados en el cuerpo de
-    la página (los archivos enlazados también cuentan como recursos).
+    IsHidden, LastModifiedDate, EmbeddedLinks?}], moduleLinks}.
+    - EmbeddedLinks solo viene en las páginas HTML internas: son los href
+      encontrados en el cuerpo de la página (los archivos enlazados también
+      cuentan como recursos).
+    - moduleLinks son los href encontrados en la DESCRIPCIÓN de las unidades
+      (módulos) visibles: los profesores publican enlaces ahí y no generan
+      un topic, así que sin esto no aparecerían en el conteo de recursos.
     """
     token, err = _require_token_from_request(request)
     if err:
@@ -910,10 +914,25 @@ async def brightspace_content_topics(request: Request, org_unit_id: int):
     if root_status != 200:
         return JSONResponse(status_code=root_status, content=root_data)
 
-    queue = [
-        m.get("Id") for m in (root_data if isinstance(root_data, list) else [])
+    module_links: list[str] = []
+    _ml_seen: set[str] = set()
+
+    def _collect_module_links(m: dict) -> None:
+        desc = m.get("Description")
+        html = (desc.get("Html") or desc.get("Text") or "") if isinstance(desc, dict) else ""
+        for h in _extract_hrefs(html):
+            low = h.lower()
+            if low not in _ml_seen:
+                _ml_seen.add(low)
+                module_links.append(h)
+
+    root_modules = [
+        m for m in (root_data if isinstance(root_data, list) else [])
         if isinstance(m, dict) and m.get("Id") is not None and m.get("IsHidden") is not True
     ]
+    for m in root_modules:
+        _collect_module_links(m)
+    queue = [m.get("Id") for m in root_modules]
     seen_modules = set(queue)
     topics = []
     sem = asyncio.Semaphore(8)
@@ -943,6 +962,7 @@ async def brightspace_content_topics(request: Request, org_unit_id: int):
                     if mid is not None and mid not in seen_modules and it.get("IsHidden") is not True:
                         seen_modules.add(mid)
                         queue.append(mid)
+                        _collect_module_links(it)
                 elif it.get("Type") == 1:
                     topics.append({
                         "Id": it.get("Id"),
@@ -979,7 +999,7 @@ async def brightspace_content_topics(request: Request, org_unit_id: int):
         if links:
             t["EmbeddedLinks"] = links
 
-    return {"count": len(topics), "items": topics}
+    return {"count": len(topics), "items": topics, "moduleLinks": module_links}
 
 
 @router.get("/brightspace/course/{org_unit_id}/instructors")
