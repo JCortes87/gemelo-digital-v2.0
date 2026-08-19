@@ -53,6 +53,7 @@ export function AppSidebar({ activeTab, setActiveTab, currentCourseName, mobileO
                     type="button"
                     className={`sidebar-nav-item${isActive ? " active" : ""}`}
                     aria-current={isActive ? "page" : undefined}
+                    data-tour={`nav-${item.id}`}
                     onClick={() => { setActiveTab(item.id); onClose?.(); }}
                   >
                     <span className="snav-icon" aria-hidden="true">{item.icon}</span>
@@ -98,6 +99,7 @@ export function AppTopbar({
   onOpenPalette, onOpenCoordinator,
   isSuperAdmin,
   adminView, onAdminViewChange,
+  onOpenTour,
 }) {
   const [showMainMenu, setShowMainMenu] = useState(false);
   const { t } = useI18n();
@@ -121,7 +123,7 @@ export function AppTopbar({
         )}
 
         {/* Course search */}
-        <div className="topbar-search">
+        <div className="topbar-search" data-tour="topbar-search">
           <span style={{ color: "var(--muted)", fontSize: 14 }}>🔍</span>
           <input
             value={orgUnitInput}
@@ -143,6 +145,7 @@ export function AppTopbar({
         <div
           role="tablist"
           aria-label="Cambiar entre vista profesor y vista estudiante"
+          data-tour="view-toggle"
           style={{
             display: "inline-flex", gap: 2, padding: 3, borderRadius: 10,
             background: "var(--bg)", border: "1px solid var(--border)",
@@ -189,6 +192,7 @@ export function AppTopbar({
             title="Más opciones"
             aria-label="Abrir menú de opciones"
             aria-expanded={showMainMenu ? "true" : "false"}
+            data-tour="topbar-menu"
             style={{ width: "auto", padding: "0 8px", gap: 3 }}
           >
             <span aria-hidden="true" style={{ fontSize: 15 }}>⚙️</span>
@@ -251,6 +255,10 @@ export function AppTopbar({
                     key: "print", icon: "🖨", label: t("topbar.print", "Imprimir vista"),
                     action: () => { setShowMainMenu(false); window.print(); },
                   },
+                  ...(onOpenTour ? [{
+                    key: "tour", icon: "🧭", label: t("topbar.tour", "Tour de opciones"),
+                    action: () => { setShowMainMenu(false); onOpenTour(); },
+                  }] : []),
                 ].map((item) => (
                   <button
                     key={item.key}

@@ -1083,6 +1083,21 @@ principal y respaldadas en `gemelo-digital-v2.0`; cada una se mergeó a
   curso** (`viewContent` / `lessons/…/topics`), que se resuelven al
   recurso real por su Id — si el recurso es visible no se cuenta doble
   y si está oculto cuenta por su tipo real.
+- **Tour guiado por las opciones (18 ago)**: al terminar las tarjetas
+  del tutorial de bienvenida aparece una tarjeta que pregunta si el
+  usuario quiere hacer un **tour por las opciones**. Si acepta, un
+  recorrido va **resaltando cada opción real de la pantalla** (foco con
+  el resto oscurecido + texto flotante al lado) explicando qué es y qué
+  hace: las 9 pestañas del menú lateral, el buscador de curso por ID,
+  el selector "Vista profesor / Vista estudiante" y el menú ⚙️.
+  Componente `GuidedTour` en `teacher/onboarding.jsx`, anclado con
+  atributos `data-tour` en `layout.jsx`; los pasos cuyo elemento no
+  está visible (p. ej. el selector de vista en móvil) se saltan solos,
+  y Escape o "Salir" cierran el tour. Se puede **relanzar cuando se
+  quiera** desde el menú ⚙️ → **"Tour de opciones"** (útil también para
+  probarlo aunque ya se haya visto el tutorial). El tutorial marca
+  `gemelo_onboarded` igual que antes; decir "No, gracias" no lo vuelve
+  a ofrecer.
 - **Taxonomía definitiva de tipos de recurso (18 ago, 4ª ronda)**:
   - **PDF / Word / Excel / PowerPoint** (categoría nueva): archivo
     cargado O enlace que lleva a uno, **alojado en cualquier parte**

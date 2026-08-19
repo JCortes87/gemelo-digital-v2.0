@@ -67,6 +67,151 @@ const ONBOARDING_STEPS = [
   },
 ];
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Tour guiado por las opciones (18 ago 2026): tras las tarjetas del tutorial
+// se ofrece un recorrido que resalta cada opción real de la pantalla con un
+// foco y un texto flotante que explica qué es y qué hace. Los pasos se anclan
+// con el atributo data-tour de cada elemento (sidebar y topbar en layout.jsx);
+// si un elemento no está visible (p. ej. el selector de vista en móvil), el
+// paso se salta solo. También se puede relanzar desde el menú ⚙️ → "Tour de
+// opciones".
+// ─────────────────────────────────────────────────────────────────────────────
+const TOUR_STEPS = [
+  { target: "nav-dashboard", icon: "📊", title: "Dashboard", desc: "El panorama del curso: calificación promedio, estudiantes en riesgo, recursos educativos publicados, asignaciones y accesos al curso." },
+  { target: "nav-students", icon: "👥", title: "Estudiantes", desc: "La lista completa del curso con la calificación, el nivel de riesgo y el último ingreso de cada estudiante. Haz clic en uno para ver su detalle." },
+  { target: "nav-calendar", icon: "📅", title: "Calendario", desc: "Todas las fechas de entrega del curso, mes a mes." },
+  { target: "nav-trends", icon: "📈", title: "Tendencias", desc: "Cómo evoluciona el curso en el tiempo: promedio, riesgo y entregas día a día." },
+  { target: "nav-routes", icon: "🛤️", title: "Rutas de atención", desc: "Sugerencias de acompañamiento para cada estudiante según su situación: activar evidencias, recuperación, seguimiento o mantener el desempeño." },
+  { target: "nav-predictions", icon: "🔮", title: "Predicción de calificaciones", desc: "Una proyección de la nota final de cada estudiante si mantiene su ritmo actual." },
+  { target: "nav-evidences", icon: "📑", title: "Evidencias", desc: "Las actividades calificadas del curso, con sus notas y reportes para descargar." },
+  { target: "nav-learning-outcomes", icon: "🎯", title: "Resultados de aprendizaje", desc: "El desempeño del curso en cada resultado de aprendizaje y su vínculo con las actividades." },
+  { target: "nav-assistant", icon: "🤖", title: "Asistente IA", desc: "Pregunta en lenguaje natural — por ejemplo \"¿quiénes están en riesgo alto?\" — y obtén la respuesta al instante, por texto o por voz." },
+  { target: "topbar-search", icon: "🔍", title: "Abrir un curso por ID", desc: "Escribe el ID de un curso y presiona Enter para abrirlo directamente." },
+  { target: "view-toggle", icon: "🎓", title: "Vista profesor / estudiante", desc: "Cambia a la vista de un estudiante para ver su portal tal como él lo ve." },
+  { target: "topbar-menu", icon: "⚙️", title: "Más opciones", desc: "Comandos rápidos, tus cursos, idioma, tema claro u oscuro, imprimir… y este tour, por si quieres repetirlo." },
+];
+
+export function GuidedTour({ onFinish }) {
+  // Solo los pasos cuyo elemento existe y está visible en pantalla
+  const [steps] = React.useState(() =>
+    TOUR_STEPS.filter((s) => {
+      const el = document.querySelector(`[data-tour="${s.target}"]`);
+      return el && el.getClientRects().length > 0;
+    })
+  );
+  const [idx, setIdx] = React.useState(0);
+  const [rect, setRect] = React.useState(null);
+  const step = steps[idx];
+  const isLast = idx === steps.length - 1;
+
+  // Medir el elemento del paso actual (y re-medir en resize/scroll)
+  React.useEffect(() => {
+    if (!step) return;
+    const el = document.querySelector(`[data-tour="${step.target}"]`);
+    if (!el) return;
+    try { el.scrollIntoView({ block: "nearest" }); } catch { /* noop */ }
+    const measure = () => setRect(el.getBoundingClientRect());
+    measure();
+    window.addEventListener("resize", measure);
+    window.addEventListener("scroll", measure, true);
+    return () => {
+      window.removeEventListener("resize", measure);
+      window.removeEventListener("scroll", measure, true);
+    };
+  }, [step]);
+
+  // Salir con Escape
+  React.useEffect(() => {
+    const onKey = (e) => { if (e.key === "Escape") onFinish(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onFinish]);
+
+  if (!step || !rect) return null;
+
+  // Posición de la tarjeta: a la derecha del elemento si cabe; si no,
+  // debajo (o encima), siempre dentro de la ventana.
+  const vw = window.innerWidth;
+  const vh = window.innerHeight;
+  const CARD_W = Math.min(300, vw - 24);
+  const CARD_H = 220; // estimado para decidir arriba/abajo
+  let cardPos;
+  if (vw - rect.right >= CARD_W + 28) {
+    cardPos = { left: rect.right + 14, top: Math.min(Math.max(rect.top, 12), vh - CARD_H - 12) };
+  } else {
+    const left = Math.min(Math.max(rect.right - CARD_W, 12), vw - CARD_W - 12);
+    const top = rect.bottom + 14 + CARD_H < vh ? rect.bottom + 14 : Math.max(12, rect.top - CARD_H - 14);
+    cardPos = { left, top };
+  }
+
+  return (
+    <div style={{ position: "fixed", inset: 0, zIndex: 10000, fontFamily: "var(--font)" }}>
+      {/* Bloquea la interacción con el resto de la pantalla durante el tour */}
+      <div style={{ position: "absolute", inset: 0 }} aria-hidden="true" />
+      {/* Foco sobre la opción actual (el sombreado oscurece todo lo demás) */}
+      <div
+        aria-hidden="true"
+        style={{
+          position: "fixed",
+          top: rect.top - 6, left: rect.left - 6,
+          width: rect.width + 12, height: rect.height + 12,
+          borderRadius: 12,
+          boxShadow: "0 0 0 9999px rgba(0,0,0,0.62)",
+          border: "2px solid var(--brand)",
+          transition: "top .25s ease, left .25s ease, width .25s ease, height .25s ease",
+          pointerEvents: "none",
+        }}
+      />
+      {/* Texto flotante del paso */}
+      <div
+        role="dialog"
+        aria-label={`Tour: ${step.title}`}
+        style={{
+          position: "fixed", left: cardPos.left, top: cardPos.top, width: CARD_W,
+          background: "var(--card)", borderRadius: 14, padding: "16px 18px",
+          boxShadow: "0 18px 60px rgba(0,0,0,0.35)", border: "1px solid var(--border)",
+          transition: "top .25s ease, left .25s ease",
+        }}
+      >
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+          <span style={{ fontSize: 20 }} aria-hidden="true">{step.icon}</span>
+          <h3 style={{ fontSize: 15, fontWeight: 900, color: "var(--text)", margin: 0, letterSpacing: "-0.01em" }}>
+            {step.title}
+          </h3>
+        </div>
+        <p style={{ fontSize: 12.5, color: "var(--muted)", lineHeight: 1.55, margin: "0 0 12px" }}>
+          {step.desc}
+        </p>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <button
+            onClick={onFinish}
+            style={{ background: "none", border: "none", fontSize: 11, fontWeight: 700, color: "var(--muted)", cursor: "pointer", padding: "6px 4px" }}
+          >
+            Salir
+          </button>
+          <span style={{ fontSize: 10.5, color: "var(--muted)", fontWeight: 700, marginLeft: "auto" }}>
+            {idx + 1} de {steps.length}
+          </span>
+          {idx > 0 && (
+            <button
+              onClick={() => setIdx((i) => i - 1)}
+              style={{ padding: "7px 12px", borderRadius: 8, border: "1px solid var(--border)", background: "transparent", fontSize: 11.5, fontWeight: 700, color: "var(--muted)", cursor: "pointer" }}
+            >
+              ← Anterior
+            </button>
+          )}
+          <button
+            onClick={() => (isLast ? onFinish() : setIdx((i) => i + 1))}
+            style={{ padding: "7px 14px", borderRadius: 8, border: "none", background: "var(--brand)", color: "#fff", fontSize: 11.5, fontWeight: 800, cursor: "pointer" }}
+          >
+            {isLast ? "Finalizar ✓" : "Siguiente →"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // Colores por tipo de anuncio del administrador
 const ANN_TAG_COLORS = {
   "Nuevo": "#16a34a",
@@ -193,9 +338,13 @@ export function AnnouncementsModal({ onClose }) {
   );
 }
 
+// onFinish(startTour): startTour=true cuando el usuario acepta el tour
+// guiado que se ofrece al terminar las tarjetas.
 export function OnboardingTutorial({ userName, onFinish }) {
   const [step, setStep] = React.useState(0);
   const [speaking, setSpeaking] = React.useState(false);
+  // "cards" = tarjetas del tutorial · "offer" = tarjeta que ofrece el tour
+  const [phase, setPhase] = React.useState("cards");
   const current = ONBOARDING_STEPS[step];
   const isLast = step === ONBOARDING_STEPS.length - 1;
 
@@ -219,9 +368,10 @@ export function OnboardingTutorial({ userName, onFinish }) {
 
   const handleNext = () => {
     if (isLast) {
+      // Al terminar las tarjetas no se cierra de una: se ofrece el tour
       window.speechSynthesis?.cancel();
       localStorage.setItem("gemelo_onboarded", "1");
-      onFinish();
+      setPhase("offer");
     } else {
       setStep(s => s + 1);
     }
@@ -230,8 +380,52 @@ export function OnboardingTutorial({ userName, onFinish }) {
   const handleSkip = () => {
     window.speechSynthesis?.cancel();
     localStorage.setItem("gemelo_onboarded", "1");
-    onFinish();
+    onFinish(false);
   };
+
+  // Tarjeta final: ¿quiere hacer el tour por las opciones?
+  if (phase === "offer") {
+    return (
+      <div style={{
+        position: "fixed", inset: 0, zIndex: 9999,
+        background: "rgba(0,0,0,0.72)",
+        display: "flex", alignItems: "center", justifyContent: "center",
+        fontFamily: "var(--font)", padding: 20,
+        backdropFilter: "blur(4px)",
+      }}>
+        <div style={{
+          background: "var(--card)", borderRadius: 20,
+          padding: "36px 40px", maxWidth: 460, width: "100%",
+          boxShadow: "0 24px 80px rgba(0,0,0,0.3)",
+        }}>
+          <div style={{ textAlign: "center", fontSize: 48, marginBottom: 16, lineHeight: 1 }}>🧭</div>
+          <h2 style={{ fontSize: 21, fontWeight: 900, color: "var(--text)", textAlign: "center", margin: "0 0 12px", letterSpacing: "-0.02em" }}>
+            ¿Quieres un tour por las opciones?
+          </h2>
+          <p style={{ fontSize: 14, color: "var(--muted)", lineHeight: 1.65, textAlign: "center", margin: "0 0 26px" }}>
+            Te señalamos en pantalla cada opción del menú y te contamos qué
+            hace cada una. Toma menos de un minuto, y puedes salir cuando
+            quieras. Si prefieres verlo después, está en el menú ⚙️ →
+            "Tour de opciones".
+          </p>
+          <div style={{ display: "flex", gap: 10 }}>
+            <button
+              onClick={() => onFinish(false)}
+              style={{ flex: 1, padding: "11px 0", borderRadius: 10, border: "1px solid var(--border)", background: "transparent", fontSize: 13, fontWeight: 700, color: "var(--muted)", cursor: "pointer" }}
+            >
+              No, gracias
+            </button>
+            <button
+              onClick={() => onFinish(true)}
+              style={{ flex: 2, padding: "11px 0", borderRadius: 10, border: "none", background: "var(--brand)", color: "#fff", fontSize: 13, fontWeight: 800, cursor: "pointer", boxShadow: "0 4px 14px rgba(11,95,255,0.3)" }}
+            >
+              Sí, iniciar el tour 🧭
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div style={{

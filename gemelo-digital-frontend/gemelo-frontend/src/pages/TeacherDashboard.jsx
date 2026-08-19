@@ -84,7 +84,7 @@ function fmtLastAccess(iso) {
   if (days < 30) return `Hace ${Math.floor(days)} días`;
   return d.toLocaleDateString("es-CO", { day: "2-digit", month: "short", year: "numeric" });
 }
-import { AnnouncementsModal, OnboardingTutorial } from "./teacher/onboarding";
+import { AnnouncementsModal, OnboardingTutorial, GuidedTour } from "./teacher/onboarding";
 import {
   LoginScreen, CesaLoader, UnlinkedItemsList, AlertsPanel, Drawer,
   ProjectionBlock, NoRaMappingNotice, QualityFlagsBlock, PendingItemsBlock,
@@ -450,10 +450,21 @@ export default function TeacherDashboard() {
     }, { replace: false });
   }, [setSearchParams]);
   const [sidebarOpen, setSidebarOpen] = useState(false); // mobile sidebar (overlay ≤1024)
+  // Tour guiado por las opciones (se ofrece al final del tutorial y vive
+  // también en el menú ⚙️ → "Tour de opciones")
+  const [tourActive, setTourActive] = useState(false);
   // Sidebar contraible en pantallas compactas (1025–1366 px): oculta el menú
   // lateral para dar espacio al tablero; el botón ☰ del topbar lo restaura.
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const sidebarIsCollapsed = sidebarCollapsed && isCompact && !isOverlaySidebar;
+
+  // Arranca el tour asegurando primero que el menú lateral esté visible
+  // (el tour mide la posición real de cada opción en pantalla).
+  const startGuidedTour = React.useCallback(() => {
+    if (isOverlaySidebar) setSidebarOpen(true);
+    else setSidebarCollapsed(false);
+    setTimeout(() => setTourActive(true), 300);
+  }, [isOverlaySidebar]);
 
   // ── Course panel ───────────────────────────────────────
   const [showCoursePanel, setShowCoursePanel] = useState(false);
@@ -2362,7 +2373,19 @@ const contentKpis = useMemo(() => {
       {showTutorial && (
         <OnboardingTutorial
           userName={(authUser?.user_name || "").split(" ")[0]}
-          onFinish={() => setShowTutorial(false)}
+          onFinish={(startTour) => {
+            setShowTutorial(false);
+            if (startTour) startGuidedTour();
+          }}
+        />
+      )}
+      {/* ── Tour guiado por las opciones ── */}
+      {tourActive && (
+        <GuidedTour
+          onFinish={() => {
+            setTourActive(false);
+            if (isOverlaySidebar) setSidebarOpen(false);
+          }}
         />
       )}
       {/* ── Sidebar ── */}
@@ -2398,6 +2421,7 @@ const contentKpis = useMemo(() => {
         locale={locale}
         toggleLocale={toggleLocale}
         isSuperAdmin={isSuperAdmin}
+        onOpenTour={startGuidedTour}
         adminView={impersonateStudent ? "student" : "teacher"}
         onAdminViewChange={(v) => {
           // Disponible para profesores y superadmin: "Vista estudiante" abre
