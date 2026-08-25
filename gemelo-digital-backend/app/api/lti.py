@@ -1,6 +1,7 @@
 # app/api/lti.py
 # LTI 1.3 (OIDC login initiation + launch) — MVP serio para Brightspace
 
+import logging
 import os
 import time
 import json
@@ -18,6 +19,7 @@ from jose import jwt
 from jose.exceptions import JWTError
 
 router = APIRouter(prefix="/lti", tags=["LTI"])
+logger = logging.getLogger("uvicorn.error")
 
 # =========================
 # ENV / Config
@@ -267,10 +269,12 @@ async def lti_launch(request: Request):
         return JSONResponse({"detail": "missing kid in jwt header"}, status_code=400)
     try:
         unverified = jwt.get_unverified_claims(id_token)
-        print("LTI header kid/alg:", kid, alg)
-        print("LTI claims iss/aud:", unverified.get("iss"), unverified.get("aud"))
+        # Solo a nivel debug: los metadatos del JWT no deben ir a los logs
+        # normales de producción.
+        logger.debug("LTI header kid/alg: %s %s", kid, alg)
+        logger.debug("LTI claims iss/aud: %s %s", unverified.get("iss"), unverified.get("aud"))
     except Exception as e:
-        print("Error leyendo claims sin verificar:", str(e))
+        logger.debug("Error leyendo claims sin verificar: %s", str(e))
     try:
         jwks = await _get_platform_jwks(force=False)
         keys = jwks.get("keys") or []

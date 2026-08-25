@@ -10,10 +10,9 @@ Seguridad:
   - /admin/sync-cron-all valida un secret compartido en el header
     X-Cron-Secret contra la env CRON_SHARED_SECRET. Sin ese match
     devuelve 401.
-  - /admin/show-refresh-token requiere sesion activa de Brightspace
-    (cookie gemelo_session_id o Authorization: Bearer <session_id>).
-    Es una herramienta de UNA sola vez para capturar el refresh_token
-    inicial; debe eliminarse del codigo despues de usar.
+  - El endpoint temporal /admin/show-refresh-token ya fue ELIMINADO del
+    codigo (era una herramienta de una sola vez para capturar el
+    refresh_token inicial del scheduler).
 """
 from __future__ import annotations
 
