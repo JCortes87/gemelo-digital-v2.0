@@ -418,7 +418,7 @@ Hola, aquí te dejo lo del dashboard     ← conversacional
 | `GET /gemelo/course/{ou}/ra/dashboard` | Dashboard de Resultados de Aprendizaje |
 | `GET /debug/course/{ou}/overview-db` | Igual que overview pero sin auth, solo desde DB |
 | `POST /admin/sync-cron-all` | Endpoint protegido para scheduler externo. Sincroniza todos los cursos. |
-| `GET /admin/show-refresh-token` | **Herramienta temporal** — captura el refresh_token después de loguear (eliminar tras usar) |
+| ~~`GET /admin/show-refresh-token`~~ | **Eliminado** (18 ago 2026) — era una herramienta temporal de un solo uso para capturar el refresh_token del scheduler |
 | `POST /speech/tts` | Texto a voz vía ElevenLabs (si está configurada) |
 | `POST /speech/stt` | Voz a texto vía ElevenLabs (si está configurada) |
 | `GET /.well-known/jwks.json` | JWKS público para LTI 1.3 |
@@ -1083,6 +1083,38 @@ principal y respaldadas en `gemelo-digital-v2.0`; cada una se mergeó a
   curso** (`viewContent` / `lessons/…/topics`), que se resuelven al
   recurso real por su Id — si el recurso es visible no se cuenta doble
   y si está oculto cuenta por su tipo real.
+- **Refuerzo de seguridad — autorización por curso y fixes de la
+  auditoría (18 ago)**: se auditaron TODOS los endpoints del backend y la
+  seguridad del frontend, y se cerraron los huecos encontrados:
+  - **Autorización por curso en el backend** (nuevo
+    `app/api/course_auth.py`): los endpoints `/gemelo/course/{ou}/…` ya
+    NO se sirven con solo tener sesión. El rol se resuelve con la
+    matrícula REAL del usuario en ese curso (ClasslistRoleName de
+    Brightspace, consultada con su propio token, caché 5 min) y es
+    **fail-closed** (rol desconocido jamás escala a profesor). Matriz:
+    overview / students / ra-dashboard / metric-history → solo profesor
+    del curso o superadmin; grade-items / config / learning-outcomes →
+    cualquier matriculado; student/{userId} → profesor/admin o el
+    propio estudiante. Esto también cierra la impersonación no validada
+    (manipular sessionStorage ya no muestra datos ajenos: el backend
+    verifica).
+  - `/brightspace/all-courses` (todos los cursos del tenant) y
+    `/brightspace/courses/enrolled?user_id=` (cursos de OTRO usuario) →
+    solo superadmin.
+  - `/speech/*` (ElevenLabs) exigen sesión y rate limit — consumían
+    créditos sin autenticación.
+  - LTI: los `print()` con metadatos del JWT pasaron a `logger.debug`.
+  - Se confirmó que `/admin/show-refresh-token` ya estaba eliminado del
+    código (solo quedaba la mención en un docstring, limpiada).
+  - **Frontend fail-closed**: ante un rol desconocido o vacío la UI
+    asume "student" (antes asumía "instructor", dando la vista docente
+    por defecto); `isInstructorRole` pasó de "todo lo que no sea
+    estudiante" a una lista explícita de roles docentes.
+  - Tests nuevos: 14 de pytest para `course_auth` (54 en total).
+  - La auditoría verificó además SIN hallazgos: XSS (DOMPurify bien
+    configurado con hook `noopener`), token nunca en URLs ni en logs,
+    postMessage con validación de origen, secretos con carga estricta,
+    CORS restringido, superadmin y `/debug` bien protegidos.
 - **Tour guiado por las opciones (18 ago)**: al terminar las tarjetas
   del tutorial de bienvenida aparece una tarjeta que pregunta si el
   usuario quiere hacer un **tour por las opciones**. Si acepta, un

@@ -6,25 +6,31 @@ const AuthContext = createContext(null);
 const ROLES_INSTRUCTOR = new Set(["instructor", "coordinador administrativo", "super administrator"]);
 const ROLES_STUDENT = new Set(["estudiante ef"]);
 
-// Map a single Brightspace role string to app role
+// Map a single Brightspace role string to app role.
+// FAIL-CLOSED (18 ago 2026): ante un rol desconocido o vacío se asume
+// "student" — el rol con MENOS privilegios. Antes el default era
+// "instructor", lo que le daba la vista docente a cualquier usuario cuyo
+// rol no reconociéramos. El backend igual verifica el rol real por curso,
+// pero la UI no debe abrir puertas de más.
 function mapSingleRole(backendRole) {
   if (!backendRole) return null;
   const r = String(backendRole).toLowerCase().trim();
   if (ROLES_STUDENT.has(r) || r.includes("estudiante") || r.includes("student")) return "student";
   if (ROLES_INSTRUCTOR.has(r) || r.includes("instructor") || r.includes("admin") || r.includes("coordinador")) return "instructor";
-  console.warn(`[AuthContext] Rol desconocido de Brightspace: "${backendRole}" — asignando "instructor" por defecto`);
-  return "instructor";
+  console.warn(`[AuthContext] Rol desconocido de Brightspace: "${backendRole}" — asignando "student" (fail-closed)`);
+  return "student";
 }
 
-// Determine all app-level roles from backend all_roles array
+// Determine all app-level roles from backend all_roles array (fail-closed:
+// sin roles conocidos → estudiante, nunca profesor por defecto)
 function mapAllRoles(allRolesArray) {
-  if (!Array.isArray(allRolesArray) || !allRolesArray.length) return ["instructor"];
+  if (!Array.isArray(allRolesArray) || !allRolesArray.length) return ["student"];
   const appRoles = new Set();
   for (const r of allRolesArray) {
     const mapped = mapSingleRole(r);
     if (mapped) appRoles.add(mapped);
   }
-  return appRoles.size > 0 ? Array.from(appRoles) : ["instructor"];
+  return appRoles.size > 0 ? Array.from(appRoles) : ["student"];
 }
 
 export function AuthProvider({ children }) {
@@ -202,10 +208,12 @@ export function AuthProvider({ children }) {
   const value = useMemo(() => ({
     authUser,
     authChecked,
-    role: authUser?.appRole || "instructor",
-    allRoles: authUser?.appRoles || ["instructor"],
+    // Fail-closed: sin usuario cargado, el default es el rol con MENOS
+    // privilegios (student), nunca instructor.
+    role: authUser?.appRole || "student",
+    allRoles: authUser?.appRoles || ["student"],
     isDualRole: authUser?.isDualRole || false,
-    isInstructor: authUser?.isInstructor ?? true,
+    isInstructor: authUser?.isInstructor ?? false,
     isStudent: authUser?.isStudent ?? false,
     isSuperAdmin: authUser?.isSuperAdmin ?? false,
     logout,
