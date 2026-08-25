@@ -14,6 +14,7 @@ from app.services.brightspace_client import BrightspaceClient
 from app.services.gemelo_service import GemeloService
 from app.services.sync_service import SyncService
 from app.api.gemelo_shared import get_service, _http500, logger
+from app.api.course_auth import require_course_staff, require_course_member
 
 #|---------- Lectura desde Postgres con chequeo de frescura de los datos ----------|
 from app.services.gemelo_db_service import (
@@ -201,7 +202,15 @@ async def gemelo_course_student(
     orgUnitId: int,
     userId: int,
     svc: GemeloService = Depends(get_service),
+    access: Dict[str, Any] = Depends(require_course_member),
 ):
+    # El gemelo de un estudiante solo lo ve el profesor del curso, un
+    # administrador, o el propio estudiante.
+    if not access["isInstructor"] and str(userId) != str(access["userId"]):
+        raise HTTPException(
+            status_code=403,
+            detail="Solo puedes ver tu propia información.",
+        )
     try:
         return await svc.build_gemelo(orgUnitId, userId)
     except FileNotFoundError as e:
@@ -223,6 +232,7 @@ async def gemelo_course_overview(
         description="Edad maxima (minutos) para servir desde DB. 0 = forzar Brightspace.",
     ),
     svc: GemeloService = Depends(get_service),
+    access: Dict[str, Any] = Depends(require_course_staff),
 ):
     """
     Devuelve el overview agregado del curso (medias del gradebook,
@@ -316,6 +326,7 @@ async def gemelo_course_overview(
 async def gemelo_course_metric_history(
     orgUnitId: int,
     days: int = Query(90, ge=1, le=365, description="Número de días de historia a devolver"),
+    access: Dict[str, Any] = Depends(require_course_staff),
 ):
     """
     Devuelve los snapshots diarios de tendencias del curso (últimos N días).
@@ -343,6 +354,7 @@ async def gemelo_course_ra_dashboard(
     limit: Optional[int] = Query(None, ge=1, le=500, description="Max usuarios a procesar (para piloto)"),
     concurrency: int = Query(8, ge=1, le=25, description="Concurrencia de cómputo (no subir demasiado)"),
     svc: GemeloService = Depends(get_service),
+    access: Dict[str, Any] = Depends(require_course_staff),
 ):
     """
     Agrega RA1/RA2/RA3 a nivel curso a partir del cálculo existente del gemelo
@@ -551,6 +563,7 @@ async def gemelo_course_students(
     with_metrics: bool = Query(False),
     include: Optional[str] = Query(None),   # "summary" → activa métricas batch
     svc: GemeloService = Depends(get_service),
+    access: Dict[str, Any] = Depends(require_course_staff),
 ):
     try:
         bundle = _safe_bundle(orgUnitId)
@@ -625,7 +638,10 @@ async def gemelo_course_students(
 
 
 @router.get("/config/{orgUnitId}")
-def get_course_config(orgUnitId: int):
+def get_course_config(
+    orgUnitId: int,
+    access: Dict[str, Any] = Depends(require_course_member),
+):
     try:
         bundle = load_course_bundle(orgUnitId)
         # Dumpeamos el bundle completo, no solo "course"
@@ -650,6 +666,7 @@ async def gemelo_grade_items(
     orgUnitId: int,
     svc: GemeloService = Depends(get_service),
     background_tasks: BackgroundTasks = BackgroundTasks(),
+    access: Dict[str, Any] = Depends(require_course_member),
 ):
     """Devuelve grade items + dropbox folders del curso con sus due dates.
     Lee desde cache DB (sync de JC). Fallback a Brightspace si el cache está vacío,

@@ -14,6 +14,7 @@ from app.rate_limit import limiter
 from app.services.gemelo_service import GemeloService
 from app.api.gemelo_shared import get_service, _http500
 from app.api.gemelo_admin import _require_super_admin
+from app.api.course_auth import require_course_member
 
 router = APIRouter()
 
@@ -22,6 +23,7 @@ router = APIRouter()
 async def gemelo_learning_outcomes(
     orgUnitId: int,
     svc: GemeloService = Depends(get_service),
+    access: Dict[str, Any] = Depends(require_course_member),
 ):
     try:
         from app.services.auto_lo_config import build_auto_lo_config

@@ -214,9 +214,12 @@ async def brightspace_all_courses_search(
 ):
     """
     Lista TODOS los Course Offerings del sistema usando el endpoint orgstructure.
-    Solo funciona con rol Super Administrator o similar con acceso a orgstructure.
-    Útil cuando el docente/admin no está inscrito en el curso.
+    Solo para super-admin: enumerar todos los cursos del tenant no es algo
+    que un usuario normal deba poder hacer (Brightspace igual suele negar el
+    orgstructure a no-admins, pero no dependemos de eso).
     """
+    from app.api.gemelo_admin import _require_super_admin
+    _require_super_admin(request)
     token, err = _require_token_from_request(request)
     if err:
         return err
@@ -471,8 +474,12 @@ async def brightspace_courses_enrolled(
     headers = _auth_headers(token)
     auth_user_id, err_uid = await _get_whoami_id(headers)
 
-    # SuperAdmin querying ANOTHER user's enrollments
+    # SuperAdmin querying ANOTHER user's enrollments — verificar que el
+    # caller SEA super-admin: sin este check, cualquier usuario autenticado
+    # podía pasar ?user_id=X y enumerar los cursos de otra persona.
     if user_id and auth_user_id and str(user_id) != str(auth_user_id):
+        from app.api.gemelo_admin import _require_super_admin
+        _require_super_admin(request)
         target_user_id = str(user_id)
         logger.info(
             "courses/enrolled: SuperAdmin %s querying user %s",

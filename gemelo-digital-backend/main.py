@@ -141,6 +141,7 @@ app.add_middleware(SecurityHeadersMiddleware)
 from app.api.deps import (  # noqa: E402
     BRIGHTSPACE_BASE_URL, LP_VERSION, LE_VERSION,
     CLIENT_ID, CLIENT_SECRET, REDIRECT_URI, _get_session_id,
+    _require_token_from_request,
 )
 from app.api.auth_routes import router as auth_router  # noqa: E402
 from app.api.brightspace_proxy import router as brightspace_proxy_router  # noqa: E402
@@ -321,12 +322,17 @@ ELEVENLABS_MODEL    = os.getenv("ELEVENLABS_MODEL",    "eleven_multilingual_v2")
 
 
 @app.post("/speech/tts")
+@limiter.limit("30/minute")
 async def speech_tts(request: Request):
     """
     Convierte texto a audio usando ElevenLabs TTS.
     Body: { "text": "...", "voice_id": "..." (opcional) }
     Retorna: audio/mpeg (MP3)
     """
+    # Solo usuarios autenticados: cada llamada consume créditos de ElevenLabs
+    _tok, _autherr = _require_token_from_request(request)
+    if _autherr:
+        return _autherr
     if not ELEVENLABS_API_KEY:
         return JSONResponse(status_code=503, content={"error": "ElevenLabs no configurado"})
 
@@ -381,12 +387,16 @@ async def speech_tts(request: Request):
 
 
 @app.post("/speech/stt")
+@limiter.limit("30/minute")
 async def speech_stt(request: Request):
     """
     Convierte audio a texto usando ElevenLabs STT.
     Body: multipart/form-data con campo "audio" (WebM/WAV/MP3)
     Retorna: { "text": "..." }
     """
+    _tok, _autherr = _require_token_from_request(request)
+    if _autherr:
+        return _autherr
     if not ELEVENLABS_API_KEY:
         return JSONResponse(status_code=503, content={"error": "ElevenLabs no configurado"})
 
@@ -421,8 +431,11 @@ async def speech_stt(request: Request):
 
 
 @app.get("/speech/voices")
-async def speech_voices():
+async def speech_voices(request: Request):
     """Lista las voces disponibles en ElevenLabs (para selección futura)."""
+    _tok, _autherr = _require_token_from_request(request)
+    if _autherr:
+        return _autherr
     if not ELEVENLABS_API_KEY:
         return JSONResponse(status_code=503, content={"error": "ElevenLabs no configurado"})
 
