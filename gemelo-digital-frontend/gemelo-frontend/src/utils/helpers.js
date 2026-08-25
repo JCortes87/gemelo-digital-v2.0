@@ -189,47 +189,82 @@ export function contentRhythmStatus(progressRatio) {
  * minúsculas). Devuelve null si no corresponde a un archivo conocido.
  * NO clasifica .html — las páginas se tratan aparte en contentTypeLabel.
  */
-export function fileTypeFromUrl(s) {
+/**
+ * Tipo "documento" (PDF, Word, Excel, PowerPoint) según la URL o el título
+ * (en minúsculas). Estos tipos cuentan SIN IMPORTAR dónde estén alojados:
+ * un enlace a un PDF en cualquier parte cuenta como PDF (taxonomía acordada
+ * el 18 ago 2026). Devuelve null si no es un documento conocido.
+ */
+export function docTypeFromUrl(s) {
   if (!s) return null;
   if (s.includes(".pdf")) return "PDF";
   if (/\.(docx?|rtf)(\?|$|\b)/.test(s)) return "Word";
   if (/\.(xlsx?|csv)(\?|$|\b)/.test(s)) return "Excel";
-  if (/\.(png|jpe?g|gif|svg|webp|bmp|tiff?|ico)(\?|$|\b)/.test(s)) return "Imágenes";
-  if (/\.(mp3|wav|ogg|m4a|aac|wma)(\?|$|\b)/.test(s)) return "Audios";
-  if (/\.(mp4|mov|avi|webm|mkv|wmv|flv)(\?|$|\b)/.test(s)) return "Videos";
+  if (/\.(pptx?|ppsx?)(\?|$|\b)/.test(s)) return "PowerPoint";
   // Enlaces compartidos de OneDrive/SharePoint: no traen extensión — el
-  // tipo de archivo va codificado en la ruta (:b: = PDF, :w: = Word,
-  // :x: = Excel, :i: = imagen, :v: = video).
+  // tipo va codificado en la ruta (:b: = PDF, :w: = Word, :x: = Excel,
+  // :p: = PowerPoint).
   if (/sharepoint\.com\/:b:|1drv\.ms\/b\//.test(s)) return "PDF";
   if (/sharepoint\.com\/:w:|1drv\.ms\/w\//.test(s)) return "Word";
   if (/sharepoint\.com\/:x:|1drv\.ms\/x\//.test(s)) return "Excel";
-  if (/sharepoint\.com\/:i:|1drv\.ms\/i\//.test(s)) return "Imágenes";
-  if (/sharepoint\.com\/:v:|1drv\.ms\/v\//.test(s)) return "Videos";
+  if (/sharepoint\.com\/:p:|1drv\.ms\/p\//.test(s)) return "PowerPoint";
   return null;
+}
+
+/**
+ * Tipo "multimedia" (Audios, Videos) según la extensión. Solo cuenta para
+ * archivos CARGADOS EN BRIGHTSPACE — un video externo (YouTube, etc.) es un
+ * Enlace, no un Video (taxonomía acordada el 18 ago 2026 para evitar
+ * ambigüedades). El llamador decide si la URL es interna.
+ */
+export function mediaTypeFromUrl(s) {
+  if (!s) return null;
+  if (/\.(mp3|wav|ogg|m4a|aac|wma)(\?|$|\b)/.test(s)) return "Audios";
+  if (/\.(mp4|mov|avi|webm|mkv|wmv|flv)(\?|$|\b)/.test(s)) return "Videos";
+  return null;
+}
+
+// URL alojada fuera de Brightspace (los dominios *.brightspace.com cuentan
+// como internos aunque la URL sea absoluta).
+function isExternalHost(u) {
+  return /^https?:/.test(u) && !/\.brightspace\.com\//.test(u);
+}
+
+// Quicklink de Brightspace hacia una ACTIVIDAD del propio curso (foro,
+// asignación, quiz, encuesta, LTI…): no es un recurso educativo ni un
+// enlace a página externa.
+function isActivityQuickLink(u) {
+  return /quicklink\.d2l\?[^#]*type=(discuss|dropbox|quiz|survey|checklist|chat|ep|lti)/.test(u);
 }
 
 /**
  * Categoría de un recurso educativo publicado en los módulos de contenido.
  *
- * Reglas (acordadas ago 2026):
- * - Un recurso que lleva a un archivo cuenta por su tipo de archivo (PDF,
- *   Word, Excel, Imágenes, Audios, Videos), aunque haya sido publicado
- *   como enlace.
- * - "Enlace" = recurso publicado como enlace que lleva a una página web
- *   (externa o interna de Brightspace), incluso si la URL termina en .html.
- * - "HTML" = únicamente las páginas creadas dentro de Brightspace
- *   ("Crear nuevo → Página"): URL relativa del curso que termina en .html.
- * - "Otros" para el resto.
+ * Taxonomía definitiva (acordada con el usuario el 18 ago 2026):
+ * - PDF / Word / Excel / PowerPoint: archivo cargado O enlace que lleva a
+ *   uno, alojado en cualquier parte.
+ * - Audios / Videos: solo archivos cargados en Brightspace (un video de
+ *   YouTube es un Enlace).
+ * - "Enlace": enlaces a páginas externas (YouTube, sitios web…).
+ * - "HTML": únicamente las páginas creadas dentro de Brightspace
+ *   ("Crear nuevo → Página").
+ * - Todo lo demás (imágenes, zips, enlaces a actividades del curso como
+ *   foros o quizzes, etc.): "Otros".
  */
 export function contentTypeLabel(title, url, topicType) {
   const u = String(url || "").toLowerCase();
-  const fromUrl = fileTypeFromUrl(u);
-  if (fromUrl) return fromUrl;
+  const doc = docTypeFromUrl(u);
+  if (doc) return doc;
+  if (isActivityQuickLink(u)) return "Otros";
+  if (!isExternalHost(u)) {
+    const media = mediaTypeFromUrl(u);
+    if (media) return media;
+  }
   const isLink = Number(topicType) === 3 || /^https?:/.test(u);
   if (isLink) return "Enlace";
   if (/\.html?(\?|$|\b)/.test(u)) return "HTML";
   const t = String(title || "").toLowerCase();
-  const fromTitle = fileTypeFromUrl(t);
+  const fromTitle = docTypeFromUrl(t) || mediaTypeFromUrl(t);
   if (fromTitle) return fromTitle;
   if (/\.html?(\?|$|\b)/.test(t)) return "HTML";
   if (/https?:|www\.|link|enlace/.test(t)) return "Enlace";
@@ -288,6 +323,7 @@ export function countEducationalResources(topics, moduleLinks) {
     if (!h || seenLinks.has(h)) return;
     seenLinks.add(h);
     if (topicUrls.has(h) || (!isSharedDialogPath(h) && topicUrls.has(h.split("?")[0]))) return;
+    if (isActivityQuickLink(h)) return; // enlaces a actividades: no cuentan
     const target = internalTopicFor(h);
     if (target) {
       if (target.IsHidden === true) {
@@ -298,7 +334,9 @@ export function countEducationalResources(topics, moduleLinks) {
       }
       return; // visible: ya contado como recurso del árbol
     }
-    const label = fileTypeFromUrl(h) || (webCountsAsEnlace ? "Enlace" : null);
+    const label = docTypeFromUrl(h)
+      || (!isExternalHost(h) ? mediaTypeFromUrl(h) : null)
+      || (webCountsAsEnlace ? "Enlace" : null);
     if (!label) return;
     counts[label] = (counts[label] || 0) + 1;
     total += 1;

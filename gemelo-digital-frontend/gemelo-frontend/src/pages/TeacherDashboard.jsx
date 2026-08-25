@@ -56,11 +56,12 @@ import {
 
 // Clasificación por tipo de recurso: contentTypeLabel y
 // countEducationalResources viven en utils/helpers.js (con tests).
-// Categorías: HTML (solo páginas creadas en Brightspace), PDF, Excel, Word,
-// Imágenes, Audios, Videos, Enlace (recurso-enlace a página web) y Otros.
+// Categorías: HTML (solo páginas creadas en Brightspace), PDF, Word, Excel,
+// PowerPoint (archivos o enlaces a ellos, alojados donde sea), Audios y
+// Videos (solo cargados en Brightspace), Enlace (páginas externas) y Otros.
 const CONTENT_TYPE_ICONS = {
-  HTML: "🌐", PDF: "📃", Excel: "📗", Word: "📘",
-  "Imágenes": "🖼️", Audios: "🎧", Videos: "🎬", Enlace: "🔗", Otros: "📄",
+  HTML: "🌐", PDF: "📃", Excel: "📗", Word: "📘", PowerPoint: "📙",
+  Audios: "🎧", Videos: "🎬", Enlace: "🔗", Otros: "📄",
 };
 
 // Ritmo de publicación de la tarjeta "Recursos educativos publicados"
@@ -83,7 +84,7 @@ function fmtLastAccess(iso) {
   if (days < 30) return `Hace ${Math.floor(days)} días`;
   return d.toLocaleDateString("es-CO", { day: "2-digit", month: "short", year: "numeric" });
 }
-import { AnnouncementsModal, OnboardingTutorial } from "./teacher/onboarding";
+import { AnnouncementsModal, OnboardingTutorial, GuidedTour } from "./teacher/onboarding";
 import {
   LoginScreen, CesaLoader, UnlinkedItemsList, AlertsPanel, Drawer,
   ProjectionBlock, NoRaMappingNotice, QualityFlagsBlock, PendingItemsBlock,
@@ -449,10 +450,21 @@ export default function TeacherDashboard() {
     }, { replace: false });
   }, [setSearchParams]);
   const [sidebarOpen, setSidebarOpen] = useState(false); // mobile sidebar (overlay ≤1024)
+  // Tour guiado por las opciones (se ofrece al final del tutorial y vive
+  // también en el menú ⚙️ → "Tour de opciones")
+  const [tourActive, setTourActive] = useState(false);
   // Sidebar contraible en pantallas compactas (1025–1366 px): oculta el menú
   // lateral para dar espacio al tablero; el botón ☰ del topbar lo restaura.
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const sidebarIsCollapsed = sidebarCollapsed && isCompact && !isOverlaySidebar;
+
+  // Arranca el tour asegurando primero que el menú lateral esté visible
+  // (el tour mide la posición real de cada opción en pantalla).
+  const startGuidedTour = React.useCallback(() => {
+    if (isOverlaySidebar) setSidebarOpen(true);
+    else setSidebarCollapsed(false);
+    setTimeout(() => setTourActive(true), 300);
+  }, [isOverlaySidebar]);
 
   // ── Course panel ───────────────────────────────────────
   const [showCoursePanel, setShowCoursePanel] = useState(false);
@@ -2361,7 +2373,19 @@ const contentKpis = useMemo(() => {
       {showTutorial && (
         <OnboardingTutorial
           userName={(authUser?.user_name || "").split(" ")[0]}
-          onFinish={() => setShowTutorial(false)}
+          onFinish={(startTour) => {
+            setShowTutorial(false);
+            if (startTour) startGuidedTour();
+          }}
+        />
+      )}
+      {/* ── Tour guiado por las opciones ── */}
+      {tourActive && (
+        <GuidedTour
+          onFinish={() => {
+            setTourActive(false);
+            if (isOverlaySidebar) setSidebarOpen(false);
+          }}
         />
       )}
       {/* ── Sidebar ── */}
@@ -2397,6 +2421,7 @@ const contentKpis = useMemo(() => {
         locale={locale}
         toggleLocale={toggleLocale}
         isSuperAdmin={isSuperAdmin}
+        onOpenTour={startGuidedTour}
         adminView={impersonateStudent ? "student" : "teacher"}
         onAdminViewChange={(v) => {
           // Disponible para profesores y superadmin: "Vista estudiante" abre
@@ -2622,7 +2647,7 @@ const contentKpis = useMemo(() => {
                   >
                     Tipos de recurso educativo {contentTypesOpen ? "▴" : "▾"}
                   </button>
-                  <InfoTooltip text="HTML: páginas creadas en Brightspace. Enlace: enlaces a páginas web. Un enlace a un archivo (PDF, Word…) cuenta como ese archivo. Cada recurso cuenta una sola vez." />
+                  <InfoTooltip text="HTML: páginas creadas en Brightspace. Enlace: enlaces a páginas externas. Un enlace a un PDF, Word, Excel o PowerPoint cuenta como ese archivo. Audios y videos: solo los cargados en Brightspace. Cada recurso cuenta una sola vez." />
                 </span>
                 {contentTypesOpen && (
                   <div style={{ display: "flex", flexDirection: "column", gap: 3, width: "100%", maxHeight: 110, overflowY: "auto" }}>

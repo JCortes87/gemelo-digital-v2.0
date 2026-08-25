@@ -1083,6 +1083,41 @@ principal y respaldadas en `gemelo-digital-v2.0`; cada una se mergeó a
   curso** (`viewContent` / `lessons/…/topics`), que se resuelven al
   recurso real por su Id — si el recurso es visible no se cuenta doble
   y si está oculto cuenta por su tipo real.
+- **Tour guiado por las opciones (18 ago)**: al terminar las tarjetas
+  del tutorial de bienvenida aparece una tarjeta que pregunta si el
+  usuario quiere hacer un **tour por las opciones**. Si acepta, un
+  recorrido va **resaltando cada opción real de la pantalla** (foco con
+  el resto oscurecido + texto flotante al lado) explicando qué es y qué
+  hace: las 9 pestañas del menú lateral, el buscador de curso por ID,
+  el selector "Vista profesor / Vista estudiante" y el menú ⚙️.
+  Componente `GuidedTour` en `teacher/onboarding.jsx`, anclado con
+  atributos `data-tour` en `layout.jsx`; los pasos cuyo elemento no
+  está visible (p. ej. el selector de vista en móvil) se saltan solos,
+  y Escape o "Salir" cierran el tour. Se puede **relanzar cuando se
+  quiera** desde el menú ⚙️ → **"Tour de opciones"** (útil también para
+  probarlo aunque ya se haya visto el tutorial). El tutorial marca
+  `gemelo_onboarded` igual que antes; decir "No, gracias" no lo vuelve
+  a ofrecer.
+- **Taxonomía definitiva de tipos de recurso (18 ago, 4ª ronda)**:
+  - **PDF / Word / Excel / PowerPoint** (categoría nueva): archivo
+    cargado O enlace que lleva a uno, **alojado en cualquier parte**
+    (curso, OneDrive/SharePoint — `:p:` = PowerPoint —, web externa).
+  - **Audios / Videos**: solo archivos **cargados en Brightspace** — un
+    video de YouTube o un mp4 externo es un Enlace (regla anti
+    ambigüedad pedida por el usuario).
+  - **Enlace**: enlaces a páginas externas (YouTube, sitios web…).
+  - **HTML**: solo páginas creadas dentro de Brightspace (sin cambio).
+  - **Otros**: todo lo demás — imágenes (dejó de ser categoría propia),
+    zips, y los **quicklinks a actividades del propio curso** (foro,
+    quiz, asignación, encuesta, LTI): publicados como recurso del árbol
+    van a "Otros" (caso real: el enlace al foro "El rol del ciudadano"
+    salía como Enlace), y si aparecen como enlace dentro de una
+    página/unidad no se cuentan.
+
+  Funciones renombradas en `utils/helpers.js`: `docTypeFromUrl` (tipos
+  documento, alojados donde sea) y `mediaTypeFromUrl` (audio/video,
+  solo host Brightspace) reemplazan a `fileTypeFromUrl`; el tooltip del
+  desglose explica las reglas.
 - **Fix del dedupe de quicklinks (18 ago, 3ª ronda)**: los quicklinks de
   Brightspace comparten TODOS la misma ruta
   (`/d2l/common/dialogs/quickLink/quickLink.d2l`) y el recurso real va
