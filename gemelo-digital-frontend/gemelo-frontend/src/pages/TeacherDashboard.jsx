@@ -2685,7 +2685,7 @@ const contentKpis = useMemo(() => {
                       <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 6, display: "flex", justifyContent: "space-between", gap: 6 }}>
                         <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
                           Promedio de acceso a recursos educativos
-                          <InfoTooltip text="Porcentaje de los recursos publicados que ha abierto en promedio cada estudiante. Cada recurso cuenta una vez por estudiante." />
+                          <InfoTooltip text="Porcentaje de los recursos publicados que ha consultado en promedio cada estudiante. Cada recurso cuenta una vez por estudiante." />
                         </span>
                         <span style={{ fontFamily: "var(--font-mono)", fontWeight: 800 }}>{fmtPct(consumptionStats.avgPct)}</span>
                       </div>
@@ -2701,8 +2701,8 @@ const contentKpis = useMemo(() => {
                       />
                       <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 6, display: "flex", justifyContent: "space-between", gap: 6 }}>
                         <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
-                          {consumptionStats.opened} de {consumptionStats.total} estudiantes han abierto recursos educativos
-                          <InfoTooltip text="Estudiantes que han abierto al menos un recurso publicado del curso." />
+                          {consumptionStats.opened} de {consumptionStats.total} estudiantes han consultado recursos educativos
+                          <InfoTooltip text="Estudiantes que han consultado al menos un recurso publicado del curso." />
                         </span>
                         <span style={{ fontFamily: "var(--font-mono)", fontWeight: 800 }}>{fmtPct(consumptionStats.openedPct)}</span>
                       </div>
@@ -3409,7 +3409,7 @@ const contentKpis = useMemo(() => {
                             <div key={s.userId}>
                               <button
                                 onClick={() => setConsumptionStudentOpen((v) => (v === s.userId ? null : s.userId))}
-                                title={hasTopics ? "Ver qué contenidos abrió" : "Sin detalle de contenidos"}
+                                title={hasTopics ? "Ver qué contenidos consultó" : "Sin detalle de contenidos"}
                                 style={{
                                   display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8,
                                   border: "none", background: isOpen ? "var(--brand-light)" : "transparent",
