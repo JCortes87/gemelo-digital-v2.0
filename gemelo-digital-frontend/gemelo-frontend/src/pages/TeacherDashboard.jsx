@@ -2647,7 +2647,7 @@ const contentKpis = useMemo(() => {
                   >
                     Tipos de recurso educativo {contentTypesOpen ? "▴" : "▾"}
                   </button>
-                  <InfoTooltip text="HTML: páginas creadas en Brightspace. Enlace: enlaces a páginas externas. Un enlace a un PDF, Word, Excel o PowerPoint cuenta como ese archivo. Audios y videos: solo los cargados en Brightspace. Cada recurso cuenta una sola vez." />
+                  <InfoTooltip text="HTML: páginas creadas en Brightspace. Enlace: enlaces a páginas externas. Un enlace a un archivo (PDF, Word, Excel, PowerPoint) cuenta como ese archivo." />
                 </span>
                 {contentTypesOpen && (
                   <div style={{ display: "flex", flexDirection: "column", gap: 3, width: "100%", maxHeight: 110, overflowY: "auto" }}>
@@ -2685,7 +2685,7 @@ const contentKpis = useMemo(() => {
                       <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 6, display: "flex", justifyContent: "space-between", gap: 6 }}>
                         <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
                           Promedio de acceso a recursos educativos
-                          <InfoTooltip text="Porcentaje de los recursos publicados que ha abierto en promedio cada estudiante. Cada recurso cuenta una vez por estudiante. Los enlazados dentro de páginas o unidades no se pueden medir y no entran aquí." />
+                          <InfoTooltip text="Porcentaje de los recursos publicados que ha abierto en promedio cada estudiante. Cada recurso cuenta una vez por estudiante." />
                         </span>
                         <span style={{ fontFamily: "var(--font-mono)", fontWeight: 800 }}>{fmtPct(consumptionStats.avgPct)}</span>
                       </div>
